@@ -1,0 +1,16 @@
+{
+  "name": "wms-cloudflare-pages-d1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WMS Industrial migrado a Cloudflare Pages + D1",
+  "scripts": {
+    "dev": "wrangler pages dev public",
+    "deploy": "wrangler pages deploy public",
+    "d1:create": "wrangler d1 create wms-industrial-db",
+    "d1:migrate": "wrangler d1 execute wms-industrial-db --file=./migrations/0001_init.sql",
+    "export:legacy": "node ./scripts/sqlite-to-d1-export.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.10.0"
+  }
+}
