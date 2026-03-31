@@ -6,7 +6,13 @@ const DEFAULT_COMPANY_CODE = 'WMS-CF';
 export async function onRequest(context) {
   const { request, env, params } = context;
   const url = new URL(request.url);
-  const path = '/' + String(params.path || '').replace(/^\/+/, '');
+
+  const rawPath = Array.isArray(params.path)
+    ? params.path.join('/')
+    : String(params.path || '');
+
+  const path = '/' + rawPath.replace(/^\/+/, '').replace(/\/+$/, '');
+
   try {
     await ensureSchema(env.DB, env);
 
@@ -35,11 +41,15 @@ export async function onRequest(context) {
       const body = await readJson(request);
       const username = String(body.username || '').trim();
       const password = String(body.password || '');
-      if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+      if (!username || !password) {
+        return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+      }
+
       const user = await getUserByUsername(env.DB, username);
       if (!user || !(await verifyPassword(user.password_hash, password))) {
         return withJson({ ok: false, error: 'Credenciales inválidas' }, 401);
       }
+
       const company = await getCompanyById(env.DB, user.company_id);
       const sid = await createSession(env.DB, {
         user_id: user.id,
@@ -47,6 +57,7 @@ export async function onRequest(context) {
         role: user.role,
         company_id: user.company_id
       });
+
       return withJson({
         ok: true,
         user: user.username,
@@ -63,9 +74,14 @@ export async function onRequest(context) {
       const password = String(body.password || '');
       const companyName = String(body.companyName || '').trim() || 'Nueva empresa';
       const companyCode = String(body.companyCode || '').trim().toUpperCase();
-      if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+
+      if (!username || !password) {
+        return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+      }
+
       const existing = await getUserByUsername(env.DB, username);
       if (existing) return withJson({ ok: false, error: 'Ese usuario ya existe' }, 400);
+
       const created = await createCompanyBundle(env.DB, {
         companyName,
         username,
@@ -73,6 +89,7 @@ export async function onRequest(context) {
         role: mode === 'viewer' ? 'viewer' : 'admin',
         companyCode
       });
+
       const company = await getCompanyById(env.DB, created.companyId);
       const sid = await createSession(env.DB, {
         user_id: created.userId,
@@ -80,19 +97,24 @@ export async function onRequest(context) {
         role: mode === 'viewer' ? 'viewer' : 'admin',
         company_id: created.companyId
       });
+
       return withJson({
         ok: true,
         user: username,
         role: mode === 'viewer' ? 'viewer' : 'admin',
         company_name: company?.name || companyName,
         company_code: company?.code || '',
-        message: mode === 'viewer' ? 'Cuenta visualizadora creada.' : 'Cuenta administradora creada.'
+        message: mode === 'viewer'
+          ? 'Cuenta visualizadora creada.'
+          : 'Cuenta administradora creada.'
       }, 200, [makeSessionCookie(sid)]);
     }
 
     if (path === '/logout' && request.method === 'POST') {
       const sid = readCookie(request, COOKIE_NAME);
-      if (sid) await env.DB.prepare('DELETE FROM sessions_store WHERE sid = ?').bind(sid).run();
+      if (sid) {
+        await env.DB.prepare('DELETE FROM sessions_store WHERE sid = ?').bind(sid).run();
+      }
       return withJson({ ok: true }, 200, [clearSessionCookie()]);
     }
 
@@ -106,10 +128,13 @@ export async function onRequest(context) {
     if (path === '/app-state' && request.method === 'POST') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
+
       const body = await readJson(request);
       const admin = body.admin && typeof body.admin === 'object' ? body.admin : null;
       const models = Array.isArray(body.models) ? body.models : null;
-      const branchLayouts = body.branchLayouts && typeof body.branchLayouts === 'object' ? body.branchLayouts : null;
+      const branchLayouts = body.branchLayouts && typeof body.branchLayouts === 'object'
+        ? body.branchLayouts
+        : null;
 
       await env.DB.prepare(`
         INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at)
@@ -146,16 +171,20 @@ export async function onRequest(context) {
     if (path === '/branches' && request.method === 'GET') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
+
       const rows = await all(
-        env.DB.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
-          .bind(session.company_id)
+        env.DB.prepare(
+          'SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC'
+        ).bind(session.company_id)
       );
+
       return withJson({ branches: rows.map(normalizeBranch) });
     }
 
     if (path === '/branches' && request.method === 'POST') {
       const session = await requireAdmin(request, env.DB);
       if (session.error) return session.error;
+
       const body = await readJson(request);
       const name = String(body.name || '').trim();
       const type = String(body.type || 'tienda').trim() || 'tienda';
@@ -182,17 +211,24 @@ export async function onRequest(context) {
 
       const branchId = Number(info.meta.last_row_id);
       await ensureBranchScaffolding(env.DB, branchId, canvasWidth, canvasHeight);
-      return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
+
+      return withJson({
+        ok: true,
+        branch: await getOwnedBranch(env.DB, session.company_id, branchId)
+      });
     }
 
     const branchIdMatch = path.match(/^\/branches\/(\d+)(?:\/(.+))?$/);
     if (branchIdMatch) {
       const branchId = Number(branchIdMatch[1]);
-      const tail = branchIdMatch[2] ? '/' + branchIdMatch[2] : '';
+      const tail = branchIdMatch[2]
+        ? '/' + branchIdMatch[2].replace(/^\/+|\/+$/g, '')
+        : '';
 
       if (!tail && request.method === 'PUT') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
@@ -223,12 +259,16 @@ export async function onRequest(context) {
           branchId
         ).run();
 
-        return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
+        return withJson({
+          ok: true,
+          branch: await getOwnedBranch(env.DB, session.company_id, branchId)
+        });
       }
 
       if (!tail && request.method === 'DELETE') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
@@ -249,10 +289,12 @@ export async function onRequest(context) {
       if (tail === '/layout' && request.method === 'GET') {
         const session = await requireAuth(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
+
         const row = await first(
           env.DB.prepare('SELECT layout_json, viewbox_json, updated_at FROM branch_layouts WHERE branch_id = ?')
             .bind(branchId)
@@ -277,16 +319,20 @@ export async function onRequest(context) {
       if (tail === '/layout' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
         const payload = await readJson(request);
-        const layout = payload.layout && typeof payload.layout === 'object' ? payload.layout : defaultLayout();
+        const layout = payload.layout && typeof payload.layout === 'object'
+          ? payload.layout
+          : defaultLayout();
         const viewBox = payload.viewBox && typeof payload.viewBox === 'object'
           ? payload.viewBox
           : { x: 0, y: 0, w: branch.canvas_width || 900, h: branch.canvas_height || 620 };
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width || 900, branch.canvas_height || 620);
+
         await env.DB.prepare(`
           UPDATE branch_layouts
           SET layout_json = ?, viewbox_json = ?, updated_at = CURRENT_TIMESTAMP
@@ -299,10 +345,12 @@ export async function onRequest(context) {
       if (tail === '/sheet' && request.method === 'GET') {
         const session = await requireAuth(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
+
         const row = await first(
           env.DB.prepare(`
             SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json,
@@ -338,6 +386,7 @@ export async function onRequest(context) {
       if (tail === '/sheet' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
@@ -354,6 +403,7 @@ export async function onRequest(context) {
         ) || {};
 
         const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
         const sheet_id = has('sheet_id') ? String(body.sheet_id || '') : String(current.sheet_id || '');
         const sheet_name = has('sheet_name') ? String(body.sheet_name || 'Productos') : String(current.sheet_name || 'Productos');
         const source_type = has('source_type') ? String(body.source_type || 'google_sheet') : String(current.source_type || 'google_sheet');
@@ -386,6 +436,7 @@ export async function onRequest(context) {
       if (tail === '/sheet-metadata' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
@@ -436,6 +487,7 @@ export async function onRequest(context) {
       if (tail === '/view-link' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
 
@@ -549,9 +601,17 @@ export async function onRequest(context) {
       });
     }
 
-    return withJson({ ok: false, error: 'No encontrado' }, 404);
+    return withJson({
+      ok: false,
+      error: 'No encontrado',
+      debug: { path, rawPath, paramsPath: params.path }
+    }, 404);
   } catch (err) {
-    return withJson({ ok: false, error: err?.message || 'Error interno' }, 500);
+    return withJson({
+      ok: false,
+      error: err?.message || 'Error interno',
+      debug: { path, rawPath, paramsPath: params.path }
+    }, 500);
   }
 }
 
@@ -779,11 +839,13 @@ async function createCompanyBundle(db, { companyName, username, password, role =
   if (role === 'viewer') {
     const company = await first(db.prepare('SELECT * FROM companies WHERE code = ?').bind(companyCode));
     if (!company) throw new Error('Código de empresa inválido');
+
     const hash = await hashPassword(password);
     const info = await db.prepare(`
       INSERT INTO users (company_id, username, password_hash, role, updated_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(company.id, username, hash, 'viewer').run();
+
     return { companyId: Number(company.id), code: company.code, userId: Number(info.meta.last_row_id) };
   }
 
@@ -846,8 +908,10 @@ async function createCompanyBundle(db, { companyName, username, password, role =
 async function buildFallbackAppState(db, companyId = 1) {
   const admin = await buildAdminStateFromDb(db, companyId, null);
   const branches = await all(
-    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
+      .bind(companyId)
   );
+
   const branchLayouts = {};
   for (let index = 0; index < branches.length; index += 1) {
     const row = branches[index];
@@ -856,6 +920,7 @@ async function buildFallbackAppState(db, companyId = 1) {
     );
     branchLayouts[index] = safeJsonParse(layoutRow?.layout_json, defaultLayout());
   }
+
   return { admin, models: null, branchLayouts };
 }
 
@@ -865,6 +930,7 @@ async function getStoredAppState(db, companyId = 1) {
       .bind(companyId)
   );
   if (!row) return null;
+
   const savedAdmin = safeJsonParse(row.admin_json, null);
   return {
     admin: await buildAdminStateFromDb(db, companyId, savedAdmin),
@@ -881,7 +947,8 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
   };
 
   const branches = await all(
-    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
+      .bind(companyId)
   );
 
   const adminBranches = [];
@@ -890,6 +957,7 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
     const savedBranch = Array.isArray(savedAdmin?.branches)
       ? (savedAdmin.branches.find((b) => Number(b?.id) === Number(row.id)) || savedAdmin.branches[index] || {})
       : {};
+
     const branch = normalizeBranch(row);
     const sheet = await first(
       db.prepare(`
@@ -955,7 +1023,9 @@ async function getBranchById(db, id) {
 }
 
 async function getOwnedBranch(db, companyId, id) {
-  const row = await first(db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ?').bind(id, companyId));
+  const row = await first(
+    db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ?').bind(id, companyId)
+  );
   return normalizeBranch(row);
 }
 
@@ -1108,7 +1178,9 @@ function generateToken(size = 18) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let out = '';
   const bytes = crypto.getRandomValues(new Uint8Array(size));
-  for (let i = 0; i < bytes.length; i += 1) out += chars[bytes[i] % chars.length];
+  for (let i = 0; i < bytes.length; i += 1) {
+    out += chars[bytes[i] % chars.length];
+  }
   return out;
 }
 
@@ -1167,7 +1239,14 @@ async function handleSheetProbe(url) {
       );
       const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
         .filter((rw) => rw.some(hasVisibleValue));
-      return withJson({ ok: true, headers, headerIndex: 0, previewCount: rows.length, source: 'gviz-json' });
+
+      return withJson({
+        ok: true,
+        headers,
+        headerIndex: 0,
+        previewCount: rows.length,
+        source: 'gviz-json'
+      });
     }
   } catch (_err) {}
 
@@ -1179,7 +1258,10 @@ async function handleSheetRows(url) {
   const id = parseSheetId(url.searchParams.get('url') || '');
   const sheet = String(url.searchParams.get('sheet') || '').trim();
   const headerOnly = String(url.searchParams.get('headerOnly') || '') === '1';
-  const limit = Math.max(1, Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200)));
+  const limit = Math.max(
+    1,
+    Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200))
+  );
 
   if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios' }, 400);
   return withJson(await getSheetRowsPayload(id, sheet, limit, headerOnly));
@@ -1197,7 +1279,10 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
     if (r.ok) {
       const parsed = parseGoogleVizJson(await r.text());
       const table = parsed?.table || {};
-      const gvizHeaders = (table.cols || []).map((c, idx) => String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`);
+      const gvizHeaders = (table.cols || []).map((c, idx) =>
+        String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`
+      );
+
       const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
         .map((r0) => r0.map((v) => String(v ?? '').trim()))
         .filter((rw) => rw.some(hasVisibleValue));
@@ -1211,13 +1296,31 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
       const headers = dedupeHeaders(gvizHeaders.slice(0, lastCol + 1));
       const trimmedRows = rows.map((r0) => r0.slice(0, lastCol + 1));
 
-      if (headerOnly) return { ok: true, headers, headerIndex: 0, previewCount: trimmedRows.length, source: 'gviz-json' };
-      return { ok: true, headers, rows: trimmedRows.slice(0, limit), headerIndex: 0, totalRows: trimmedRows.length, source: 'gviz-json' };
+      if (headerOnly) {
+        return {
+          ok: true,
+          headers,
+          headerIndex: 0,
+          previewCount: trimmedRows.length,
+          source: 'gviz-json'
+        };
+      }
+
+      return {
+        ok: true,
+        headers,
+        rows: trimmedRows.slice(0, limit),
+        headerIndex: 0,
+        totalRows: trimmedRows.length,
+        source: 'gviz-json'
+      };
     }
   } catch (_err) {}
 
   const tryUrls = [];
-  if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  if (gid) {
+    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  }
   tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
 
   let rows = [];
@@ -1264,8 +1367,24 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const headers = dedupeHeaders(headerRow.slice(0, lastMeaningfulCol + 1));
   const dataRowsAll = dataRowsAllRaw.map((r0) => (r0 || []).slice(0, lastMeaningfulCol + 1));
 
-  if (headerOnly) return { ok: true, headers, headerIndex, previewCount: dataRowsAll.length, source };
-  return { ok: true, headers, rows: dataRowsAll.slice(0, limit), headerIndex, totalRows: dataRowsAll.length, source };
+  if (headerOnly) {
+    return {
+      ok: true,
+      headers,
+      headerIndex,
+      previewCount: dataRowsAll.length,
+      source
+    };
+  }
+
+  return {
+    ok: true,
+    headers,
+    rows: dataRowsAll.slice(0, limit),
+    headerIndex,
+    totalRows: dataRowsAll.length,
+    source
+  };
 }
 
 async function fetchSheetMeta(id) {
@@ -1273,9 +1392,11 @@ async function fetchSheetMeta(id) {
   const sheets = [];
   const re = /"sheetId":(\d+),"title":"([^"]+)"/g;
   let match;
+
   while ((match = re.exec(html))) {
     sheets.push({ gid: match[1], title: decodeUnicodeEscapes(match[2]) });
   }
+
   return { sheets };
 }
 
