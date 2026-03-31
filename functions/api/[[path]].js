@@ -22,7 +22,13 @@ export async function onRequest(context) {
       const session = await getSession(request, env.DB);
       if (!session) return withJson({ ok: false }, 401);
       const company = await getCompanyById(env.DB, session.company_id);
-      return withJson({ ok: true, user: session.username, role: session.role, company_name: company?.name || DEFAULT_COMPANY_NAME, company_code: company?.code || DEFAULT_COMPANY_CODE });
+      return withJson({
+        ok: true,
+        user: session.username,
+        role: session.role,
+        company_name: company?.name || DEFAULT_COMPANY_NAME,
+        company_code: company?.code || DEFAULT_COMPANY_CODE
+      });
     }
 
     if (path === '/login' && request.method === 'POST') {
@@ -31,10 +37,23 @@ export async function onRequest(context) {
       const password = String(body.password || '');
       if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
       const user = await getUserByUsername(env.DB, username);
-      if (!user || !(await verifyPassword(user.password_hash, password))) return withJson({ ok: false, error: 'Credenciales inválidas' }, 401);
+      if (!user || !(await verifyPassword(user.password_hash, password))) {
+        return withJson({ ok: false, error: 'Credenciales inválidas' }, 401);
+      }
       const company = await getCompanyById(env.DB, user.company_id);
-      const sid = await createSession(env.DB, { user_id: user.id, username: user.username, role: user.role, company_id: user.company_id });
-      return withJson({ ok: true, user: user.username, role: user.role, company_name: company?.name || DEFAULT_COMPANY_NAME, company_code: company?.code || DEFAULT_COMPANY_CODE }, 200, [makeSessionCookie(sid)]);
+      const sid = await createSession(env.DB, {
+        user_id: user.id,
+        username: user.username,
+        role: user.role,
+        company_id: user.company_id
+      });
+      return withJson({
+        ok: true,
+        user: user.username,
+        role: user.role,
+        company_name: company?.name || DEFAULT_COMPANY_NAME,
+        company_code: company?.code || DEFAULT_COMPANY_CODE
+      }, 200, [makeSessionCookie(sid)]);
     }
 
     if (path === '/register' && request.method === 'POST') {
@@ -47,10 +66,28 @@ export async function onRequest(context) {
       if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
       const existing = await getUserByUsername(env.DB, username);
       if (existing) return withJson({ ok: false, error: 'Ese usuario ya existe' }, 400);
-      const created = await createCompanyBundle(env.DB, { companyName, username, password, role: mode === 'viewer' ? 'viewer' : 'admin', companyCode });
+      const created = await createCompanyBundle(env.DB, {
+        companyName,
+        username,
+        password,
+        role: mode === 'viewer' ? 'viewer' : 'admin',
+        companyCode
+      });
       const company = await getCompanyById(env.DB, created.companyId);
-      const sid = await createSession(env.DB, { user_id: created.userId, username, role: mode === 'viewer' ? 'viewer' : 'admin', company_id: created.companyId });
-      return withJson({ ok: true, user: username, role: mode === 'viewer' ? 'viewer' : 'admin', company_name: company?.name || companyName, company_code: company?.code || '', message: mode === 'viewer' ? 'Cuenta visualizadora creada.' : 'Cuenta administradora creada.' }, 200, [makeSessionCookie(sid)]);
+      const sid = await createSession(env.DB, {
+        user_id: created.userId,
+        username,
+        role: mode === 'viewer' ? 'viewer' : 'admin',
+        company_id: created.companyId
+      });
+      return withJson({
+        ok: true,
+        user: username,
+        role: mode === 'viewer' ? 'viewer' : 'admin',
+        company_name: company?.name || companyName,
+        company_code: company?.code || '',
+        message: mode === 'viewer' ? 'Cuenta visualizadora creada.' : 'Cuenta administradora creada.'
+      }, 200, [makeSessionCookie(sid)]);
     }
 
     if (path === '/logout' && request.method === 'POST') {
@@ -73,6 +110,7 @@ export async function onRequest(context) {
       const admin = body.admin && typeof body.admin === 'object' ? body.admin : null;
       const models = Array.isArray(body.models) ? body.models : null;
       const branchLayouts = body.branchLayouts && typeof body.branchLayouts === 'object' ? body.branchLayouts : null;
+
       await env.DB.prepare(`
         INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at)
         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -81,18 +119,37 @@ export async function onRequest(context) {
           rack_models_json = excluded.rack_models_json,
           branch_layouts_json = excluded.branch_layouts_json,
           updated_at = CURRENT_TIMESTAMP
-      `).bind(session.company_id, JSON.stringify(admin), JSON.stringify(models), JSON.stringify(branchLayouts)).run();
+      `).bind(
+        session.company_id,
+        JSON.stringify(admin),
+        JSON.stringify(models),
+        JSON.stringify(branchLayouts)
+      ).run();
+
       const companyName = String(admin?.company || '').trim();
-      if (companyName) await env.DB.prepare('UPDATE companies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(companyName, session.company_id).run();
+      if (companyName) {
+        await env.DB.prepare(
+          'UPDATE companies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        ).bind(companyName, session.company_id).run();
+      }
+
       const companyCode = String(admin?.companyCode || '').trim();
-      if (companyCode) await env.DB.prepare('UPDATE companies SET code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(companyCode, session.company_id).run();
+      if (companyCode) {
+        await env.DB.prepare(
+          'UPDATE companies SET code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        ).bind(companyCode, session.company_id).run();
+      }
+
       return withJson({ ok: true });
     }
 
     if (path === '/branches' && request.method === 'GET') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
-      const rows = await all(env.DB.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(session.company_id));
+      const rows = await all(
+        env.DB.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
+          .bind(session.company_id)
+      );
       return withJson({ branches: rows.map(normalizeBranch) });
     }
 
@@ -106,9 +163,23 @@ export async function onRequest(context) {
       const warehouses = Array.isArray(body.warehouses) ? body.warehouses : ['Almacén principal'];
       const canvasWidth = Number(body.canvas_width || 900);
       const canvasHeight = Number(body.canvas_height || 620);
+
       if (!name) return withJson({ error: 'El nombre es obligatorio' }, 400);
+
       const safeSlug = await uniqueSlug(env.DB, slug, session.company_id);
-      const info = await env.DB.prepare(`INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).bind(session.company_id, name, type, safeSlug, JSON.stringify(warehouses), canvasWidth, canvasHeight).run();
+      const info = await env.DB.prepare(`
+        INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        session.company_id,
+        name,
+        type,
+        safeSlug,
+        JSON.stringify(warehouses),
+        canvasWidth,
+        canvasHeight
+      ).run();
+
       const branchId = Number(info.meta.last_row_id);
       await ensureBranchScaffolding(env.DB, branchId, canvasWidth, canvasHeight);
       return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
@@ -124,14 +195,34 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         const body = await readJson(request);
         const name = String(body.name || existing.name).trim();
         const type = String(body.type || existing.type).trim() || existing.type;
-        const slug = await uniqueSlug(env.DB, String(body.slug || existing.slug).trim(), session.company_id, branchId);
+        const slug = await uniqueSlug(
+          env.DB,
+          String(body.slug || existing.slug).trim(),
+          session.company_id,
+          branchId
+        );
         const warehouses = Array.isArray(body.warehouses) ? body.warehouses : existing.warehouses;
         const canvasWidth = Number(body.canvas_width || existing.canvas_width || 900);
         const canvasHeight = Number(body.canvas_height || existing.canvas_height || 620);
-        await env.DB.prepare(`UPDATE branches SET name = ?, type = ?, slug = ?, warehouses_json = ?, canvas_width = ?, canvas_height = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).bind(name, type, slug, JSON.stringify(warehouses), canvasWidth, canvasHeight, branchId).run();
+
+        await env.DB.prepare(`
+          UPDATE branches
+          SET name = ?, type = ?, slug = ?, warehouses_json = ?, canvas_width = ?, canvas_height = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(
+          name,
+          type,
+          slug,
+          JSON.stringify(warehouses),
+          canvasWidth,
+          canvasHeight,
+          branchId
+        ).run();
+
         return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
       }
 
@@ -140,8 +231,17 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
-        const total = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE active = 1 AND company_id = ?').bind(session.company_id), 'total');
-        if (Number(total || 0) <= 1) return withJson({ error: 'Debe quedar al menos una sucursal' }, 400);
+
+        const total = await firstValue(
+          env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE active = 1 AND company_id = ?')
+            .bind(session.company_id),
+          'total'
+        );
+
+        if (Number(total || 0) <= 1) {
+          return withJson({ error: 'Debe quedar al menos una sucursal' }, 400);
+        }
+
         await env.DB.prepare('DELETE FROM branches WHERE id = ?').bind(branchId).run();
         return withJson({ ok: true });
       }
@@ -151,10 +251,27 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
-        const row = await first(env.DB.prepare('SELECT layout_json, viewbox_json, updated_at FROM branch_layouts WHERE branch_id = ?').bind(branchId));
+        const row = await first(
+          env.DB.prepare('SELECT layout_json, viewbox_json, updated_at FROM branch_layouts WHERE branch_id = ?')
+            .bind(branchId)
+        );
         if (!row) return withJson({ error: 'Layout no encontrado' }, 404);
-        return withJson({ ok: true, layout: { layout: safeJsonParse(row.layout_json, defaultLayout()), viewBox: safeJsonParse(row.viewbox_json, { x: 0, y: 0, w: branch.canvas_width || 900, h: branch.canvas_height || 620 }), updated_at: row.updated_at } });
+
+        return withJson({
+          ok: true,
+          layout: {
+            layout: safeJsonParse(row.layout_json, defaultLayout()),
+            viewBox: safeJsonParse(row.viewbox_json, {
+              x: 0,
+              y: 0,
+              w: branch.canvas_width || 900,
+              h: branch.canvas_height || 620
+            }),
+            updated_at: row.updated_at
+          }
+        });
       }
 
       if (tail === '/layout' && request.method === 'POST') {
@@ -162,11 +279,20 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         const payload = await readJson(request);
         const layout = payload.layout && typeof payload.layout === 'object' ? payload.layout : defaultLayout();
-        const viewBox = payload.viewBox && typeof payload.viewBox === 'object' ? payload.viewBox : { x: 0, y: 0, w: branch.canvas_width || 900, h: branch.canvas_height || 620 };
+        const viewBox = payload.viewBox && typeof payload.viewBox === 'object'
+          ? payload.viewBox
+          : { x: 0, y: 0, w: branch.canvas_width || 900, h: branch.canvas_height || 620 };
+
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width || 900, branch.canvas_height || 620);
-        await env.DB.prepare('UPDATE branch_layouts SET layout_json = ?, viewbox_json = ?, updated_at = CURRENT_TIMESTAMP WHERE branch_id = ?').bind(JSON.stringify(layout), JSON.stringify(viewBox), branchId).run();
+        await env.DB.prepare(`
+          UPDATE branch_layouts
+          SET layout_json = ?, viewbox_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE branch_id = ?
+        `).bind(JSON.stringify(layout), JSON.stringify(viewBox), branchId).run();
+
         return withJson({ ok: true });
       }
 
@@ -175,10 +301,38 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
-        const row = await first(env.DB.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').bind(branchId));
-        const config = row || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet', sheet_map_json: null, imported_products_json: '[]', last_sheet_count: 0, sheet_headers_json: '[]', sheet_header_index: 0 };
-        return withJson({ ok: true, config: { ...config, sheet_map_rows: safeJsonParse(config.sheet_map_json, null), imported_products: safeJsonParse(config.imported_products_json, []), sheet_headers: safeJsonParse(config.sheet_headers_json, []), sheet_header_index: Number(config.sheet_header_index || 0) } });
+        const row = await first(
+          env.DB.prepare(`
+            SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json,
+                   last_sheet_count, sheet_headers_json, sheet_header_index
+            FROM branch_sheet_config
+            WHERE branch_id = ?
+          `).bind(branchId)
+        );
+
+        const config = row || {
+          sheet_id: '',
+          sheet_name: 'Productos',
+          source_type: 'google_sheet',
+          sheet_map_json: null,
+          imported_products_json: '[]',
+          last_sheet_count: 0,
+          sheet_headers_json: '[]',
+          sheet_header_index: 0
+        };
+
+        return withJson({
+          ok: true,
+          config: {
+            ...config,
+            sheet_map_rows: safeJsonParse(config.sheet_map_json, null),
+            imported_products: safeJsonParse(config.imported_products_json, []),
+            sheet_headers: safeJsonParse(config.sheet_headers_json, []),
+            sheet_header_index: Number(config.sheet_header_index || 0)
+          }
+        });
       }
 
       if (tail === '/sheet' && request.method === 'POST') {
@@ -186,9 +340,19 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         const body = await readJson(request);
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
-        const current = await first(env.DB.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').bind(branchId)) || {};
+
+        const current = await first(
+          env.DB.prepare(`
+            SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json,
+                   last_sheet_count, sheet_headers_json, sheet_header_index
+            FROM branch_sheet_config
+            WHERE branch_id = ?
+          `).bind(branchId)
+        ) || {};
+
         const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
         const sheet_id = has('sheet_id') ? String(body.sheet_id || '') : String(current.sheet_id || '');
         const sheet_name = has('sheet_name') ? String(body.sheet_name || 'Productos') : String(current.sheet_name || 'Productos');
@@ -198,7 +362,24 @@ export async function onRequest(context) {
         const last_sheet_count = has('last_sheet_count') ? Number(body.last_sheet_count || 0) : Number(current.last_sheet_count || 0);
         const sheet_headers = has('sheet_headers') ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
         const sheet_header_index = has('sheet_header_index') ? Number(body.sheet_header_index || 0) : Number(current.sheet_header_index || 0);
-        await env.DB.prepare(`UPDATE branch_sheet_config SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP WHERE branch_id = ?`).bind(sheet_id, sheet_name, source_type, JSON.stringify(sheet_map_rows), JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []), last_sheet_count, JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []), sheet_header_index, branchId).run();
+
+        await env.DB.prepare(`
+          UPDATE branch_sheet_config
+          SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?,
+              last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE branch_id = ?
+        `).bind(
+          sheet_id,
+          sheet_name,
+          source_type,
+          JSON.stringify(sheet_map_rows),
+          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []),
+          last_sheet_count,
+          JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
+          sheet_header_index,
+          branchId
+        ).run();
+
         return withJson({ ok: true });
       }
 
@@ -207,9 +388,19 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+
         const body = await readJson(request);
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
-        const current = await first(env.DB.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').bind(branchId)) || {};
+
+        const current = await first(
+          env.DB.prepare(`
+            SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json,
+                   last_sheet_count, sheet_headers_json, sheet_header_index
+            FROM branch_sheet_config
+            WHERE branch_id = ?
+          `).bind(branchId)
+        ) || {};
+
         const sheet_id = String(body.sheet_id != null ? body.sheet_id : (current.sheet_id || ''));
         const sheet_name = String(body.sheet_name != null ? body.sheet_name : (current.sheet_name || 'Productos'));
         const source_type = String(body.source_type != null ? body.source_type : (current.source_type || 'google_sheet'));
@@ -218,8 +409,28 @@ export async function onRequest(context) {
         const last_sheet_count = Number(current.last_sheet_count || (Array.isArray(imported_products) ? imported_products.length : 0) || 0);
         const sheet_headers = Array.isArray(body.sheet_headers) ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
         const sheet_header_index = Number(body.sheet_header_index != null ? body.sheet_header_index : (current.sheet_header_index || 0));
-        await env.DB.prepare(`UPDATE branch_sheet_config SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP WHERE branch_id = ?`).bind(sheet_id, sheet_name, source_type, JSON.stringify(sheet_map_rows), JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []), last_sheet_count, JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []), sheet_header_index, branchId).run();
-        return withJson({ ok: true, preserved_products: Array.isArray(imported_products) ? imported_products.length : 0 });
+
+        await env.DB.prepare(`
+          UPDATE branch_sheet_config
+          SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?,
+              last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE branch_id = ?
+        `).bind(
+          sheet_id,
+          sheet_name,
+          source_type,
+          JSON.stringify(sheet_map_rows),
+          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []),
+          last_sheet_count,
+          JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
+          sheet_header_index,
+          branchId
+        ).run();
+
+        return withJson({
+          ok: true,
+          preserved_products: Array.isArray(imported_products) ? imported_products.length : 0
+        });
       }
 
       if (tail === '/view-link' && request.method === 'POST') {
@@ -227,12 +438,20 @@ export async function onRequest(context) {
         if (session.error) return session.error;
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
-        let existing = await first(env.DB.prepare('SELECT token FROM viewer_links WHERE branch_id = ? AND active = 1 ORDER BY id DESC LIMIT 1').bind(branchId));
+
+        let existing = await first(
+          env.DB.prepare('SELECT token FROM viewer_links WHERE branch_id = ? AND active = 1 ORDER BY id DESC LIMIT 1')
+            .bind(branchId)
+        );
+
         if (!existing) {
           const token = generateToken();
-          await env.DB.prepare('INSERT INTO viewer_links (branch_id, token, active) VALUES (?, ?, 1)').bind(branchId, token).run();
+          await env.DB.prepare('INSERT INTO viewer_links (branch_id, token, active) VALUES (?, ?, 1)')
+            .bind(branchId, token)
+            .run();
           existing = { token };
         }
+
         const base = `${url.protocol}//${url.host}`;
         return withJson({ ok: true, token: existing.token, url: `${base}/viewer/${existing.token}` });
       }
@@ -241,13 +460,47 @@ export async function onRequest(context) {
     const tokenMatch = path.match(/^\/view-links\/([^/]+)$/);
     if (tokenMatch && request.method === 'GET') {
       const token = decodeURIComponent(tokenMatch[1]);
-      const link = await first(env.DB.prepare('SELECT * FROM viewer_links WHERE token = ? AND active = 1').bind(token));
+      const link = await first(
+        env.DB.prepare('SELECT * FROM viewer_links WHERE token = ? AND active = 1').bind(token)
+      );
       if (!link) return withJson({ error: 'Link no encontrado o inactivo' }, 404);
+
       const branch = await getBranchById(env.DB, link.branch_id);
-      const layout = await first(env.DB.prepare('SELECT layout_json, viewbox_json FROM branch_layouts WHERE branch_id = ?').bind(link.branch_id));
-      const sheet = await first(env.DB.prepare('SELECT sheet_id, sheet_name, source_type, imported_products_json, last_sheet_count, sheet_map_json, sheet_headers_json, sheet_header_index, updated_at FROM branch_sheet_config WHERE branch_id = ?').bind(link.branch_id));
+      const layout = await first(
+        env.DB.prepare('SELECT layout_json, viewbox_json FROM branch_layouts WHERE branch_id = ?')
+          .bind(link.branch_id)
+      );
+      const sheet = await first(
+        env.DB.prepare(`
+          SELECT sheet_id, sheet_name, source_type, imported_products_json, last_sheet_count,
+                 sheet_map_json, sheet_headers_json, sheet_header_index, updated_at
+          FROM branch_sheet_config
+          WHERE branch_id = ?
+        `).bind(link.branch_id)
+      );
+
       const importedProducts = safeJsonParse(sheet?.imported_products_json, []);
-      return withJson({ ok: true, branch, layout: { layout: safeJsonParse(layout?.layout_json, defaultLayout()), viewBox: safeJsonParse(layout?.viewbox_json, { x: 0, y: 0, w: branch?.canvas_width || 900, h: branch?.canvas_height || 620 }) }, sheet: { ...(sheet || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet' }), imported_products: importedProducts, last_sheet_count: Number(sheet?.last_sheet_count || importedProducts.length || 0), sheet_map_rows: safeJsonParse(sheet?.sheet_map_json, null), sheet_headers: safeJsonParse(sheet?.sheet_headers_json, []), sheet_header_index: Number(sheet?.sheet_header_index || 0) } });
+      return withJson({
+        ok: true,
+        branch,
+        layout: {
+          layout: safeJsonParse(layout?.layout_json, defaultLayout()),
+          viewBox: safeJsonParse(layout?.viewbox_json, {
+            x: 0,
+            y: 0,
+            w: branch?.canvas_width || 900,
+            h: branch?.canvas_height || 620
+          })
+        },
+        sheet: {
+          ...(sheet || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet' }),
+          imported_products: importedProducts,
+          last_sheet_count: Number(sheet?.last_sheet_count || importedProducts.length || 0),
+          sheet_map_rows: safeJsonParse(sheet?.sheet_map_json, null),
+          sheet_headers: safeJsonParse(sheet?.sheet_headers_json, []),
+          sheet_header_index: Number(sheet?.sheet_header_index || 0)
+        }
+      });
     }
 
     if (path === '/sheets/meta' && request.method === 'GET') {
@@ -268,12 +521,32 @@ export async function onRequest(context) {
     if (path === '/debug/persistence' && request.method === 'GET') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
-      const branchCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE company_id = ?').bind(session.company_id), 'total');
+
+      const branchCount = await firstValue(
+        env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE company_id = ?').bind(session.company_id),
+        'total'
+      );
       const sheetCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branch_sheet_config'), 'total');
       const layoutCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branch_layouts'), 'total');
-      const appStateCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM app_state_blobs WHERE company_id = ?').bind(session.company_id), 'total');
-      const lastBoot = await first(env.DB.prepare("SELECT value, updated_at FROM system_meta WHERE key = 'last_boot_at'"));
-      return withJson({ ok: true, data_dir: 'cloudflare-d1', db_path: env.DB_NAME || 'WMS_DB', company_id: session.company_id, branch_count: Number(branchCount || 0), sheet_count: Number(sheetCount || 0), layout_count: Number(layoutCount || 0), app_state_count: Number(appStateCount || 0), last_boot: lastBoot || null });
+      const appStateCount = await firstValue(
+        env.DB.prepare('SELECT COUNT(*) AS total FROM app_state_blobs WHERE company_id = ?').bind(session.company_id),
+        'total'
+      );
+      const lastBoot = await first(
+        env.DB.prepare("SELECT value, updated_at FROM system_meta WHERE key = 'last_boot_at'")
+      );
+
+      return withJson({
+        ok: true,
+        data_dir: 'cloudflare-d1',
+        db_path: env.DB_NAME || 'WMS_DB',
+        company_id: session.company_id,
+        branch_count: Number(branchCount || 0),
+        sheet_count: Number(sheetCount || 0),
+        layout_count: Number(layoutCount || 0),
+        app_state_count: Number(appStateCount || 0),
+        last_boot: lastBoot || null
+      });
     }
 
     return withJson({ ok: false, error: 'No encontrado' }, 404);
@@ -284,6 +557,7 @@ export async function onRequest(context) {
 
 async function ensureSchema(db, env) {
   if (env.__SCHEMA_READY) return;
+
   const now = new Date().toISOString();
   const defaultAdminUser = String(env.ADMIN_USERNAME || 'admin');
   const defaultAdminPassword = String(env.ADMIN_PASSWORD || 'admin123');
@@ -291,15 +565,16 @@ async function ensureSchema(db, env) {
   const defaultCompanyCode = String(env.DEFAULT_COMPANY_CODE || DEFAULT_COMPANY_CODE);
   const defaultHash = await hashPassword(defaultAdminPassword);
 
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS companies (
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS companies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       code TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS users (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NOT NULL,
       username TEXT NOT NULL UNIQUE,
@@ -308,15 +583,17 @@ async function ensureSchema(db, env) {
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS admin_config (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_config (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       username TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       company_name TEXT DEFAULT '${escapeSql(defaultCompanyName)}',
       company_id INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS branches (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS branches (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NOT NULL DEFAULT 1,
       name TEXT NOT NULL,
@@ -329,8 +606,9 @@ async function ensureSchema(db, env) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(company_id, slug)
-    );
-    CREATE TABLE IF NOT EXISTS branch_sheet_config (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS branch_sheet_config (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL UNIQUE,
       sheet_id TEXT,
@@ -342,63 +620,159 @@ async function ensureSchema(db, env) {
       last_sheet_count INTEGER NOT NULL DEFAULT 0,
       sheet_headers_json TEXT,
       sheet_header_index INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS branch_layouts (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS branch_layouts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL UNIQUE,
       layout_json TEXT NOT NULL,
       viewbox_json TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS viewer_links (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS viewer_links (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL,
       token TEXT NOT NULL UNIQUE,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS app_state_blobs (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS app_state_blobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NOT NULL UNIQUE,
       admin_json TEXT,
       rack_models_json TEXT,
       branch_layouts_json TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS system_meta (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS system_meta (
       key TEXT PRIMARY KEY,
       value TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS sessions_store (
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS sessions_store (
       sid TEXT PRIMARY KEY,
       sess_json TEXT NOT NULL,
       expires_at INTEGER NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+    )`)
+  ]);
 
-  await db.prepare(`INSERT INTO system_meta (key, value, updated_at) VALUES ('last_boot_at', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).bind(now).run();
-  await db.prepare(`INSERT INTO system_meta (key, value, updated_at) VALUES ('db_path', ?, CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`).bind('cloudflare-d1').run();
-  await db.prepare(`INSERT INTO companies (id, name, code, updated_at) VALUES (1, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO NOTHING`).bind(defaultCompanyName, defaultCompanyCode).run();
-  await db.prepare(`INSERT INTO admin_config (id, username, password_hash, company_name, company_id) VALUES (1, ?, ?, ?, 1) ON CONFLICT(id) DO NOTHING`).bind(defaultAdminUser, defaultHash, defaultCompanyName).run();
-  await db.prepare(`INSERT INTO users (company_id, username, password_hash, role, updated_at) VALUES (1, ?, ?, 'admin', CURRENT_TIMESTAMP) ON CONFLICT(username) DO NOTHING`).bind(defaultAdminUser, defaultHash).run();
+  await db.prepare(`
+    INSERT INTO system_meta (key, value, updated_at)
+    VALUES ('last_boot_at', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = CURRENT_TIMESTAMP
+  `).bind(now).run();
 
-  const branchCount = Number(await firstValue(db.prepare('SELECT COUNT(*) AS total FROM branches WHERE company_id = 1'), 'total') || 0);
+  await db.prepare(`
+    INSERT INTO system_meta (key, value, updated_at)
+    VALUES ('db_path', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = CURRENT_TIMESTAMP
+  `).bind('cloudflare-d1').run();
+
+  await db.prepare(`
+    INSERT INTO companies (id, name, code, updated_at)
+    VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO NOTHING
+  `).bind(defaultCompanyName, defaultCompanyCode).run();
+
+  await db.prepare(`
+    INSERT INTO admin_config (id, username, password_hash, company_name, company_id)
+    VALUES (1, ?, ?, ?, 1)
+    ON CONFLICT(id) DO NOTHING
+  `).bind(defaultAdminUser, defaultHash, defaultCompanyName).run();
+
+  await db.prepare(`
+    INSERT INTO users (company_id, username, password_hash, role, updated_at)
+    VALUES (1, ?, ?, 'admin', CURRENT_TIMESTAMP)
+    ON CONFLICT(username) DO NOTHING
+  `).bind(defaultAdminUser, defaultHash).run();
+
+  const branchCount = Number(
+    await firstValue(
+      db.prepare('SELECT COUNT(*) AS total FROM branches WHERE company_id = 1'),
+      'total'
+    ) || 0
+  );
+
   if (branchCount === 0) {
-    const result = await db.prepare(`INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at) VALUES (1, 'Sucursal principal', 'tienda', 'sucursal-principal', ?, 900, 620, CURRENT_TIMESTAMP)`).bind(JSON.stringify(['Almacén principal'])).run();
+    const result = await db.prepare(`
+      INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at)
+      VALUES (1, 'Sucursal principal', 'tienda', 'sucursal-principal', ?, 900, 620, CURRENT_TIMESTAMP)
+    `).bind(JSON.stringify(['Almacén principal'])).run();
+
     const branchId = Number(result.meta.last_row_id);
     await ensureBranchScaffolding(db, branchId, 900, 620);
-    await db.prepare(`INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at) VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(company_id) DO NOTHING`).bind(JSON.stringify({ company: defaultCompanyName, companyCode: defaultCompanyCode, logo: '', branches: [{ id: branchId, name: 'Sucursal principal', type: 'tienda', color: '#ffd84d', warehouses: ['Almacén principal'], sheetUrl: '', sheetName: 'Productos', sheetConnected: false, lastSheetCount: 0, sheetHeaders: [], sheetStatusText: '', sheetHeaderIndex: 0, sheetPreviewProducts: [], sheetMapRows: null }], activeBranch: 0 }), JSON.stringify(null), JSON.stringify({ '0': defaultLayout() })).run();
+
+    await db.prepare(`
+      INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at)
+      VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(company_id) DO NOTHING
+    `).bind(
+      JSON.stringify({
+        company: defaultCompanyName,
+        companyCode: defaultCompanyCode,
+        logo: '',
+        branches: [{
+          id: branchId,
+          name: 'Sucursal principal',
+          type: 'tienda',
+          color: '#ffd84d',
+          warehouses: ['Almacén principal'],
+          sheetUrl: '',
+          sheetName: 'Productos',
+          sheetConnected: false,
+          lastSheetCount: 0,
+          sheetHeaders: [],
+          sheetStatusText: '',
+          sheetHeaderIndex: 0,
+          sheetPreviewProducts: [],
+          sheetMapRows: null
+        }],
+        activeBranch: 0
+      }),
+      JSON.stringify(null),
+      JSON.stringify({ '0': defaultLayout() })
+    ).run();
   }
+
   env.__SCHEMA_READY = true;
 }
 
 async function ensureBranchScaffolding(db, branchId, width = 900, height = 620) {
   const layout = await first(db.prepare('SELECT id FROM branch_layouts WHERE branch_id = ?').bind(branchId));
-  if (!layout) await db.prepare('INSERT INTO branch_layouts (branch_id, layout_json, viewbox_json, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)').bind(branchId, JSON.stringify(defaultLayout()), JSON.stringify({ x: 0, y: 0, w: width, h: height })).run();
+  if (!layout) {
+    await db.prepare(`
+      INSERT INTO branch_layouts (branch_id, layout_json, viewbox_json, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      branchId,
+      JSON.stringify(defaultLayout()),
+      JSON.stringify({ x: 0, y: 0, w: width, h: height })
+    ).run();
+  }
+
   const sheet = await first(db.prepare('SELECT id FROM branch_sheet_config WHERE branch_id = ?').bind(branchId));
-  if (!sheet) await db.prepare(`INSERT INTO branch_sheet_config (branch_id, sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, updated_at) VALUES (?, '', 'Productos', 'google_sheet', ?, ?, 0, ?, 0, CURRENT_TIMESTAMP)`).bind(branchId, JSON.stringify(null), JSON.stringify([]), JSON.stringify([])).run();
+  if (!sheet) {
+    await db.prepare(`
+      INSERT INTO branch_sheet_config (
+        branch_id, sheet_id, sheet_name, source_type, sheet_map_json,
+        imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, updated_at
+      ) VALUES (?, '', 'Productos', 'google_sheet', ?, ?, 0, ?, 0, CURRENT_TIMESTAMP)
+    `).bind(
+      branchId,
+      JSON.stringify(null),
+      JSON.stringify([]),
+      JSON.stringify([])
+    ).run();
+  }
 }
 
 async function createCompanyBundle(db, { companyName, username, password, role = 'admin', companyCode = null }) {
@@ -406,67 +780,165 @@ async function createCompanyBundle(db, { companyName, username, password, role =
     const company = await first(db.prepare('SELECT * FROM companies WHERE code = ?').bind(companyCode));
     if (!company) throw new Error('Código de empresa inválido');
     const hash = await hashPassword(password);
-    const info = await db.prepare('INSERT INTO users (company_id, username, password_hash, role, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)').bind(company.id, username, hash, 'viewer').run();
+    const info = await db.prepare(`
+      INSERT INTO users (company_id, username, password_hash, role, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).bind(company.id, username, hash, 'viewer').run();
     return { companyId: Number(company.id), code: company.code, userId: Number(info.meta.last_row_id) };
   }
+
   const code = await uniqueCompanyCode(db, companyName);
-  const companyInfo = await db.prepare('INSERT INTO companies (name, code, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').bind(companyName, code).run();
+  const companyInfo = await db.prepare(`
+    INSERT INTO companies (name, code, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+  `).bind(companyName, code).run();
+
   const companyId = Number(companyInfo.meta.last_row_id);
-  const branchInfo = await db.prepare(`INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at) VALUES (?, 'Sucursal principal', 'tienda', 'sucursal-principal', ?, 900, 620, CURRENT_TIMESTAMP)`).bind(companyId, JSON.stringify(['Almacén principal'])).run();
+
+  const branchInfo = await db.prepare(`
+    INSERT INTO branches (company_id, name, type, slug, warehouses_json, canvas_width, canvas_height, updated_at)
+    VALUES (?, 'Sucursal principal', 'tienda', 'sucursal-principal', ?, 900, 620, CURRENT_TIMESTAMP)
+  `).bind(companyId, JSON.stringify(['Almacén principal'])).run();
+
   const branchId = Number(branchInfo.meta.last_row_id);
   await ensureBranchScaffolding(db, branchId, 900, 620);
-  await db.prepare('INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)').bind(companyId, JSON.stringify({ company: companyName, companyCode: code, logo: '', branches: [{ id: branchId, name: 'Sucursal principal', type: 'tienda', color: '#ffd84d', warehouses: ['Almacén principal'], sheetUrl: '', sheetName: 'Productos', sheetConnected: false, lastSheetCount: 0, sheetHeaders: [], sheetStatusText: '', sheetHeaderIndex: 0, sheetPreviewProducts: [], sheetMapRows: null }], activeBranch: 0 }), JSON.stringify(null), JSON.stringify({ '0': defaultLayout() })).run();
+
+  await db.prepare(`
+    INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(
+    companyId,
+    JSON.stringify({
+      company: companyName,
+      companyCode: code,
+      logo: '',
+      branches: [{
+        id: branchId,
+        name: 'Sucursal principal',
+        type: 'tienda',
+        color: '#ffd84d',
+        warehouses: ['Almacén principal'],
+        sheetUrl: '',
+        sheetName: 'Productos',
+        sheetConnected: false,
+        lastSheetCount: 0,
+        sheetHeaders: [],
+        sheetStatusText: '',
+        sheetHeaderIndex: 0,
+        sheetPreviewProducts: [],
+        sheetMapRows: null
+      }],
+      activeBranch: 0
+    }),
+    JSON.stringify(null),
+    JSON.stringify({ '0': defaultLayout() })
+  ).run();
+
   const hash = await hashPassword(password);
-  const userInfo = await db.prepare('INSERT INTO users (company_id, username, password_hash, role, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)').bind(companyId, username, hash, 'admin').run();
+  const userInfo = await db.prepare(`
+    INSERT INTO users (company_id, username, password_hash, role, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(companyId, username, hash, 'admin').run();
+
   return { companyId, code, userId: Number(userInfo.meta.last_row_id) };
 }
 
 async function buildFallbackAppState(db, companyId = 1) {
   const admin = await buildAdminStateFromDb(db, companyId, null);
-  const branches = await all(db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId));
+  const branches = await all(
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+  );
   const branchLayouts = {};
   for (let index = 0; index < branches.length; index += 1) {
     const row = branches[index];
-    const layoutRow = await first(db.prepare('SELECT layout_json FROM branch_layouts WHERE branch_id = ?').bind(row.id));
+    const layoutRow = await first(
+      db.prepare('SELECT layout_json FROM branch_layouts WHERE branch_id = ?').bind(row.id)
+    );
     branchLayouts[index] = safeJsonParse(layoutRow?.layout_json, defaultLayout());
   }
   return { admin, models: null, branchLayouts };
 }
 
 async function getStoredAppState(db, companyId = 1) {
-  const row = await first(db.prepare('SELECT admin_json, rack_models_json, branch_layouts_json, updated_at FROM app_state_blobs WHERE company_id = ?').bind(companyId));
+  const row = await first(
+    db.prepare('SELECT admin_json, rack_models_json, branch_layouts_json, updated_at FROM app_state_blobs WHERE company_id = ?')
+      .bind(companyId)
+  );
   if (!row) return null;
   const savedAdmin = safeJsonParse(row.admin_json, null);
-  return { admin: await buildAdminStateFromDb(db, companyId, savedAdmin), models: safeJsonParse(row.rack_models_json, null), branchLayouts: safeJsonParse(row.branch_layouts_json, null), updated_at: row.updated_at };
+  return {
+    admin: await buildAdminStateFromDb(db, companyId, savedAdmin),
+    models: safeJsonParse(row.rack_models_json, null),
+    branchLayouts: safeJsonParse(row.branch_layouts_json, null),
+    updated_at: row.updated_at
+  };
 }
 
 async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
-  const companyRow = await getCompanyById(db, companyId) || { name: DEFAULT_COMPANY_NAME, code: DEFAULT_COMPANY_CODE };
-  const branches = await all(db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId));
+  const companyRow = await getCompanyById(db, companyId) || {
+    name: DEFAULT_COMPANY_NAME,
+    code: DEFAULT_COMPANY_CODE
+  };
+
+  const branches = await all(
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+  );
+
   const adminBranches = [];
   for (let index = 0; index < branches.length; index += 1) {
     const row = branches[index];
-    const savedBranch = Array.isArray(savedAdmin?.branches) ? (savedAdmin.branches.find((b) => Number(b?.id) === Number(row.id)) || savedAdmin.branches[index] || {}) : {};
+    const savedBranch = Array.isArray(savedAdmin?.branches)
+      ? (savedAdmin.branches.find((b) => Number(b?.id) === Number(row.id)) || savedAdmin.branches[index] || {})
+      : {};
     const branch = normalizeBranch(row);
-    const sheet = await first(db.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').bind(row.id)) || {};
+    const sheet = await first(
+      db.prepare(`
+        SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json,
+               last_sheet_count, sheet_headers_json, sheet_header_index
+        FROM branch_sheet_config
+        WHERE branch_id = ?
+      `).bind(row.id)
+    ) || {};
+
     adminBranches.push({
       id: row.id,
       name: savedBranch.name || branch.name,
       type: savedBranch.type || branch.type,
       color: savedBranch.color || '#ffd84d',
-      warehouses: Array.isArray(savedBranch.warehouses) && savedBranch.warehouses.length ? savedBranch.warehouses : (Array.isArray(branch.warehouses) && branch.warehouses.length ? branch.warehouses : ['Almacén principal']),
+      warehouses:
+        Array.isArray(savedBranch.warehouses) && savedBranch.warehouses.length
+          ? savedBranch.warehouses
+          : (Array.isArray(branch.warehouses) && branch.warehouses.length
+              ? branch.warehouses
+              : ['Almacén principal']),
       sheetUrl: sheet.sheet_id || savedBranch.sheetUrl || '',
       sheetName: sheet.sheet_name || savedBranch.sheetName || 'Productos',
       sheetConnected: !!(sheet.sheet_id && sheet.sheet_name),
       lastSheetCount: Number(sheet.last_sheet_count || savedBranch.lastSheetCount || 0),
-      sheetHeaders: safeJsonParse(sheet.sheet_headers_json, Array.isArray(savedBranch.sheetHeaders) ? savedBranch.sheetHeaders : []),
+      sheetHeaders: safeJsonParse(
+        sheet.sheet_headers_json,
+        Array.isArray(savedBranch.sheetHeaders) ? savedBranch.sheetHeaders : []
+      ),
       sheetStatusText: savedBranch.sheetStatusText || '',
       sheetHeaderIndex: Number(sheet.sheet_header_index || savedBranch.sheetHeaderIndex || 0),
-      sheetPreviewProducts: safeJsonParse(sheet.imported_products_json, Array.isArray(savedBranch.sheetPreviewProducts) ? savedBranch.sheetPreviewProducts : []),
-      sheetMapRows: safeJsonParse(sheet.sheet_map_json, Array.isArray(savedBranch.sheetMapRows) ? savedBranch.sheetMapRows : null),
+      sheetPreviewProducts: safeJsonParse(
+        sheet.imported_products_json,
+        Array.isArray(savedBranch.sheetPreviewProducts) ? savedBranch.sheetPreviewProducts : []
+      ),
+      sheetMapRows: safeJsonParse(
+        sheet.sheet_map_json,
+        Array.isArray(savedBranch.sheetMapRows) ? savedBranch.sheetMapRows : null
+      )
     });
   }
-  return { company: savedAdmin?.company || companyRow.name || DEFAULT_COMPANY_NAME, companyCode: companyRow.code || savedAdmin?.companyCode || DEFAULT_COMPANY_CODE, logo: savedAdmin?.logo || '', branches: adminBranches, activeBranch: Number(savedAdmin?.activeBranch || 0) };
+
+  return {
+    company: savedAdmin?.company || companyRow.name || DEFAULT_COMPANY_NAME,
+    companyCode: companyRow.code || savedAdmin?.companyCode || DEFAULT_COMPANY_CODE,
+    logo: savedAdmin?.logo || '',
+    branches: adminBranches,
+    activeBranch: Number(savedAdmin?.activeBranch || 0)
+  };
 }
 
 async function getCompanyById(db, id) {
@@ -489,28 +961,61 @@ async function getOwnedBranch(db, companyId, id) {
 
 function normalizeBranch(row) {
   if (!row) return null;
-  return { id: Number(row.id), name: row.name, type: row.type, slug: row.slug, warehouses: safeJsonParse(row.warehouses_json, []), canvas_width: Number(row.canvas_width || 900), canvas_height: Number(row.canvas_height || 620), active: !!row.active, created_at: row.created_at, updated_at: row.updated_at };
+  return {
+    id: Number(row.id),
+    name: row.name,
+    type: row.type,
+    slug: row.slug,
+    warehouses: safeJsonParse(row.warehouses_json, []),
+    canvas_width: Number(row.canvas_width || 900),
+    canvas_height: Number(row.canvas_height || 620),
+    active: !!row.active,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
 }
 
 async function getSession(request, db, allowAnonymous = false) {
   const sid = readCookie(request, COOKIE_NAME);
   if (!sid) return allowAnonymous ? null : null;
-  const row = await first(db.prepare('SELECT sess_json, expires_at FROM sessions_store WHERE sid = ?').bind(sid));
+
+  const row = await first(
+    db.prepare('SELECT sess_json, expires_at FROM sessions_store WHERE sid = ?').bind(sid)
+  );
   if (!row) return null;
+
   if (Number(row.expires_at || 0) <= Date.now()) {
     await db.prepare('DELETE FROM sessions_store WHERE sid = ?').bind(sid).run();
     return null;
   }
+
   const sess = safeJsonParse(row.sess_json, null);
   if (!sess || !sess.isAuthenticated) return null;
-  await db.prepare('UPDATE sessions_store SET expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE sid = ?').bind(Date.now() + SESSION_TTL_MS, sid).run();
+
+  await db.prepare(`
+    UPDATE sessions_store
+    SET expires_at = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE sid = ?
+  `).bind(Date.now() + SESSION_TTL_MS, sid).run();
+
   return sess;
 }
 
 async function createSession(db, data) {
   const sid = crypto.randomUUID().replace(/-/g, '');
-  const sess = { isAuthenticated: true, user_id: Number(data.user_id || 0), username: String(data.username || ''), role: String(data.role || 'viewer'), company_id: Number(data.company_id || 1) };
-  await db.prepare('INSERT INTO sessions_store (sid, sess_json, expires_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)').bind(sid, JSON.stringify(sess), Date.now() + SESSION_TTL_MS).run();
+  const sess = {
+    isAuthenticated: true,
+    user_id: Number(data.user_id || 0),
+    username: String(data.username || ''),
+    role: String(data.role || 'viewer'),
+    company_id: Number(data.company_id || 1)
+  };
+
+  await db.prepare(`
+    INSERT INTO sessions_store (sid, sess_json, expires_at, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+  `).bind(sid, JSON.stringify(sess), Date.now() + SESSION_TTL_MS).run();
+
   return sid;
 }
 
@@ -523,37 +1028,79 @@ async function requireAuth(request, db) {
 async function requireAdmin(request, db) {
   const session = await getSession(request, db);
   if (!session) return { error: withJson({ ok: false, error: 'No autorizado' }, 401) };
-  if (String(session.role || '') !== 'admin') return { error: withJson({ ok: false, error: 'Solo administradores' }, 403) };
+  if (String(session.role || '') !== 'admin') {
+    return { error: withJson({ ok: false, error: 'Solo administradores' }, 403) };
+  }
   return session;
 }
 
 function defaultLayout() {
-  return { zones: [ { id: 'Z1', name: 'Zona Z1', color: '#ffd84d', pts: [{ x: 60, y: 60 }, { x: 300, y: 60 }, { x: 300, y: 210 }, { x: 60, y: 210 }] }, { id: 'Z2', name: 'Zona Z2', color: '#4dd6ff', pts: [{ x: 350, y: 60 }, { x: 620, y: 60 }, { x: 620, y: 250 }, { x: 350, y: 250 }] }, { id: 'Z3', name: 'Zona Z3', color: '#50e37b', pts: [{ x: 90, y: 290 }, { x: 350, y: 290 }, { x: 350, y: 520 }, { x: 90, y: 520 }] } ], racks: [] };
+  return {
+    zones: [
+      {
+        id: 'Z1',
+        name: 'Zona Z1',
+        color: '#ffd84d',
+        pts: [{ x: 60, y: 60 }, { x: 300, y: 60 }, { x: 300, y: 210 }, { x: 60, y: 210 }]
+      },
+      {
+        id: 'Z2',
+        name: 'Zona Z2',
+        color: '#4dd6ff',
+        pts: [{ x: 350, y: 60 }, { x: 620, y: 60 }, { x: 620, y: 250 }, { x: 350, y: 250 }]
+      },
+      {
+        id: 'Z3',
+        name: 'Zona Z3',
+        color: '#50e37b',
+        pts: [{ x: 90, y: 290 }, { x: 350, y: 290 }, { x: 350, y: 520 }, { x: 90, y: 520 }]
+      }
+    ],
+    racks: []
+  };
 }
 
 function slugify(value) {
-  return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `item-${Date.now()}`;
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || `item-${Date.now()}`;
 }
 
 async function uniqueSlug(db, baseSlug, companyId, ignoreBranchId = 0) {
   const base = slugify(baseSlug || `sucursal-${Date.now()}`);
   let candidate = base;
   let i = 2;
+
   while (true) {
     const row = ignoreBranchId
-      ? await first(db.prepare('SELECT id FROM branches WHERE company_id = ? AND slug = ? AND id <> ?').bind(companyId, candidate, ignoreBranchId))
-      : await first(db.prepare('SELECT id FROM branches WHERE company_id = ? AND slug = ?').bind(companyId, candidate));
+      ? await first(
+          db.prepare('SELECT id FROM branches WHERE company_id = ? AND slug = ? AND id <> ?')
+            .bind(companyId, candidate, ignoreBranchId)
+        )
+      : await first(
+          db.prepare('SELECT id FROM branches WHERE company_id = ? AND slug = ?')
+            .bind(companyId, candidate)
+        );
+
     if (!row) return candidate;
     candidate = `${base}-${i++}`;
   }
 }
 
 async function uniqueCompanyCode(db, base = 'WMS') {
-  const cleaned = String(base || 'WMS').replace(/[^A-Z0-9]/gi, '').slice(0, 6).toUpperCase() || 'WMS';
+  const cleaned = String(base || 'WMS')
+    .replace(/[^A-Z0-9]/gi, '')
+    .slice(0, 6)
+    .toUpperCase() || 'WMS';
+
   let code = '';
   do {
     code = `${cleaned}-${generateToken(6).toUpperCase()}`;
   } while (await first(db.prepare('SELECT id FROM companies WHERE code = ?').bind(code)));
+
   return code;
 }
 
@@ -567,7 +1114,9 @@ function generateToken(size = 18) {
 
 function readCookie(request, name) {
   const cookie = request.headers.get('cookie') || '';
-  const match = cookie.match(new RegExp(`(?:^|;\\s*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=([^;]+)`));
+  const match = cookie.match(
+    new RegExp(`(?:^|;\\s*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=([^;]+)`)
+  );
   return match ? decodeURIComponent(match[1]) : '';
 }
 
@@ -602,18 +1151,26 @@ async function handleSheetProbe(url) {
   const id = parseSheetId(url.searchParams.get('url') || '');
   const sheet = String(url.searchParams.get('sheet') || '').trim();
   if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios' }, 400);
+
   const gid = await resolveSheetGid(id, sheet);
   try {
-    const jsonUrl = gid ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1` : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+    const jsonUrl = gid
+      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+
     const r = await fetch(jsonUrl);
     if (r.ok) {
       const parsed = parseGoogleVizJson(await r.text());
       const table = parsed?.table || {};
-      const headers = dedupeHeaders((table.cols || []).map((c, idx) => String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`));
-      const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : '')))).filter((rw) => rw.some(hasVisibleValue));
+      const headers = dedupeHeaders(
+        (table.cols || []).map((c, idx) => String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`)
+      );
+      const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
+        .filter((rw) => rw.some(hasVisibleValue));
       return withJson({ ok: true, headers, headerIndex: 0, previewCount: rows.length, source: 'gviz-json' });
     }
   } catch (_err) {}
+
   const rowsPayload = await getSheetRowsPayload(id, sheet, 200, true);
   return withJson(rowsPayload);
 }
@@ -623,27 +1180,37 @@ async function handleSheetRows(url) {
   const sheet = String(url.searchParams.get('sheet') || '').trim();
   const headerOnly = String(url.searchParams.get('headerOnly') || '') === '1';
   const limit = Math.max(1, Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200)));
+
   if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios' }, 400);
   return withJson(await getSheetRowsPayload(id, sheet, limit, headerOnly));
 }
 
 async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const gid = await resolveSheetGid(id, sheet);
+
   try {
-    const jsonUrl = gid ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1` : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+    const jsonUrl = gid
+      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+
     const r = await fetch(jsonUrl);
     if (r.ok) {
       const parsed = parseGoogleVizJson(await r.text());
       const table = parsed?.table || {};
       const gvizHeaders = (table.cols || []).map((c, idx) => String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`);
-      const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : '')))).map((r0) => r0.map((v) => String(v ?? '').trim())).filter((rw) => rw.some(hasVisibleValue));
+      const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
+        .map((r0) => r0.map((v) => String(v ?? '').trim()))
+        .filter((rw) => rw.some(hasVisibleValue));
+
       const lastCol = gvizHeaders.reduce((last, h, i) => {
         if (hasVisibleValue(h)) return i;
         if (rows.some((r0) => hasVisibleValue((r0 || [])[i]))) return i;
         return last;
       }, 0);
+
       const headers = dedupeHeaders(gvizHeaders.slice(0, lastCol + 1));
       const trimmedRows = rows.map((r0) => r0.slice(0, lastCol + 1));
+
       if (headerOnly) return { ok: true, headers, headerIndex: 0, previewCount: trimmedRows.length, source: 'gviz-json' };
       return { ok: true, headers, rows: trimmedRows.slice(0, limit), headerIndex: 0, totalRows: trimmedRows.length, source: 'gviz-json' };
     }
@@ -652,31 +1219,51 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const tryUrls = [];
   if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
   tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
+
   let rows = [];
   let source = gid ? 'csv-gid' : 'csv-sheet';
+
   for (const csvUrl of tryUrls) {
     try {
       const response = await fetch(csvUrl);
       if (!response.ok) continue;
       const csv = await response.text();
       const parsed = parseCsv(csv).map((row) => row.map((v) => String(v || '').trim()));
-      if (parsed.some((r0) => r0.some(hasVisibleValue))) { rows = parsed; source = csvUrl.includes('gid=') ? 'csv-gid' : 'csv-sheet'; break; }
+      if (parsed.some((r0) => r0.some(hasVisibleValue))) {
+        rows = parsed;
+        source = csvUrl.includes('gid=') ? 'csv-gid' : 'csv-sheet';
+        break;
+      }
     } catch (_err) {}
   }
+
   const nonEmptyRows = rows.filter((r0) => r0.some(hasVisibleValue));
   if (!nonEmptyRows.length) throw new Error('La hoja está vacía o no se pudo leer');
+
   let headerIndex = 0;
   let headerRow = nonEmptyRows[0] || [];
-  if ((headerRow.filter(hasVisibleValue).length <= 1) && nonEmptyRows[1] && nonEmptyRows[1].filter(hasVisibleValue).length >= 2) { headerIndex = 1; headerRow = nonEmptyRows[1] || []; }
+  if ((headerRow.filter(hasVisibleValue).length <= 1) && nonEmptyRows[1] && nonEmptyRows[1].filter(hasVisibleValue).length >= 2) {
+    headerIndex = 1;
+    headerRow = nonEmptyRows[1] || [];
+  }
+
   const dataRowsAllRaw = nonEmptyRows.slice(headerIndex + 1);
   const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map((r0) => r0.length), 0);
+
   let lastMeaningfulCol = 0;
   for (let i = 0; i < maxLen; i += 1) {
-    if (hasVisibleValue(headerRow[i])) { lastMeaningfulCol = i; continue; }
-    if (dataRowsAllRaw.slice(0, 200).some((r0) => hasVisibleValue((r0 || [])[i]))) lastMeaningfulCol = i;
+    if (hasVisibleValue(headerRow[i])) {
+      lastMeaningfulCol = i;
+      continue;
+    }
+    if (dataRowsAllRaw.slice(0, 200).some((r0) => hasVisibleValue((r0 || [])[i]))) {
+      lastMeaningfulCol = i;
+    }
   }
+
   const headers = dedupeHeaders(headerRow.slice(0, lastMeaningfulCol + 1));
   const dataRowsAll = dataRowsAllRaw.map((r0) => (r0 || []).slice(0, lastMeaningfulCol + 1));
+
   if (headerOnly) return { ok: true, headers, headerIndex, previewCount: dataRowsAll.length, source };
   return { ok: true, headers, rows: dataRowsAll.slice(0, limit), headerIndex, totalRows: dataRowsAll.length, source };
 }
@@ -694,7 +1281,9 @@ async function fetchSheetMeta(id) {
 
 async function resolveSheetGid(id, sheetName) {
   const meta = await fetchSheetMeta(id);
-  const hit = (meta.sheets || []).find((s) => String(s.title || '').trim().toLowerCase() === String(sheetName || '').trim().toLowerCase());
+  const hit = (meta.sheets || []).find(
+    (s) => String(s.title || '').trim().toLowerCase() === String(sheetName || '').trim().toLowerCase()
+  );
   return hit ? String(hit.gid) : '';
 }
 
@@ -710,21 +1299,46 @@ function parseCsv(text) {
   let cell = '';
   let inQuotes = false;
   const src = String(text || '');
+
   for (let i = 0; i < src.length; i += 1) {
     const ch = src[i];
     const next = src[i + 1];
+
     if (inQuotes) {
-      if (ch === '"' && next === '"') { cell += '"'; i += 1; continue; }
-      if (ch === '"') { inQuotes = false; continue; }
+      if (ch === '"' && next === '"') {
+        cell += '"';
+        i += 1;
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = false;
+        continue;
+      }
       cell += ch;
       continue;
     }
-    if (ch === '"') { inQuotes = true; continue; }
-    if (ch === ',') { row.push(cell); cell = ''; continue; }
-    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
+
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ',') {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+    if (ch === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
     if (ch === '\r') continue;
+
     cell += ch;
   }
+
   row.push(cell);
   rows.push(row);
   return rows;
@@ -752,21 +1366,34 @@ function parseSheetId(input) {
 }
 
 function decodeUnicodeEscapes(str) {
-  return String(str || '').replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16))).replace(/\\"/g, '"');
+  return String(str || '')
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/\\"/g, '"');
 }
 
 async function readJson(request) {
-  try { return await request.json(); } catch (_err) { return {}; }
+  try {
+    return await request.json();
+  } catch (_err) {
+    return {};
+  }
 }
 
 function withJson(data, status = 200, cookies = []) {
-  const headers = new Headers({ 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  const headers = new Headers({
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store'
+  });
   for (const cookie of cookies) headers.append('set-cookie', cookie);
   return new Response(JSON.stringify(data), { status, headers });
 }
 
 function safeJsonParse(value, fallback) {
-  try { return value == null || value === '' ? fallback : JSON.parse(value); } catch (_err) { return fallback; }
+  try {
+    return value == null || value === '' ? fallback : JSON.parse(value);
+  } catch (_err) {
+    return fallback;
+  }
 }
 
 async function first(stmt) {
