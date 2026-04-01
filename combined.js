@@ -201,16 +201,6 @@
     .product-list{overflow:visible;min-height:0;max-height:none}
     .product-row{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);color:var(--muted);font-size:13px;cursor:pointer;transition:.16s ease}
     .product-row:hover,.product-row.active{background:rgba(54,163,255,.09);color:var(--text)}
-    .product-cell{min-width:0}
-    .product-cell b{color:var(--text)}
-    .cell-label{display:none;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
-    .product-row.mobile-card{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:16px;margin:10px 12px;background:rgba(255,255,255,.03)}
-    .product-row.mobile-card .product-cell{display:block}
-    .product-row.mobile-card .cell-label{display:block}
-    .product-row.mobile-card .span-2{grid-column:1 / -1}
-    .product-row.mobile-card .loc-pill{display:inline-flex;max-width:100%;white-space:normal;word-break:break-word}
-    .product-list.mobile-list{display:grid;gap:0;padding-bottom:12px}
-    .product-head.mobile-hidden{display:none}
     .loc-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,216,77,.18);background:rgba(255,216,77,.11);color:#ffe27a;font-size:11px;font-weight:800}
     .product-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:space-between}
     .product-toolbar-actions{display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin-left:auto}
@@ -241,7 +231,7 @@
     .search-branch-host{display:none;margin-bottom:12px}
     .search-branch-host.active{display:block}
     @media (max-width:1200px){.search-card{grid-template-columns:180px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.product-toolbar-actions{justify-content:flex-start}}
-    @media (max-width:760px){.search-card{grid-template-columns:1fr}.product-photo{min-height:220px;max-height:260px}.search-card-title-row{flex-direction:column;align-items:flex-start}.search-results-wrap{overflow:visible}.product-list{padding:0 0 10px}.product-head{position:static}.search-panel{grid-template-rows:auto auto auto auto minmax(0,1fr)}.active-product-card{position:static;width:100%}}
+    @media (max-width:760px){.search-card{grid-template-columns:1fr}.product-photo{min-height:220px;max-height:260px}.search-card-title-row{flex-direction:column;align-items:flex-start}}
     .search-branch-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg, rgba(30,84,69,.22), rgba(10,20,20,.6));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
     .search-branch-card .branch-copy{display:grid;gap:3px;min-width:0}
     .search-branch-card .branch-copy b{font-size:13px}
@@ -2089,7 +2079,6 @@ function escapeHtml(str){
     const frag = document.createDocumentFragment();
     const maxRows = appState.ui.productGroupMode ? 220 : 450;
     const items = [];
-    const isMobileCards = window.matchMedia('(max-width: 760px)').matches;
     if(appState.ui.productGroupMode){
       const groups = new Map();
       list.forEach(p => {
@@ -2105,43 +2094,30 @@ function escapeHtml(str){
       list.slice(0, maxRows).forEach(p => items.push({ type:'product', data:p }));
     }
     productList.innerHTML = '';
-    productList.classList.toggle('mobile-list', isMobileCards);
-    const head = document.querySelector('.product-head');
-    if(head) head.classList.toggle('mobile-hidden', isMobileCards);
     items.forEach(entry => {
       const row = document.createElement('div');
-      const isActive = entry.type==='product' && (appState.selectedProduct?.sku === entry.data.sku) && (appState.selectedProduct?.variante === entry.data.variante);
-      row.className = 'product-row' + (isActive ? ' active' : '') + (isMobileCards ? ' mobile-card' : '');
+      row.className = 'product-row' + ((entry.type==='product' && (appState.selectedProduct?.sku === entry.data.sku) && (appState.selectedProduct?.variante === entry.data.variante)) ? ' active' : '');
       if(entry.type === 'group'){
         const g = entry.data;
         const first = g.items[0];
         const variantes = Array.from(new Set(g.items.map(p => (p.variante || '').trim()).filter(Boolean)));
         const ubicaciones = Array.from(new Set(g.items.map(p => (p.ubicacion || '').trim()).filter(Boolean)));
-        row.innerHTML = isMobileCards ? `
-          <div class="product-cell span-2"><div class="cell-label">Producto</div><b>${escapeHtml(g.nombre)}</b><div class="tiny muted" style="margin-top:4px">SKU base: ${escapeHtml(first.sku || '—')}</div></div>
-          <div class="product-cell"><div class="cell-label">Variantes</div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'}</span></div>
-          <div class="product-cell"><div class="cell-label">Ubicaciones</div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${ubicaciones.length} ubicaci${ubicaciones.length === 1 ? 'ón' : 'ones'}</span></div>
-          <div class="product-cell span-2"><div class="cell-label">Primera ubicación</div><span class="loc-pill">${escapeHtml(first.ubicacion || '—')}</span></div>
-          <div class="product-cell span-2"><div class="cell-label">Almacén</div>${escapeHtml(first.almacen || '—')}</div>` : `
-          <div class="product-cell"><b>${escapeHtml(first.sku || '—')}</b></div>
-          <div class="product-cell">${escapeHtml(g.nombre)}</div>
-          <div class="product-cell"><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'} • ${ubicaciones.length} ubicaci${ubicaciones.length === 1 ? 'ón' : 'ones'}</span></div>
-          <div class="product-cell"><span class="loc-pill">${escapeHtml(first.ubicacion || '—')}</span></div>
-          <div class="product-cell">${escapeHtml(first.almacen || '—')}</div>`;
+        row.innerHTML = `
+          <div><b>${escapeHtml(first.sku || '—')}</b></div>
+          <div>${escapeHtml(g.nombre)}</div>
+          <div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'} • ${ubicaciones.length} ubicaci${ubicaciones.length === 1 ? 'ón' : 'ones'}</span></div>
+          <div><span class="loc-pill">${escapeHtml(first.ubicacion || '—')}</span></div>
+          <div>${escapeHtml(first.almacen || '—')}</div>`;
         row.title = 'Familia agrupada por nombre de producto';
         row.addEventListener('click', () => selectProduct(first));
       } else {
         const p = entry.data;
-        row.innerHTML = isMobileCards ? `
-          <div class="product-cell span-2"><div class="cell-label">Producto</div><b>${escapeHtml(p.nombre || '—')}</b><div class="tiny muted" style="margin-top:4px">SKU ${escapeHtml(p.sku || '—')}</div></div>
-          <div class="product-cell"><div class="cell-label">Variante</div><span class="variant-chip muted ${getVariantToneKey(p.variante)}" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${escapeHtml(p.variante || '—')}</span></div>
-          <div class="product-cell"><div class="cell-label">Almacén</div>${escapeHtml(p.almacen || '—')}</div>
-          <div class="product-cell span-2"><div class="cell-label">Ubicación</div><span class="loc-pill">${escapeHtml(p.ubicacion || '—')}</span></div></div>` : `
-          <div class="product-cell"><b>${escapeHtml(p.sku || '—')}</b></div>
-          <div class="product-cell">${escapeHtml(p.nombre || '—')}</div>
-          <div class="product-cell"><span class="variant-chip muted ${getVariantToneKey(p.variante)}" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${escapeHtml(p.variante || '—')}</span></div>
-          <div class="product-cell"><span class="loc-pill">${escapeHtml(p.ubicacion || '—')}</span></div>
-          <div class="product-cell">${escapeHtml(p.almacen || '—')}</div>`;
+        row.innerHTML = `
+          <div><b>${p.sku}</b></div>
+          <div>${p.nombre}</div>
+          <div><span class="variant-chip muted ${getVariantToneKey(p.variante)}" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${escapeHtml(p.variante || '—')}</span></div>
+          <div><span class="loc-pill">${p.ubicacion}</span></div>
+          <div>${p.almacen}</div>`;
         row.addEventListener('click', () => selectProduct(p));
       }
       frag.appendChild(row);
