@@ -497,6 +497,15 @@
   .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
   .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
+  .branches-toolbar.sheet-toolbar-minimal{justify-content:flex-end;align-items:center;padding:10px 16px 8px;border-bottom:none;background:transparent}
+  .branches-toolbar.sheet-toolbar-minimal:empty{display:none}
+  .branches-toolbar.sheet-toolbar-minimal .save-strip{width:auto;justify-content:flex-end}
+  .branches-toolbar.sheet-toolbar-minimal .save-strip .btn{min-width:170px}
+  .branches-panel.sheet-compact .branches-scroll{padding-top:8px}
+  .app.sheet-swap-layout .search-panel .search-shell,.app.sheet-swap-layout .search-top + .product-toolbar{max-inline-size:none;margin-inline:0}
+  .app.sheet-swap-layout .search-panel .search-card{max-inline-size:none;justify-self:stretch;grid-template-columns:minmax(180px,32%) minmax(0,1fr)}
+  .app.sheet-swap-layout .search-panel .search-card-body{grid-template-rows:auto auto 1fr}
+
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
 
 
