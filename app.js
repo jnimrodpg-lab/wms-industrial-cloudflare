@@ -2429,7 +2429,8 @@
     const openMap = getSheetBranchOpenMap();
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
-    setTags([]);
+    setTags(['por sucursal','fila 1','columnas visibles','orden']);
+    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="sheet-layout-toggle" id="btnSheetExpand">${appState.ui.sheetExpanded ? 'Reducir panel' : 'Expandir panel'}<span>${appState.ui.sheetExpanded ? '2X' : 'X→2X'}</span></button>`);
     renderSheetDetailPreview();
 
     contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar"><div><b style="font-size:18px;letter-spacing:.2px">Vinculación por sucursal</b><div class="tiny muted" style="margin-top:6px;max-width:860px;line-height:1.45">1) Guarda sucursal + hoja 2) Se listan los encabezados de la fila 1 3) Elige qué columnas usar y en qué orden verlas</div></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
@@ -4558,7 +4559,7 @@ function zoomLayout(factor, center){
     contentSubtitle.textContent = 'Diseña modelos reutilizables de rack, sus niveles y su preview técnico.';
     detailTitle.textContent = 'Preview del modelo';
     detailSubtitle.textContent = 'Arrastra para mover y usa la rueda para acercar o alejar.';
-    setTags([]);
+    setTags(['modelos', 'niveles', 'preview', 'biblioteca']);
 
     if (!Array.isArray(appState.models) || !appState.models.length){
       appState.models = [
@@ -5190,22 +5191,7 @@ function zoomLayout(factor, center){
   menuItems.forEach(item => { item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; }; });
   btnSearch.addEventListener('click', filterProducts);
   searchInput.addEventListener('input', debounce(filterProducts, 120));
-  const syncGroupToggleButtons = () => {
-  const topBtn = $('#toggleGroupProducts');
-  const bottomBtn = $('#toggleGroupProductsBottom');
-  const label = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias';
-  [topBtn, bottomBtn].forEach(btn => {
-    if(!btn) return;
-    btn.classList.toggle('active', appState.ui.productGroupMode);
-    btn.textContent = label;
-    btn.onclick = () => {
-      appState.ui.productGroupMode = !appState.ui.productGroupMode;
-      syncGroupToggleButtons();
-      renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products);
-    };
-  });
-};
-if($('#toggleGroupProducts') || $('#toggleGroupProductsBottom')) { syncGroupToggleButtons(); }
+  if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = !appState.ui.productGroupMode; $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
   btnStopScanner.addEventListener('click', stopScanner);

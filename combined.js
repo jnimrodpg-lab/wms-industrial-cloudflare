@@ -497,15 +497,6 @@
   .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
   .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
-  .branches-toolbar.sheet-toolbar-minimal{justify-content:flex-end;align-items:center;padding:10px 16px 8px;border-bottom:none;background:transparent}
-  .branches-toolbar.sheet-toolbar-minimal:empty{display:none}
-  .branches-toolbar.sheet-toolbar-minimal .save-strip{width:auto;justify-content:flex-end}
-  .branches-toolbar.sheet-toolbar-minimal .save-strip .btn{min-width:170px}
-  .branches-panel.sheet-compact .branches-scroll{padding-top:8px}
-  .app.sheet-swap-layout .search-panel .search-shell,.app.sheet-swap-layout .search-top + .product-toolbar{max-inline-size:none;margin-inline:0}
-  .app.sheet-swap-layout .search-panel .search-card{max-inline-size:none;justify-self:stretch;grid-template-columns:minmax(180px,32%) minmax(0,1fr)}
-  .app.sheet-swap-layout .search-panel .search-card-body{grid-template-rows:auto auto 1fr}
-
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
 
 
@@ -1161,7 +1152,7 @@ body.theme-light .seg-btn,
       <div class="product-toolbar">
         <span class="muted tiny" id="productSummary">Mostrando 0 resultados</span>
         <div class="product-toolbar-actions">
-          <button class="seg-btn" id="toggleGroupProductsBottom">Ver individual</button>
+          <span class="chip" id="sheetStatusChip">Sheet demo</span>
         </div>
       </div>
       <div class="search-results-wrap">
@@ -8457,22 +8448,7 @@ function zoomLayout(factor, center){
   menuItems.forEach(item => { item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; }; });
   btnSearch.addEventListener('click', filterProducts);
   searchInput.addEventListener('input', debounce(filterProducts, 120));
-  const syncGroupToggleButtons = () => {
-  const topBtn = $('#toggleGroupProducts');
-  const bottomBtn = $('#toggleGroupProductsBottom');
-  const label = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias';
-  [topBtn, bottomBtn].forEach(btn => {
-    if(!btn) return;
-    btn.classList.toggle('active', appState.ui.productGroupMode);
-    btn.textContent = label;
-    btn.onclick = () => {
-      appState.ui.productGroupMode = !appState.ui.productGroupMode;
-      syncGroupToggleButtons();
-      renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products);
-    };
-  });
-};
-if($('#toggleGroupProducts') || $('#toggleGroupProductsBottom')) { syncGroupToggleButtons(); }
+  if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = !appState.ui.productGroupMode; $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
   btnStopScanner.addEventListener('click', stopScanner);
