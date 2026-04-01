@@ -3556,11 +3556,102 @@ function escapeHtml(str){
     bindAdminScreenEvents();
   }
   function renderBranchCard(branch,index){ return `<div class="branch-card${index!==appState.admin.activeBranch?' collapsed':''}" data-branch-card="${index}"><div class="branch-head"><button class="tiny-btn" data-action="toggle-branch" data-index="${index}">${index===appState.admin.activeBranch?'−':'+'}</button><input data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name)}"><input type="color" data-field="branch-color" data-index="${index}" value="${escapeHtml(branch.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}" title="Color identificador" class="company-color-circle"><button class="tiny-btn" data-action="move-up" data-index="${index}">↑</button><button class="tiny-btn" data-action="move-down" data-index="${index}">↓</button><button class="tiny-btn danger" data-action="delete-branch" data-index="${index}">🗑</button></div><div class="branch-body"><div><label class="tiny muted">Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div><div class="grid"><label class="tiny muted">Almacenes</label><div style="display:grid;gap:8px">${(branch.warehouses||[]).map((w,wi)=>`<div class="ware-row"><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(w)}"><button class="tiny-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}">🗑</button></div>`).join('')}</div></div><button class="tiny-btn" data-action="add-warehouse" data-index="${index}">＋ Almacén</button></div></div>`; }
+  function normalizeCompanyBranchForApi(branch){
+    const warehouses = (Array.isArray(branch?.warehouses) ? branch.warehouses : ['Almacén principal'])
+      .map(x => String(x || '').trim())
+      .filter(Boolean);
+    return {
+      id: Number.isFinite(Number(branch?.id)) ? Number(branch.id) : null,
+      name: String(branch?.name || '').trim(),
+      type: String(branch?.type || 'tienda').trim() || 'tienda',
+      color: branch?.color || (ZONE_COLOR_PALETTE[0] || '#ffd84d'),
+      warehouses: warehouses.length ? warehouses : ['Almacén principal'],
+      sheetUrl: String(branch?.sheetUrl || ''),
+      sheetName: String(branch?.sheetName || 'Productos'),
+      sheetConnected: !!branch?.sheetConnected,
+      lastSheetCount: Number(branch?.lastSheetCount || 0),
+      sheetHeaders: Array.isArray(branch?.sheetHeaders) ? branch.sheetHeaders : [],
+      sheetStatusText: String(branch?.sheetStatusText || ''),
+      sheetHeaderIndex: Number(branch?.sheetHeaderIndex || 0),
+      sheetPreviewProducts: Array.isArray(branch?.sheetPreviewProducts) ? branch.sheetPreviewProducts : [],
+      sheetMapRows: Array.isArray(branch?.sheetMapRows) ? branch.sheetMapRows : []
+    };
+  }
+
+  function mergeBranchState(localBranch, remoteBranch){
+    const safeLocal = normalizeCompanyBranchForApi(localBranch);
+    return {
+      ...safeLocal,
+      ...(remoteBranch || {}),
+      id: Number(remoteBranch?.id),
+      color: safeLocal.color || remoteBranch?.color || (ZONE_COLOR_PALETTE[0] || '#ffd84d'),
+      warehouses: Array.isArray(safeLocal.warehouses) && safeLocal.warehouses.length
+        ? safeLocal.warehouses
+        : (Array.isArray(remoteBranch?.warehouses) && remoteBranch.warehouses.length ? remoteBranch.warehouses : ['Almacén principal'])
+    };
+  }
+
+  async function persistCompanyBranches(){
+    const localBranches = (appState.admin?.branches || []).map(normalizeCompanyBranchForApi);
+    if(!localBranches.length) throw new Error('Debe existir al menos una sucursal.');
+
+    const remoteData = await httpJson('/api/branches');
+    const remoteBranches = Array.isArray(remoteData?.branches) ? remoteData.branches : [];
+    const remoteIds = new Set(remoteBranches.map(b => Number(b.id)).filter(Number.isFinite));
+    const keptIds = new Set();
+    const persisted = [];
+
+    for(const branch of localBranches){
+      if(!branch.name) throw new Error('Cada sucursal debe tener nombre.');
+      const payload = {
+        name: branch.name,
+        type: branch.type,
+        warehouses: branch.warehouses
+      };
+      let saved;
+      if(Number.isFinite(branch.id) && remoteIds.has(branch.id)) {
+        const data = await httpJson(`/api/branches/${branch.id}`, {
+          method:'PUT',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify(payload)
+        });
+        saved = data?.branch;
+        keptIds.add(Number(branch.id));
+      } else {
+        const data = await httpJson('/api/branches', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify(payload)
+        });
+        saved = data?.branch;
+        if(Number.isFinite(Number(saved?.id))) keptIds.add(Number(saved.id));
+      }
+      if(!Number.isFinite(Number(saved?.id))) throw new Error('No se pudo obtener un ID válido para la sucursal.');
+      persisted.push(mergeBranchState(branch, saved));
+    }
+
+    for(const remote of remoteBranches){
+      const rid = Number(remote?.id);
+      if(Number.isFinite(rid) && !keptIds.has(rid)) {
+        try {
+          await httpJson(`/api/branches/${rid}`, { method:'DELETE' });
+        } catch (err) {
+          console.warn('No se pudo eliminar la sucursal remota', rid, err);
+        }
+      }
+    }
+
+    appState.admin.branches = persisted;
+    appState.admin.activeBranch = Math.max(0, Math.min(Number(appState.admin.activeBranch || 0), persisted.length - 1));
+    saveAdminState();
+    return persisted;
+  }
+
   function bindAdminScreenEvents(){
     $('#companyNameInput').addEventListener('input', e=>appState.admin.company=e.target.value); $('#companyLogoBtn').onclick=()=>$('#companyLogoInput').click();
     $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
-    $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#ffd84d'),warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
-    $('#saveCompanyBtn').onclick=async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); alert('Configuración guardada.'); renderAdminScreen(); };
+    $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#ffd84d'),warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0, sheetHeaders:[], sheetMapRows:[]}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
+    $('#saveCompanyBtn').onclick=async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } try{ await persistCompanyBranches(); await saveRemoteAppState('empresa'); alert('Configuración guardada.'); renderAdminScreen(); }catch(err){ console.error(err); alert(err.message || 'No se pudo guardar la configuración de sucursales.'); } };
     contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
     contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
     contentWrap.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });

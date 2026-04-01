@@ -1,16 +1,17 @@
 {
-  "name": "wms-cloudflare-pages-d1",
+  "name": "wms-branch-viewer-app",
   "version": "1.0.0",
   "private": true,
-  "description": "WMS Industrial migrado a Cloudflare Pages + D1",
+  "description": "WMS básico con sucursales, layout persistente, Google Sheets y links de visualización.",
+  "main": "server.js",
   "scripts": {
-    "dev": "wrangler pages dev public",
-    "deploy": "wrangler pages deploy public",
-    "d1:create": "wrangler d1 create wms-industrial-db",
-    "d1:migrate": "wrangler d1 execute wms-industrial-db --file=./migrations/0001_init.sql",
-    "export:legacy": "node ./scripts/sqlite-to-d1-export.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
-  "devDependencies": {
-    "wrangler": "^4.10.0"
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1"
   }
 }

@@ -1,35 +1,44 @@
-# WMS Industrial en Cloudflare Pages + D1
+# WMS Industrial listo para publicación
 
-Este paquete migra tu WMS desde Express + SQLite en Render a **Cloudflare Pages Functions + D1**.
+Esta versión está preparada para ejecutarse localmente o desplegarse en un servicio Node.js como Render.
 
 ## Qué incluye
-- Frontend estático en `public/index.html`
-- API serverless compatible con tu frontend actual en `functions/api/[[path]].js`
-- Persistencia en D1 para layouts, racks, vinculación de Sheets y links de visualización por sucursal
-- Script para exportar tu SQLite legado a SQL compatible con D1
+- Persistencia local con SQLite en `data/wms.sqlite`
+- Login de administrador
+- Guardado de layouts
+- Guardado de modelos de rack
+- Frontend servido desde `public/`
 
-## Pasos
-1. Instala dependencias:
-   `npm install`
-2. Crea la base D1:
-   `npm run d1:create`
-3. Copia el `database_id` generado y colócalo en `wrangler.toml`
-4. Aplica el esquema base:
-   `npm run d1:migrate`
-5. Opcional: exporta tu SQLite legado:
-   `npm run export:legacy -- ./ruta/a/wms.sqlite ./migrations/legacy-export.sql`
-6. Importa ese SQL a D1:
-   `wrangler d1 execute wms-industrial-db --file=./migrations/legacy-export.sql`
-7. Prueba localmente:
-   `npm run dev`
-8. Despliega a Pages:
-   `npm run deploy`
+## Credenciales iniciales
+- Usuario: `admin`
+- Contraseña: `admin123`
 
-## Variables importantes
-- `ADMIN_USERNAME`
-- `ADMIN_PASSWORD`
-- `DEFAULT_COMPANY_NAME`
-- `DEFAULT_COMPANY_CODE`
+## Ejecutar localmente
+```bash
+npm install
+npm start
+```
+Luego abre `http://localhost:3000`
+
+## Variables de entorno
+Copia `.env.example` y define al menos:
+- `SESSION_SECRET`
+- `PORT` (opcional)
+- `NODE_ENV=production` en despliegue
+
+## Publicar en Render
+1. Sube este proyecto a GitHub.
+2. Crea un nuevo servicio Web en Render.
+3. Usa:
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+4. Agrega un disco persistente montado en `/opt/render/project/src/data`
+5. Configura `SESSION_SECRET` como variable de entorno.
+
+## Estructura importante
+- `server.js`: backend Express + API + SQLite
+- `public/index.html`: frontend principal
+- `data/wms.sqlite`: base de datos actual
 
 ## Nota
-La API mantiene las rutas `/api/...` que ya usa tu frontend, por lo que la migración visual es mínima.
+No se incluye `node_modules` en este ZIP. Ejecuta `npm install` después de descargarlo.
