@@ -40,12 +40,12 @@
       --sidebar-w-collapsed:74px;
       --search-w:clamp(320px,25vw,390px);
       --viewer-search-w:clamp(380px,30vw,520px);
-      --search-sheet-w:clamp(420px,34vw,560px);
+      --search-sheet-w:clamp(540px,40vw,760px);
       --content-sheet-min:720px;
-      --sheet-main-fr:.72fr;
-      --sheet-search-fr:1.2fr;
-      --sheet-main-fr-expanded:.88fr;
-      --sheet-search-fr-expanded:1.16fr;
+      --sheet-main-fr:.58fr;
+      --sheet-search-fr:1.42fr;
+      --sheet-main-fr-expanded:.72fr;
+      --sheet-search-fr-expanded:1.52fr;
       --rack-w:clamp(280px,22vw,360px);
       --detail-panel-w:clamp(272px,20vw,312px);
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
@@ -444,7 +444,7 @@
       .app{padding:10px}
     }
     @media (max-width: 1440px){
-      :root{--sidebar-w:208px;--search-w:330px;--viewer-search-w:500px;--search-sheet-w:460px;--rack-w:300px;--content-sheet-min:560px;--desktop-gap:10px}
+      :root{--sidebar-w:208px;--search-w:330px;--viewer-search-w:500px;--search-sheet-w:560px;--rack-w:300px;--content-sheet-min:500px;--desktop-gap:10px}
       .panel-header{padding:12px 14px}
       .search-top{padding:12px}
       .search-card{grid-template-columns:180px minmax(0,1fr)}
@@ -530,10 +530,23 @@
   .branches-toolbar.sheet-toolbar-minimal:empty{display:none}
   .branches-toolbar.sheet-toolbar-minimal .save-strip{width:auto;justify-content:flex-end}
   .branches-toolbar.sheet-toolbar-minimal .save-strip .btn{min-width:170px}
+  #contentTags.sheet-header-actions{display:flex;align-items:center;justify-content:flex-end;inline-size:auto;gap:10px}
+  #contentTags.sheet-header-actions .btn{min-width:176px}
+  .sheet-screen-shell{height:100%;display:flex;flex-direction:column}
+  .sheet-screen-shell .branches-panel.sheet-compact{min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)}
+  .sheet-screen-shell .branches-scroll{max-height:none;flex:1;padding:4px 18px 18px}
+  .sheet-screen-shell .sheet-branch-list{padding-top:0}
+  .app.sheet-swap-layout .search-panel .search-top{padding:12px 14px 10px}
+  .app.sheet-swap-layout .search-panel .search-card{min-height:340px}
+  .app.sheet-swap-layout .search-panel .search-card-meta{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .app.sheet-swap-layout .search-panel .search-card-media,.app.sheet-swap-layout .search-panel .product-photo{min-height:100%;height:100%}
+  .app.sheet-swap-layout .search-panel .product-photo{aspect-ratio:3/4;max-height:none}
+  @media (max-width: 1400px){.app.sheet-swap-layout{grid-template-columns:var(--sidebar-w) minmax(0,.6fr) minmax(520px,1.4fr)}.app.sheet-swap-layout.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) minmax(0,.6fr) minmax(520px,1.4fr)}}
+  @media (max-width: 1180px){#contentTags.sheet-header-actions .btn{min-width:150px}}
   .branches-panel.sheet-compact .branches-scroll{padding-top:8px}
   .app.sheet-swap-layout .search-panel .search-shell,.app.sheet-swap-layout .search-top + .product-toolbar{max-inline-size:none;margin-inline:0}
-  .app.sheet-swap-layout .search-panel .search-card{max-inline-size:none;justify-self:stretch;grid-template-columns:minmax(180px,32%) minmax(0,1fr)}
-  .app.sheet-swap-layout .search-panel .search-card-body{grid-template-rows:auto auto 1fr}
+  .app.sheet-swap-layout .search-panel .search-card{max-inline-size:none;justify-self:stretch;grid-template-columns:minmax(210px,30%) minmax(0,1fr);align-items:stretch}
+  .app.sheet-swap-layout .search-panel .search-card-body{grid-template-rows:auto auto 1fr;align-content:stretch;min-height:0}
 
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
 
@@ -1154,9 +1167,9 @@ body.theme-light .seg-btn,
       .search-card{padding:14px}
       .searchbar{grid-template-columns:minmax(0,1fr) 50px minmax(136px,auto)}
       .search-panel .panel-header{padding:12px 14px}
-      .app.sheet-swap-layout{grid-template-columns:var(--sidebar-w) minmax(0,.68fr) minmax(420px,1.22fr)}
-      .app.sheet-swap-layout.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) minmax(0,.68fr) minmax(420px,1.22fr)}
-      .app.sheet-swap-layout .search-panel .search-card{grid-template-columns:minmax(170px,36%) minmax(0,1fr)}
+      .app.sheet-swap-layout{grid-template-columns:var(--sidebar-w) minmax(0,.58fr) minmax(500px,1.34fr)}
+      .app.sheet-swap-layout.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) minmax(0,.58fr) minmax(500px,1.34fr)}
+      .app.sheet-swap-layout .search-panel .search-card{grid-template-columns:minmax(190px,30%) minmax(0,1fr)}
     }
     @media (max-width: 1180px){
       .search-top{top:8px}
@@ -2036,6 +2049,7 @@ function escapeHtml(str){
   }
 
   function setTags(tags=[]){
+    contentTags.className = 'tag-row';
     contentTags.innerHTML = tags.map(t => {
       const item = typeof t === 'string' ? { label:t, active:true } : (t || {});
       const label = escapeHtml(String(item.label || ''));
@@ -4621,6 +4635,8 @@ function escapeHtml(str){
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
     setTags([]);
+    contentTags.className = 'tag-row sheet-header-actions';
+    contentTags.innerHTML = '<button class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button>';
     renderSheetDetailPreview();
     const currentSheetIndex = getCurrentSheetBranchIndex();
     const currentSheetBranch = (appState.admin?.branches || [])[currentSheetIndex];
@@ -4630,7 +4646,7 @@ function escapeHtml(str){
       countProducts.textContent = currentSheetBranch.sheetPreviewProducts.length.toLocaleString('es-PE');
     }
 
-    contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel sheet-compact" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar sheet-toolbar-minimal"><div class="save-strip"><button class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:8px 18px 18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
+    contentWrap.innerHTML = `<div class="sheet-screen-shell"><div class="branches-panel sheet-compact"><div class="branches-scroll" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
       const isOpen = !!openMap[i];
       const statusClass = b.sheetConnected ? 'ok' : (b.sheetUrl || b.sheetName ? 'warn' : '');
       const statusText = b.sheetStatusText || (b.sheetConnected ? `Vinculado • ${Number(b.lastSheetCount||0).toLocaleString('es-PE')} filas` : 'Sin vincular');
@@ -7747,7 +7763,6 @@ function zoomLayout(factor, center){
     detailTitle.textContent = 'Preview del modelo';
     detailSubtitle.textContent = 'Arrastra para mover y usa la rueda para acercar o alejar.';
     setTags([]);
-
     if (!Array.isArray(appState.models) || !appState.models.length){
       appState.models = [
         { id:'std_4', name:'Rack estándar 4 niveles', levels:4, width:120, depth:40, height:240, clearance:0, style:'metallic', slots:2, beam:2 },
