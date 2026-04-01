@@ -5190,7 +5190,22 @@ function zoomLayout(factor, center){
   menuItems.forEach(item => { item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; }; });
   btnSearch.addEventListener('click', filterProducts);
   searchInput.addEventListener('input', debounce(filterProducts, 120));
-  if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = !appState.ui.productGroupMode; $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
+  const syncGroupToggleButtons = () => {
+  const topBtn = $('#toggleGroupProducts');
+  const bottomBtn = $('#toggleGroupProductsBottom');
+  const label = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias';
+  [topBtn, bottomBtn].forEach(btn => {
+    if(!btn) return;
+    btn.classList.toggle('active', appState.ui.productGroupMode);
+    btn.textContent = label;
+    btn.onclick = () => {
+      appState.ui.productGroupMode = !appState.ui.productGroupMode;
+      syncGroupToggleButtons();
+      renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products);
+    };
+  });
+};
+if($('#toggleGroupProducts') || $('#toggleGroupProductsBottom')) { syncGroupToggleButtons(); }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
   btnStopScanner.addEventListener('click', stopScanner);
