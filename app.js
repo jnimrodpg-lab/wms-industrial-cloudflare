@@ -505,17 +505,23 @@
       const isViewer = screen === 'viewer';
       detailPanel.style.display = (isSheetLayout || isViewer) ? 'none' : '';
       contentPanel.classList.remove('full-span');
-      appRoot.style.gridTemplateColumns = isViewer ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 680px minmax(0,1fr)' : 'var(--sidebar-w) 680px minmax(0,1fr)') : '';
+      appRoot.classList.toggle('viewer-layout', isViewer);
+      appRoot.style.gridTemplateColumns = '';
       if(isViewer && detailPanel) detailPanel.style.display = 'none';
     }else{
       appRoot.classList.remove('sheet-swap-layout');
       appRoot.classList.remove('sheet-expanded');
+      appRoot.classList.remove('viewer-layout');
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
       detailPanel.style.display = isRackModels ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels);
-      appRoot.style.gridTemplateColumns = isRackModels ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr' : 'var(--sidebar-w) 1fr') : (isLayoutScreen ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(0,1fr) 280px' : 'var(--sidebar-w) minmax(0,1fr) 280px') : (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr 320px' : 'var(--sidebar-w) 1fr 320px'));
+      appRoot.style.gridTemplateColumns = isRackModels
+        ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr' : 'var(--sidebar-w) 1fr')
+        : (isLayoutScreen
+            ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(0,1fr) 280px' : 'var(--sidebar-w) minmax(0,1fr) 280px')
+            : (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(0,1.34fr) minmax(280px,.92fr)' : 'var(--sidebar-w) minmax(0,1.34fr) minmax(280px,.92fr)'));
     }
     contentWrap.innerHTML = '';
     detailWrap.innerHTML = '';
