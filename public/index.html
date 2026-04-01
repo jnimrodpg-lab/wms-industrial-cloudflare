@@ -42,10 +42,10 @@
       --viewer-search-w:clamp(380px,30vw,520px);
       --search-sheet-w:clamp(340px,28vw,430px);
       --content-sheet-min:720px;
-      --sheet-main-fr:1.22fr;
-      --sheet-search-fr:.9fr;
-      --sheet-main-fr-expanded:1.65fr;
-      --sheet-search-fr-expanded:.8fr;
+      --sheet-main-fr:.92fr;
+      --sheet-search-fr:1.2fr;
+      --sheet-main-fr-expanded:1.12fr;
+      --sheet-search-fr-expanded:1.02fr;
       --rack-w:clamp(280px,22vw,360px);
       --detail-panel-w:clamp(272px,20vw,312px);
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
@@ -83,8 +83,8 @@
     .app.sheet-swap-layout.sheet-expanded{grid-template-columns:var(--sidebar-w) minmax(0,var(--sheet-main-fr-expanded)) minmax(300px,var(--sheet-search-fr-expanded));grid-template-rows:minmax(0,1fr);}
     .app.sheet-swap-layout.sidebar-collapsed.sheet-expanded{grid-template-columns:var(--sidebar-w-collapsed) minmax(0,var(--sheet-main-fr-expanded)) minmax(300px,var(--sheet-search-fr-expanded));grid-template-rows:minmax(0,1fr);}
     .app.sheet-swap-layout .sidebar,.app.sheet-swap-layout .content-panel,.app.sheet-swap-layout .search-panel{grid-row:1;align-self:stretch;min-height:0;height:calc(var(--app-height) - var(--app-safe-offset));}
-    .app.sheet-swap-layout .content-panel{grid-column:2;}
-    .app.sheet-swap-layout .search-panel{grid-column:3;}
+    .app.sheet-swap-layout .content-panel{grid-column:2;min-width:0;}
+    .app.sheet-swap-layout .search-panel{grid-column:3;min-width:0;}
     .app.sheet-swap-layout .detail-panel{display:none !important}
     .panel{
       min-height:0;
@@ -524,7 +524,7 @@
   .auth-grid input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
   .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
   .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
-  .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:0;justify-content:flex-end;align-self:flex-start}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
 
@@ -3628,7 +3628,7 @@ function escapeHtml(str){
     contentWrap.innerHTML = `
       <div class="form-wrap admin-company-screen">
         <style>
-          .admin-company-screen{display:flex;flex-direction:column;height:100%;min-height:0}.company-head{display:grid;gap:18px;padding:10px 4px 16px}.company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}.branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}.branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}.branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}.branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}.branch-card.collapsed .branch-body{display:none}.branch-head{display:grid;grid-template-columns:24px 1fr 120px 44px 44px 44px;gap:10px;align-items:center}.branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}.branch-body{margin-top:12px;padding-top:12px;border-top:1px solid rgba(64,138,113,.15);display:grid;gap:10px}.ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}.tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}.tiny-btn.danger{background:#7d4747;color:#ffe5e5}.save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
+          .admin-company-screen{display:flex;flex-direction:column;height:100%;min-height:0}.company-head{display:grid;gap:18px;padding:10px 4px 16px}.company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}.branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}.branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}.branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}.branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}.branch-card.collapsed .branch-body{display:none}.branch-head{display:grid;grid-template-columns:24px 1fr 120px 44px 44px 44px;gap:10px;align-items:center}.branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}.branch-body{margin-top:12px;padding-top:12px;border-top:1px solid rgba(64,138,113,.15);display:grid;gap:10px}.ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}.tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}.tiny-btn.danger{background:#7d4747;color:#ffe5e5}.save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
         
   .sheet-branch-list{display:grid;gap:14px;height:100%;align-content:start;}
   .sheet-branch-card{background:linear-gradient(180deg,#1f3a32,#183129);border:1px solid #3f6d60;border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.18);}
@@ -3659,7 +3659,7 @@ function escapeHtml(str){
   .auth-grid input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
   .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
   .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
-  .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:0;justify-content:flex-end;align-self:flex-start}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
 
@@ -3716,7 +3716,7 @@ function escapeHtml(str){
 
           .company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}
           .branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}
-          .branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}
+          .branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}
           .branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}
           .branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}
           .branch-card.collapsed .branch-body{display:none}
@@ -4618,7 +4618,7 @@ function escapeHtml(str){
       countProducts.textContent = currentSheetBranch.sheetPreviewProducts.length.toLocaleString('es-PE');
     }
 
-    contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar"><div><b style="font-size:18px;letter-spacing:.2px">Vinculación por sucursal</b><div class="tiny muted" style="margin-top:6px;max-width:860px;line-height:1.45">1) Define URL y hoja 2) Lee la fila 1 3) Elige columnas 4) Importa productos 5) Guarda solo los cambios</div></div><div class="save-strip"><button class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
+    contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar"><div style="min-width:0;flex:1"><b style="font-size:18px;letter-spacing:.2px">Vinculación por sucursal</b><div class="tiny muted" style="margin-top:6px;max-width:860px;line-height:1.45">1) Define URL y hoja 2) Lee la fila 1 3) Elige columnas 4) Importa productos 5) Guarda solo los cambios</div></div><div class="save-strip"><button class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
       const isOpen = !!openMap[i];
       const statusClass = b.sheetConnected ? 'ok' : (b.sheetUrl || b.sheetName ? 'warn' : '');
       const statusText = b.sheetStatusText || (b.sheetConnected ? `Vinculado • ${Number(b.lastSheetCount||0).toLocaleString('es-PE')} filas` : 'Sin vincular');
