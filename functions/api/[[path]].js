@@ -1,3 +1,5 @@
+const BUILD_MARK = 'sheet-fix-v3';
+
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 const DEFAULT_COMPANY_NAME = 'WMS Control';
@@ -6,7 +8,13 @@ const DEFAULT_COMPANY_CODE = 'WMS-CF';
 export async function onRequest(context) {
   const { request, env, params } = context;
   const url = new URL(request.url);
-  const path = '/' + String(params.path || '').replace(/^\/+/, '');
+
+  const rawPath = Array.isArray(params.path)
+    ? params.path.join('/')
+    : String(params.path || '');
+
+  const path = '/' + rawPath.replace(/^\/+/, '').replace(/\/+$/, '');
+
   try {
     await ensureSchema(env.DB, env);
 
@@ -15,19 +23,25 @@ export async function onRequest(context) {
     }
 
     if (path === '/healthz' && request.method === 'GET') {
-      return withJson({ ok: true, status: 'ok', runtime: 'cloudflare-pages' });
+      return withJson({
+        ok: true,
+        status: 'ok',
+        runtime: 'cloudflare-pages',
+        build: BUILD_MARK
+      });
     }
 
     if (path === '/session' && request.method === 'GET') {
       const session = await getSession(request, env.DB);
-      if (!session) return withJson({ ok: false }, 401);
+      if (!session) return withJson({ ok: false, build: BUILD_MARK }, 401);
       const company = await getCompanyById(env.DB, session.company_id);
       return withJson({
         ok: true,
         user: session.username,
         role: session.role,
         company_name: company?.name || DEFAULT_COMPANY_NAME,
-        company_code: company?.code || DEFAULT_COMPANY_CODE
+        company_code: company?.code || DEFAULT_COMPANY_CODE,
+        build: BUILD_MARK
       });
     }
 
@@ -35,11 +49,15 @@ export async function onRequest(context) {
       const body = await readJson(request);
       const username = String(body.username || '').trim();
       const password = String(body.password || '');
-      if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+      if (!username || !password) {
+        return withJson({ ok: false, error: 'Completa usuario y contraseña', build: BUILD_MARK }, 400);
+      }
+
       const user = await getUserByUsername(env.DB, username);
       if (!user || !(await verifyPassword(user.password_hash, password))) {
-        return withJson({ ok: false, error: 'Credenciales inválidas' }, 401);
+        return withJson({ ok: false, error: 'Credenciales inválidas', build: BUILD_MARK }, 401);
       }
+
       const company = await getCompanyById(env.DB, user.company_id);
       const sid = await createSession(env.DB, {
         user_id: user.id,
@@ -47,12 +65,14 @@ export async function onRequest(context) {
         role: user.role,
         company_id: user.company_id
       });
+
       return withJson({
         ok: true,
         user: user.username,
         role: user.role,
         company_name: company?.name || DEFAULT_COMPANY_NAME,
-        company_code: company?.code || DEFAULT_COMPANY_CODE
+        company_code: company?.code || DEFAULT_COMPANY_CODE,
+        build: BUILD_MARK
       }, 200, [makeSessionCookie(sid)]);
     }
 
@@ -63,9 +83,14 @@ export async function onRequest(context) {
       const password = String(body.password || '');
       const companyName = String(body.companyName || '').trim() || 'Nueva empresa';
       const companyCode = String(body.companyCode || '').trim().toUpperCase();
-      if (!username || !password) return withJson({ ok: false, error: 'Completa usuario y contraseña' }, 400);
+
+      if (!username || !password) {
+        return withJson({ ok: false, error: 'Completa usuario y contraseña', build: BUILD_MARK }, 400);
+      }
+
       const existing = await getUserByUsername(env.DB, username);
-      if (existing) return withJson({ ok: false, error: 'Ese usuario ya existe' }, 400);
+      if (existing) return withJson({ ok: false, error: 'Ese usuario ya existe', build: BUILD_MARK }, 400);
+
       const created = await createCompanyBundle(env.DB, {
         companyName,
         username,
@@ -73,6 +98,7 @@ export async function onRequest(context) {
         role: mode === 'viewer' ? 'viewer' : 'admin',
         companyCode
       });
+
       const company = await getCompanyById(env.DB, created.companyId);
       const sid = await createSession(env.DB, {
         user_id: created.userId,
@@ -80,36 +106,49 @@ export async function onRequest(context) {
         role: mode === 'viewer' ? 'viewer' : 'admin',
         company_id: created.companyId
       });
+
       return withJson({
         ok: true,
         user: username,
         role: mode === 'viewer' ? 'viewer' : 'admin',
         company_name: company?.name || companyName,
         company_code: company?.code || '',
-        message: mode === 'viewer' ? 'Cuenta visualizadora creada.' : 'Cuenta administradora creada.'
+        message: mode === 'viewer'
+          ? 'Cuenta visualizadora creada.'
+          : 'Cuenta administradora creada.',
+        build: BUILD_MARK
       }, 200, [makeSessionCookie(sid)]);
     }
 
     if (path === '/logout' && request.method === 'POST') {
       const sid = readCookie(request, COOKIE_NAME);
-      if (sid) await env.DB.prepare('DELETE FROM sessions_store WHERE sid = ?').bind(sid).run();
-      return withJson({ ok: true }, 200, [clearSessionCookie()]);
+      if (sid) {
+        await env.DB.prepare('DELETE FROM sessions_store WHERE sid = ?').bind(sid).run();
+      }
+      return withJson({ ok: true, build: BUILD_MARK }, 200, [clearSessionCookie()]);
     }
 
     if (path === '/app-state' && request.method === 'GET') {
       const session = await getSession(request, env.DB, true);
       const companyId = session?.company_id || 1;
       const stored = await getStoredAppState(env.DB, companyId);
-      return withJson({ ok: true, state: stored || (await buildFallbackAppState(env.DB, companyId)) });
+      return withJson({
+        ok: true,
+        state: stored || (await buildFallbackAppState(env.DB, companyId)),
+        build: BUILD_MARK
+      });
     }
 
     if (path === '/app-state' && request.method === 'POST') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
+
       const body = await readJson(request);
       const admin = body.admin && typeof body.admin === 'object' ? body.admin : null;
       const models = Array.isArray(body.models) ? body.models : null;
-      const branchLayouts = body.branchLayouts && typeof body.branchLayouts === 'object' ? body.branchLayouts : null;
+      const branchLayouts = body.branchLayouts && typeof body.branchLayouts === 'object'
+        ? body.branchLayouts
+        : null;
 
       await env.DB.prepare(`
         INSERT INTO app_state_blobs (company_id, admin_json, rack_models_json, branch_layouts_json, updated_at)
@@ -140,22 +179,26 @@ export async function onRequest(context) {
         ).bind(companyCode, session.company_id).run();
       }
 
-      return withJson({ ok: true });
+      return withJson({ ok: true, build: BUILD_MARK });
     }
 
     if (path === '/branches' && request.method === 'GET') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
+
       const rows = await all(
-        env.DB.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
-          .bind(session.company_id)
+        env.DB.prepare(
+          'SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC'
+        ).bind(session.company_id)
       );
-      return withJson({ branches: rows.map(normalizeBranch) });
+
+      return withJson({ branches: rows.map(normalizeBranch), build: BUILD_MARK });
     }
 
     if (path === '/branches' && request.method === 'POST') {
       const session = await requireAdmin(request, env.DB);
       if (session.error) return session.error;
+
       const body = await readJson(request);
       const name = String(body.name || '').trim();
       const type = String(body.type || 'tienda').trim() || 'tienda';
@@ -164,7 +207,7 @@ export async function onRequest(context) {
       const canvasWidth = Number(body.canvas_width || 900);
       const canvasHeight = Number(body.canvas_height || 620);
 
-      if (!name) return withJson({ error: 'El nombre es obligatorio' }, 400);
+      if (!name) return withJson({ error: 'El nombre es obligatorio', build: BUILD_MARK }, 400);
 
       const safeSlug = await uniqueSlug(env.DB, slug, session.company_id);
       const info = await env.DB.prepare(`
@@ -182,19 +225,27 @@ export async function onRequest(context) {
 
       const branchId = Number(info.meta.last_row_id);
       await ensureBranchScaffolding(env.DB, branchId, canvasWidth, canvasHeight);
-      return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
+
+      return withJson({
+        ok: true,
+        branch: await getOwnedBranch(env.DB, session.company_id, branchId),
+        build: BUILD_MARK
+      });
     }
 
     const branchIdMatch = path.match(/^\/branches\/(\d+)(?:\/(.+))?$/);
     if (branchIdMatch) {
       const branchId = Number(branchIdMatch[1]);
-      const tail = branchIdMatch[2] ? '/' + branchIdMatch[2] : '';
+      const tail = branchIdMatch[2]
+        ? '/' + branchIdMatch[2].replace(/^\/+|\/+$/g, '')
+        : '';
 
       if (!tail && request.method === 'PUT') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!existing) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         const body = await readJson(request);
         const name = String(body.name || existing.name).trim();
@@ -223,14 +274,19 @@ export async function onRequest(context) {
           branchId
         ).run();
 
-        return withJson({ ok: true, branch: await getOwnedBranch(env.DB, session.company_id, branchId) });
+        return withJson({
+          ok: true,
+          branch: await getOwnedBranch(env.DB, session.company_id, branchId),
+          build: BUILD_MARK
+        });
       }
 
       if (!tail && request.method === 'DELETE') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const existing = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!existing) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!existing) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         const total = await firstValue(
           env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE active = 1 AND company_id = ?')
@@ -239,25 +295,27 @@ export async function onRequest(context) {
         );
 
         if (Number(total || 0) <= 1) {
-          return withJson({ error: 'Debe quedar al menos una sucursal' }, 400);
+          return withJson({ error: 'Debe quedar al menos una sucursal', build: BUILD_MARK }, 400);
         }
 
         await env.DB.prepare('DELETE FROM branches WHERE id = ?').bind(branchId).run();
-        return withJson({ ok: true });
+        return withJson({ ok: true, build: BUILD_MARK });
       }
 
       if (tail === '/layout' && request.method === 'GET') {
         const session = await requireAuth(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
+
         const row = await first(
           env.DB.prepare('SELECT layout_json, viewbox_json, updated_at FROM branch_layouts WHERE branch_id = ?')
             .bind(branchId)
         );
-        if (!row) return withJson({ error: 'Layout no encontrado' }, 404);
+        if (!row) return withJson({ error: 'Layout no encontrado', build: BUILD_MARK }, 404);
 
         return withJson({
           ok: true,
@@ -270,39 +328,51 @@ export async function onRequest(context) {
               h: branch.canvas_height || 620
             }),
             updated_at: row.updated_at
-          }
+          },
+          build: BUILD_MARK
         });
       }
 
       if (tail === '/layout' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         const payload = await readJson(request);
-        const layout = payload.layout && typeof payload.layout === 'object' ? payload.layout : defaultLayout();
+        const layout = payload.layout && typeof payload.layout === 'object'
+          ? payload.layout
+          : defaultLayout();
         const viewBox = payload.viewBox && typeof payload.viewBox === 'object'
           ? payload.viewBox
           : { x: 0, y: 0, w: branch.canvas_width || 900, h: branch.canvas_height || 620 };
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width || 900, branch.canvas_height || 620);
+
         await env.DB.prepare(`
           UPDATE branch_layouts
           SET layout_json = ?, viewbox_json = ?, updated_at = CURRENT_TIMESTAMP
           WHERE branch_id = ?
         `).bind(JSON.stringify(layout), JSON.stringify(viewBox), branchId).run();
 
-        return withJson({ ok: true });
+        return withJson({ ok: true, build: BUILD_MARK });
       }
 
       if (tail === '/sheet' && request.method === 'GET') {
         const session = await requireAuth(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({
+          ok: false,
+          error: 'Sucursal no encontrada',
+          build: BUILD_MARK,
+          debug: { path, rawPath, paramsPath: params.path, branchId, tail }
+        }, 404);
 
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
+
         const row = await first(
           env.DB.prepare(`
             SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json,
@@ -331,15 +401,18 @@ export async function onRequest(context) {
             imported_products: safeJsonParse(config.imported_products_json, []),
             sheet_headers: safeJsonParse(config.sheet_headers_json, []),
             sheet_header_index: Number(config.sheet_header_index || 0)
-          }
+          },
+          build: BUILD_MARK,
+          debug: { path, rawPath, paramsPath: params.path, branchId, tail }
         });
       }
 
       if (tail === '/sheet' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         const body = await readJson(request);
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
@@ -354,6 +427,7 @@ export async function onRequest(context) {
         ) || {};
 
         const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
         const sheet_id = has('sheet_id') ? String(body.sheet_id || '') : String(current.sheet_id || '');
         const sheet_name = has('sheet_name') ? String(body.sheet_name || 'Productos') : String(current.sheet_name || 'Productos');
         const source_type = has('source_type') ? String(body.source_type || 'google_sheet') : String(current.source_type || 'google_sheet');
@@ -380,14 +454,15 @@ export async function onRequest(context) {
           branchId
         ).run();
 
-        return withJson({ ok: true });
+        return withJson({ ok: true, build: BUILD_MARK });
       }
 
       if (tail === '/sheet-metadata' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         const body = await readJson(request);
         await ensureBranchScaffolding(env.DB, branchId, branch.canvas_width, branch.canvas_height);
@@ -429,15 +504,17 @@ export async function onRequest(context) {
 
         return withJson({
           ok: true,
-          preserved_products: Array.isArray(imported_products) ? imported_products.length : 0
+          preserved_products: Array.isArray(imported_products) ? imported_products.length : 0,
+          build: BUILD_MARK
         });
       }
 
       if (tail === '/view-link' && request.method === 'POST') {
         const session = await requireAdmin(request, env.DB);
         if (session.error) return session.error;
+
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ error: 'Sucursal no encontrada' }, 404);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
         let existing = await first(
           env.DB.prepare('SELECT token FROM viewer_links WHERE branch_id = ? AND active = 1 ORDER BY id DESC LIMIT 1')
@@ -453,7 +530,7 @@ export async function onRequest(context) {
         }
 
         const base = `${url.protocol}//${url.host}`;
-        return withJson({ ok: true, token: existing.token, url: `${base}/viewer/${existing.token}` });
+        return withJson({ ok: true, token: existing.token, url: `${base}/viewer/${existing.token}`, build: BUILD_MARK });
       }
     }
 
@@ -463,7 +540,7 @@ export async function onRequest(context) {
       const link = await first(
         env.DB.prepare('SELECT * FROM viewer_links WHERE token = ? AND active = 1').bind(token)
       );
-      if (!link) return withJson({ error: 'Link no encontrado o inactivo' }, 404);
+      if (!link) return withJson({ error: 'Link no encontrado o inactivo', build: BUILD_MARK }, 404);
 
       const branch = await getBranchById(env.DB, link.branch_id);
       const layout = await first(
@@ -499,59 +576,41 @@ export async function onRequest(context) {
           sheet_map_rows: safeJsonParse(sheet?.sheet_map_json, null),
           sheet_headers: safeJsonParse(sheet?.sheet_headers_json, []),
           sheet_header_index: Number(sheet?.sheet_header_index || 0)
-        }
+        },
+        build: BUILD_MARK
       });
     }
 
     if (path === '/sheets/meta' && request.method === 'GET') {
       const sheetId = parseSheetId(url.searchParams.get('url') || '');
-      if (!sheetId) return withJson({ error: 'URL/ID inválido' }, 400);
+      if (!sheetId) return withJson({ error: 'URL/ID inválido', build: BUILD_MARK }, 400);
       const meta = await fetchSheetMeta(sheetId);
-      return withJson({ ok: true, ...meta });
+      return withJson({ ok: true, ...meta, build: BUILD_MARK });
     }
 
     if (path === '/sheets/probe' && request.method === 'GET') {
-      return await handleSheetProbe(url);
+      const response = await handleSheetProbe(url);
+      return response;
     }
 
     if (path === '/sheets/rows' && request.method === 'GET') {
-      return await handleSheetRows(url);
+      const response = await handleSheetRows(url);
+      return response;
     }
 
-    if (path === '/debug/persistence' && request.method === 'GET') {
-      const session = await requireAuth(request, env.DB);
-      if (session.error) return session.error;
-
-      const branchCount = await firstValue(
-        env.DB.prepare('SELECT COUNT(*) AS total FROM branches WHERE company_id = ?').bind(session.company_id),
-        'total'
-      );
-      const sheetCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branch_sheet_config'), 'total');
-      const layoutCount = await firstValue(env.DB.prepare('SELECT COUNT(*) AS total FROM branch_layouts'), 'total');
-      const appStateCount = await firstValue(
-        env.DB.prepare('SELECT COUNT(*) AS total FROM app_state_blobs WHERE company_id = ?').bind(session.company_id),
-        'total'
-      );
-      const lastBoot = await first(
-        env.DB.prepare("SELECT value, updated_at FROM system_meta WHERE key = 'last_boot_at'")
-      );
-
-      return withJson({
-        ok: true,
-        data_dir: 'cloudflare-d1',
-        db_path: env.DB_NAME || 'WMS_DB',
-        company_id: session.company_id,
-        branch_count: Number(branchCount || 0),
-        sheet_count: Number(sheetCount || 0),
-        layout_count: Number(layoutCount || 0),
-        app_state_count: Number(appStateCount || 0),
-        last_boot: lastBoot || null
-      });
-    }
-
-    return withJson({ ok: false, error: 'No encontrado' }, 404);
+    return withJson({
+      ok: false,
+      error: 'No encontrado',
+      build: BUILD_MARK,
+      debug: { path, rawPath, paramsPath: params.path }
+    }, 404);
   } catch (err) {
-    return withJson({ ok: false, error: err?.message || 'Error interno' }, 500);
+    return withJson({
+      ok: false,
+      error: err?.message || 'Error interno',
+      build: BUILD_MARK,
+      debug: { path, rawPath, paramsPath: params.path }
+    }, 500);
   }
 }
 
@@ -779,11 +838,13 @@ async function createCompanyBundle(db, { companyName, username, password, role =
   if (role === 'viewer') {
     const company = await first(db.prepare('SELECT * FROM companies WHERE code = ?').bind(companyCode));
     if (!company) throw new Error('Código de empresa inválido');
+
     const hash = await hashPassword(password);
     const info = await db.prepare(`
       INSERT INTO users (company_id, username, password_hash, role, updated_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     `).bind(company.id, username, hash, 'viewer').run();
+
     return { companyId: Number(company.id), code: company.code, userId: Number(info.meta.last_row_id) };
   }
 
@@ -846,8 +907,10 @@ async function createCompanyBundle(db, { companyName, username, password, role =
 async function buildFallbackAppState(db, companyId = 1) {
   const admin = await buildAdminStateFromDb(db, companyId, null);
   const branches = await all(
-    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
+      .bind(companyId)
   );
+
   const branchLayouts = {};
   for (let index = 0; index < branches.length; index += 1) {
     const row = branches[index];
@@ -856,6 +919,7 @@ async function buildFallbackAppState(db, companyId = 1) {
     );
     branchLayouts[index] = safeJsonParse(layoutRow?.layout_json, defaultLayout());
   }
+
   return { admin, models: null, branchLayouts };
 }
 
@@ -865,6 +929,7 @@ async function getStoredAppState(db, companyId = 1) {
       .bind(companyId)
   );
   if (!row) return null;
+
   const savedAdmin = safeJsonParse(row.admin_json, null);
   return {
     admin: await buildAdminStateFromDb(db, companyId, savedAdmin),
@@ -881,7 +946,8 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
   };
 
   const branches = await all(
-    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').bind(companyId)
+    db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC')
+      .bind(companyId)
   );
 
   const adminBranches = [];
@@ -890,6 +956,7 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
     const savedBranch = Array.isArray(savedAdmin?.branches)
       ? (savedAdmin.branches.find((b) => Number(b?.id) === Number(row.id)) || savedAdmin.branches[index] || {})
       : {};
+
     const branch = normalizeBranch(row);
     const sheet = await first(
       db.prepare(`
@@ -955,7 +1022,9 @@ async function getBranchById(db, id) {
 }
 
 async function getOwnedBranch(db, companyId, id) {
-  const row = await first(db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ?').bind(id, companyId));
+  const row = await first(
+    db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ?').bind(id, companyId)
+  );
   return normalizeBranch(row);
 }
 
@@ -1021,15 +1090,15 @@ async function createSession(db, data) {
 
 async function requireAuth(request, db) {
   const session = await getSession(request, db);
-  if (!session) return { error: withJson({ ok: false, error: 'No autorizado' }, 401) };
+  if (!session) return { error: withJson({ ok: false, error: 'No autorizado', build: BUILD_MARK }, 401) };
   return session;
 }
 
 async function requireAdmin(request, db) {
   const session = await getSession(request, db);
-  if (!session) return { error: withJson({ ok: false, error: 'No autorizado' }, 401) };
+  if (!session) return { error: withJson({ ok: false, error: 'No autorizado', build: BUILD_MARK }, 401) };
   if (String(session.role || '') !== 'admin') {
-    return { error: withJson({ ok: false, error: 'Solo administradores' }, 403) };
+    return { error: withJson({ ok: false, error: 'Solo administradores', build: BUILD_MARK }, 403) };
   }
   return session;
 }
@@ -1108,7 +1177,9 @@ function generateToken(size = 18) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let out = '';
   const bytes = crypto.getRandomValues(new Uint8Array(size));
-  for (let i = 0; i < bytes.length; i += 1) out += chars[bytes[i] % chars.length];
+  for (let i = 0; i < bytes.length; i += 1) {
+    out += chars[bytes[i] % chars.length];
+  }
   return out;
 }
 
@@ -1150,7 +1221,7 @@ function bufToHex(buffer) {
 async function handleSheetProbe(url) {
   const id = parseSheetId(url.searchParams.get('url') || '');
   const sheet = String(url.searchParams.get('sheet') || '').trim();
-  if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios' }, 400);
+  if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios', build: BUILD_MARK }, 400);
 
   const gid = await resolveSheetGid(id, sheet);
   try {
@@ -1167,22 +1238,34 @@ async function handleSheetProbe(url) {
       );
       const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
         .filter((rw) => rw.some(hasVisibleValue));
-      return withJson({ ok: true, headers, headerIndex: 0, previewCount: rows.length, source: 'gviz-json' });
+
+      return withJson({
+        ok: true,
+        headers,
+        headerIndex: 0,
+        previewCount: rows.length,
+        source: 'gviz-json',
+        build: BUILD_MARK
+      });
     }
   } catch (_err) {}
 
   const rowsPayload = await getSheetRowsPayload(id, sheet, 200, true);
-  return withJson(rowsPayload);
+  return withJson({ ...rowsPayload, build: BUILD_MARK });
 }
 
 async function handleSheetRows(url) {
   const id = parseSheetId(url.searchParams.get('url') || '');
   const sheet = String(url.searchParams.get('sheet') || '').trim();
   const headerOnly = String(url.searchParams.get('headerOnly') || '') === '1';
-  const limit = Math.max(1, Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200)));
+  const limit = Math.max(
+    1,
+    Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200))
+  );
 
-  if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios' }, 400);
-  return withJson(await getSheetRowsPayload(id, sheet, limit, headerOnly));
+  if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios', build: BUILD_MARK }, 400);
+  const payload = await getSheetRowsPayload(id, sheet, limit, headerOnly);
+  return withJson({ ...payload, build: BUILD_MARK });
 }
 
 async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
@@ -1197,7 +1280,10 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
     if (r.ok) {
       const parsed = parseGoogleVizJson(await r.text());
       const table = parsed?.table || {};
-      const gvizHeaders = (table.cols || []).map((c, idx) => String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`);
+      const gvizHeaders = (table.cols || []).map((c, idx) =>
+        String((c && (c.label || c.id)) || '').trim() || `Columna ${idx + 1}`
+      );
+
       const rows = ((table.rows || []).map((row) => ((row.c) || []).map((c) => (c && c.v != null ? c.v : ''))))
         .map((r0) => r0.map((v) => String(v ?? '').trim()))
         .filter((rw) => rw.some(hasVisibleValue));
@@ -1211,13 +1297,31 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
       const headers = dedupeHeaders(gvizHeaders.slice(0, lastCol + 1));
       const trimmedRows = rows.map((r0) => r0.slice(0, lastCol + 1));
 
-      if (headerOnly) return { ok: true, headers, headerIndex: 0, previewCount: trimmedRows.length, source: 'gviz-json' };
-      return { ok: true, headers, rows: trimmedRows.slice(0, limit), headerIndex: 0, totalRows: trimmedRows.length, source: 'gviz-json' };
+      if (headerOnly) {
+        return {
+          ok: true,
+          headers,
+          headerIndex: 0,
+          previewCount: trimmedRows.length,
+          source: 'gviz-json'
+        };
+      }
+
+      return {
+        ok: true,
+        headers,
+        rows: trimmedRows.slice(0, limit),
+        headerIndex: 0,
+        totalRows: trimmedRows.length,
+        source: 'gviz-json'
+      };
     }
   } catch (_err) {}
 
   const tryUrls = [];
-  if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  if (gid) {
+    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  }
   tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
 
   let rows = [];
@@ -1264,8 +1368,24 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const headers = dedupeHeaders(headerRow.slice(0, lastMeaningfulCol + 1));
   const dataRowsAll = dataRowsAllRaw.map((r0) => (r0 || []).slice(0, lastMeaningfulCol + 1));
 
-  if (headerOnly) return { ok: true, headers, headerIndex, previewCount: dataRowsAll.length, source };
-  return { ok: true, headers, rows: dataRowsAll.slice(0, limit), headerIndex, totalRows: dataRowsAll.length, source };
+  if (headerOnly) {
+    return {
+      ok: true,
+      headers,
+      headerIndex,
+      previewCount: dataRowsAll.length,
+      source
+    };
+  }
+
+  return {
+    ok: true,
+    headers,
+    rows: dataRowsAll.slice(0, limit),
+    headerIndex,
+    totalRows: dataRowsAll.length,
+    source
+  };
 }
 
 async function fetchSheetMeta(id) {
@@ -1273,9 +1393,11 @@ async function fetchSheetMeta(id) {
   const sheets = [];
   const re = /"sheetId":(\d+),"title":"([^"]+)"/g;
   let match;
+
   while ((match = re.exec(html))) {
     sheets.push({ gid: match[1], title: decodeUnicodeEscapes(match[2]) });
   }
+
   return { sheets };
 }
 
