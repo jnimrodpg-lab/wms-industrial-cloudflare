@@ -4608,8 +4608,7 @@ function escapeHtml(str){
     const openMap = getSheetBranchOpenMap();
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
-    setTags(['por sucursal','fila 1','columnas visibles','orden']);
-    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="sheet-layout-toggle" id="btnSheetExpand">${appState.ui.sheetExpanded ? 'Reducir panel' : 'Expandir panel'}<span>${appState.ui.sheetExpanded ? '2X' : 'X→2X'}</span></button>`);
+    setTags([]);
     renderSheetDetailPreview();
     const currentSheetIndex = getCurrentSheetBranchIndex();
     const currentSheetBranch = (appState.admin?.branches || [])[currentSheetIndex];
@@ -7735,7 +7734,7 @@ function zoomLayout(factor, center){
     contentSubtitle.textContent = 'Diseña modelos reutilizables de rack, sus niveles y su preview técnico.';
     detailTitle.textContent = 'Preview del modelo';
     detailSubtitle.textContent = 'Arrastra para mover y usa la rueda para acercar o alejar.';
-    setTags(['modelos', 'niveles', 'preview', 'biblioteca']);
+    setTags([]);
 
     if (!Array.isArray(appState.models) || !appState.models.length){
       appState.models = [
