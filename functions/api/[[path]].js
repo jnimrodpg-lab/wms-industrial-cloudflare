@@ -1268,8 +1268,67 @@ async function handleSheetRows(url) {
   return withJson({ ...payload, build: BUILD_MARK });
 }
 
+
+async function getSheetRowsPayloadFromCsv(id, sheet, gid, limit = 200, headerOnly = false) {
+  const tryUrls = [];
+  if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
+
+  let rows = [];
+  let source = gid ? 'csv-gid' : 'csv-sheet';
+  for (const csvUrl of tryUrls) {
+    try {
+      const response = await fetch(csvUrl);
+      if (!response.ok) continue;
+      const csv = await response.text();
+      const parsed = parseCsv(csv).map((row) => row.map((v) => String(v || '').trim()));
+      if (parsed.some((r0) => r0.some(hasVisibleValue))) {
+        rows = parsed;
+        source = csvUrl.includes('gid=') ? 'csv-gid' : 'csv-sheet';
+        break;
+      }
+    } catch (_err) {}
+  }
+
+  const nonEmptyRows = rows.filter((r0) => r0.some(hasVisibleValue));
+  if (!nonEmptyRows.length) return null;
+
+  let headerIndex = 0;
+  let headerRow = nonEmptyRows[0] || [];
+  if ((headerRow.filter(hasVisibleValue).length <= 1) && nonEmptyRows[1] && nonEmptyRows[1].filter(hasVisibleValue).length >= 2) {
+    headerIndex = 1;
+    headerRow = nonEmptyRows[1] || [];
+  }
+
+  const dataRowsAllRaw = nonEmptyRows.slice(headerIndex + 1);
+  const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map((r0) => r0.length), 0);
+
+  let lastMeaningfulCol = 0;
+  for (let i = 0; i < maxLen; i += 1) {
+    if (hasVisibleValue(headerRow[i])) {
+      lastMeaningfulCol = i;
+      continue;
+    }
+    if (dataRowsAllRaw.slice(0, 200).some((r0) => hasVisibleValue((r0 || [])[i]))) lastMeaningfulCol = i;
+  }
+
+  const headers = dedupeHeaders(headerRow.slice(0, lastMeaningfulCol + 1));
+  const dataRowsAll = dataRowsAllRaw.map((r0) => (r0 || []).slice(0, lastMeaningfulCol + 1));
+
+  if (headerOnly) {
+    return { ok: true, headers, headerIndex, previewCount: dataRowsAll.length, source };
+  }
+
+  return { ok: true, headers, rows: dataRowsAll.slice(0, limit), headerIndex, totalRows: dataRowsAll.length, source };
+}
+
 async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const gid = await resolveSheetGid(id, sheet);
+
+  if (!headerOnly) {
+    const csvPayload = await getSheetRowsPayloadFromCsv(id, sheet, gid, limit, false);
+    if (csvPayload && Array.isArray(csvPayload.rows) && csvPayload.rows.length) return csvPayload;
+  }
 
   try {
     const jsonUrl = gid
@@ -1298,94 +1357,18 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
       const trimmedRows = rows.map((r0) => r0.slice(0, lastCol + 1));
 
       if (headerOnly) {
-        return {
-          ok: true,
-          headers,
-          headerIndex: 0,
-          previewCount: trimmedRows.length,
-          source: 'gviz-json'
-        };
+        return { ok: true, headers, headerIndex: 0, previewCount: trimmedRows.length, source: 'gviz-json' };
       }
 
-      return {
-        ok: true,
-        headers,
-        rows: trimmedRows.slice(0, limit),
-        headerIndex: 0,
-        totalRows: trimmedRows.length,
-        source: 'gviz-json'
-      };
+      if (trimmedRows.length) {
+        return { ok: true, headers, rows: trimmedRows.slice(0, limit), headerIndex: 0, totalRows: trimmedRows.length, source: 'gviz-json' };
+      }
     }
   } catch (_err) {}
 
-  const tryUrls = [];
-  if (gid) {
-    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
-  }
-  tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
-
-  let rows = [];
-  let source = gid ? 'csv-gid' : 'csv-sheet';
-
-  for (const csvUrl of tryUrls) {
-    try {
-      const response = await fetch(csvUrl);
-      if (!response.ok) continue;
-      const csv = await response.text();
-      const parsed = parseCsv(csv).map((row) => row.map((v) => String(v || '').trim()));
-      if (parsed.some((r0) => r0.some(hasVisibleValue))) {
-        rows = parsed;
-        source = csvUrl.includes('gid=') ? 'csv-gid' : 'csv-sheet';
-        break;
-      }
-    } catch (_err) {}
-  }
-
-  const nonEmptyRows = rows.filter((r0) => r0.some(hasVisibleValue));
-  if (!nonEmptyRows.length) throw new Error('La hoja está vacía o no se pudo leer');
-
-  let headerIndex = 0;
-  let headerRow = nonEmptyRows[0] || [];
-  if ((headerRow.filter(hasVisibleValue).length <= 1) && nonEmptyRows[1] && nonEmptyRows[1].filter(hasVisibleValue).length >= 2) {
-    headerIndex = 1;
-    headerRow = nonEmptyRows[1] || [];
-  }
-
-  const dataRowsAllRaw = nonEmptyRows.slice(headerIndex + 1);
-  const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map((r0) => r0.length), 0);
-
-  let lastMeaningfulCol = 0;
-  for (let i = 0; i < maxLen; i += 1) {
-    if (hasVisibleValue(headerRow[i])) {
-      lastMeaningfulCol = i;
-      continue;
-    }
-    if (dataRowsAllRaw.slice(0, 200).some((r0) => hasVisibleValue((r0 || [])[i]))) {
-      lastMeaningfulCol = i;
-    }
-  }
-
-  const headers = dedupeHeaders(headerRow.slice(0, lastMeaningfulCol + 1));
-  const dataRowsAll = dataRowsAllRaw.map((r0) => (r0 || []).slice(0, lastMeaningfulCol + 1));
-
-  if (headerOnly) {
-    return {
-      ok: true,
-      headers,
-      headerIndex,
-      previewCount: dataRowsAll.length,
-      source
-    };
-  }
-
-  return {
-    ok: true,
-    headers,
-    rows: dataRowsAll.slice(0, limit),
-    headerIndex,
-    totalRows: dataRowsAll.length,
-    source
-  };
+  const csvPayload = await getSheetRowsPayloadFromCsv(id, sheet, gid, limit, headerOnly);
+  if (csvPayload) return csvPayload;
+  throw new Error('La hoja está vacía o no se pudo leer');
 }
 
 async function fetchSheetMeta(id) {

@@ -2104,6 +2104,10 @@ function escapeHtml(str){
     renderActiveVariantStrip(p);
   }
 
+  function applyProductSelectionEffects(product){
+    if(!product) return;
+  }
+
   function renderProducts(list){
     const frag = document.createDocumentFragment();
     const maxRows = appState.ui.productGroupMode ? 220 : 450;
