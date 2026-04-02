@@ -52,7 +52,7 @@
         linear-gradient(180deg,var(--bg) 0%, var(--bg-2) 100%);
     }
     .app{
-      height:100vh;
+      height:100%;
       display:grid;
       grid-template-columns:var(--sidebar-w) var(--search-w) 1fr var(--rack-w);
       gap:12px;
@@ -64,7 +64,7 @@
     .app.sheet-swap-layout.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) minmax(var(--content-sheet-min),var(--sheet-main-fr)) minmax(320px,var(--sheet-search-fr));grid-template-rows:minmax(0,1fr);}
     .app.sheet-swap-layout.sheet-expanded{grid-template-columns:var(--sidebar-w) minmax(980px,var(--sheet-main-fr-expanded)) minmax(300px,var(--sheet-search-fr-expanded));grid-template-rows:minmax(0,1fr);}
     .app.sheet-swap-layout.sidebar-collapsed.sheet-expanded{grid-template-columns:var(--sidebar-w-collapsed) minmax(980px,var(--sheet-main-fr-expanded)) minmax(300px,var(--sheet-search-fr-expanded));grid-template-rows:minmax(0,1fr);}
-    .app.sheet-swap-layout .sidebar,.app.sheet-swap-layout .content-panel,.app.sheet-swap-layout .search-panel{grid-row:1;align-self:stretch;min-height:0;height:calc(100vh - 24px);}
+    .app.sheet-swap-layout .sidebar,.app.sheet-swap-layout .content-panel,.app.sheet-swap-layout .search-panel{grid-row:1;align-self:stretch;min-height:0;height:calc(100% - 24px);}
     .app.sheet-swap-layout .content-panel{grid-column:2;}
     .app.sheet-swap-layout .search-panel{grid-column:3;}
     .app.sheet-swap-layout .detail-panel{display:none !important}
@@ -8606,36 +8606,36 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
 </script>
 
 <script>
-/* ── Escala proporcional automática ──────────────────────────────────────
-   Diseño base: 1600 × 900 px (ASUS ROG G16 16" a zoom 100%)
-   En cualquier otro dispositivo/pantalla el body escala proporcionalmente
-   manteniendo exactamente el mismo aspecto visual que en la laptop base.
-────────────────────────────────────────────────────────────────────────── */
+/* ── Escala proporcional automática ─────────────────────────────────────
+   BASE: 1600 px de ancho (ASUS ROG G16 a zoom 100%).
+   Escala SOLO por ancho → ocupa todo el ancho en cualquier pantalla.
+   El alto se adapta dinámicamente para llenar el 100% de la pantalla.
+───────────────────────────────────────────────────────────────────────── */
 (function() {
-  var BASE_W = 1600;   // ancho de diseño base en px lógicos
-  var BASE_H = 900;    // alto  de diseño base en px lógicos
+  var BASE_W = 1600;
 
   function applyScale() {
-    var sw = window.innerWidth;
-    var sh = window.innerHeight;
+    var sw    = window.innerWidth;
+    var sh    = window.innerHeight;
+    var scale = sw / BASE_W;
+    var scaledH = Math.round(sh / scale);
 
-    // Escala por ancho y alto, usamos la menor para que NUNCA se corte
-    var scaleW = sw / BASE_W;
-    var scaleH = sh / BASE_H;
-    var scale  = Math.min(scaleW, scaleH);
-
-    // Aplicamos transform en lugar de zoom para compatibilidad total
     var b = document.body;
     b.style.width           = BASE_W + 'px';
-    b.style.height          = BASE_H + 'px';
+    b.style.height          = scaledH + 'px';
     b.style.transform       = 'scale(' + scale + ')';
     b.style.transformOrigin = 'top left';
     b.style.overflow        = 'hidden';
+    b.style.margin          = '0';
 
-    // El html se ajusta al tamaño real de la pantalla
-    document.documentElement.style.width    = sw + 'px';
-    document.documentElement.style.height   = sh + 'px';
-    document.documentElement.style.overflow = 'hidden';
+    var d = document.documentElement;
+    d.style.width    = sw + 'px';
+    d.style.height   = sh + 'px';
+    d.style.overflow = 'hidden';
+
+    /* Permite que los elementos internos que usen 100vh
+       sigan llenando la pantalla correctamente */
+    d.style.setProperty('--vh', (sh / 100) + 'px');
   }
 
   applyScale();
