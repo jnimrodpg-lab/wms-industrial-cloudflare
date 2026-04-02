@@ -1080,9 +1080,7 @@ body.theme-light .seg-btn,
         </div>
         <div class="menu-section">
           <div class="menu-title">👁 <span>Viewer</span></div>
-          <div class="menu-items">
-            <div class="menu-item" data-screen="viewer">👁 <span>Visualizar</span></div>
-          </div>
+          <div id="viewerBranchMenu" class="menu-items"></div>
         </div>
       </div>
       <div class="sidebar-foot">
@@ -2084,12 +2082,34 @@ function escapeHtml(str){
     return window.innerWidth <= 1280;
   }
 
+  function renderViewerMenu(){
+    const host = document.getElementById('viewerBranchMenu');
+    if(!host) return;
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const activeViewerIndex = Number(appState.viewerBranchIndex ?? -1);
+    host.innerHTML = branches.length ? branches.map((b, i) => {
+      const active = appState.screen === 'viewer' && activeViewerIndex === i;
+      return `<div class="menu-item ${active ? 'active' : ''}" data-screen="viewer" data-viewer-branch-menu="${i}">👁 <span>${escapeHtml(b?.name || ('Sucursal ' + (i + 1)))}</span></div>`;
+    }).join('') : '<div class="menu-item active" data-screen="viewer" data-viewer-branch-menu="-1">👁 <span>Visualizar</span></div>';
+    host.querySelectorAll('[data-viewer-branch-menu]').forEach(item => {
+      item.onclick = async () => {
+        const idx = Number(item.getAttribute('data-viewer-branch-menu'));
+        appState.viewerBranchIndex = idx;
+        setScreen('viewer');
+        if(idx >= 0) await switchViewerBranch(idx);
+        else renderViewerBranchHost(-1);
+        renderViewerMenu();
+      };
+    });
+  }
+
   function setScreen(screen){
     if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){ openAuthModal('Inicia sesión o continúa como visualizador.'); screen = 'viewer'; }
     if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer'){ screen = 'viewer'; }
     cleanupLayoutAutoFit();
     appState.screen = screen;
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
+    renderViewerMenu();
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
@@ -2148,9 +2168,11 @@ function escapeHtml(str){
     contentTags.innerHTML = tags.map(t => {
       const item = typeof t === 'string' ? { label:t, active:true } : (t || {});
       const label = escapeHtml(String(item.label || ''));
-      const cls = item.active === false ? 'tag inactive' : 'tag active';
+      const cls = (item.active === false ? 'tag inactive' : 'tag active') + (item.extraClass ? ` ${escapeHtml(String(item.extraClass))}` : '');
       if(item.action){
-        return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}">${label}</button>`;
+        const historyType = item.action === 'history-undo-layout' || item.action === 'history-redo-layout' ? 'layout' : (item.action === 'history-undo-racks' || item.action === 'history-redo-racks' ? 'racks' : '');
+        const historyAttr = item.action.startsWith('history-undo') ? ` data-history-undo="${historyType}"` : (item.action.startsWith('history-redo') ? ` data-history-redo="${historyType}"` : '');
+        return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}"${historyAttr}>${label}</button>`;
       }
       return `<span class="${cls}">${label}</span>`;
     }).join('');
@@ -3733,6 +3755,7 @@ function escapeHtml(str){
     if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
   }
   function renderAdminScreen(){
+    renderViewerMenu();
     const cfg = appState.admin; if(cfg.activeBranch >= cfg.branches.length) cfg.activeBranch = 0;
     const summaryBranches = cfg.branches.length, summaryWarehouses = cfg.branches.reduce((a,b)=>a+(b.warehouses?.length||0),0);
     contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = 'Administrador'; setTags([]);
@@ -4273,6 +4296,8 @@ function escapeHtml(str){
     return getActiveBranchIndex();
   }
   function renderViewerBranchHost(activeBranchIndex){
+    appState.viewerBranchIndex = Number(activeBranchIndex);
+    renderViewerMenu();
     if(!searchBranchHost) return;
     const branches = appState.admin?.branches || [];
     if(appState.screen !== 'viewer' || !branches.length){
@@ -4552,7 +4577,8 @@ function getSheetBranchOpenMap(){
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         renderProducts(appState.filtered || []);
         countProducts.textContent = (appState.products || []).length.toLocaleString('es-PE');
-        renderSheetDetailPreview();
+        renderViewerMenu();
+    renderSheetDetailPreview();
         contentStatus.textContent = 'Guardado: se limpió la importación anterior de la sucursal.';
       }else{
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
@@ -4759,7 +4785,7 @@ function getSheetBranchOpenMap(){
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
       const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
-      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button></div><div class="sheet-utility-row"><div class="sheet-inline-actions"><button class="btn secondary" data-sheet-copy="${i}">Copiar mapeo a…</button><button class="btn secondary" data-sheet-clear-products="${i}">Limpiar productos</button><button class="btn secondary" data-sheet-clear-cache="${i}">Limpiar caché</button></div></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y en qué orden verlas</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
+      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-cache="${i}" ${isBusy?'disabled':''}>Limpiar caché</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y en qué orden verlas</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;
 
     contentWrap.querySelectorAll('[data-sheet-toggle]').forEach(el=>el.onclick=async (e)=>{ const i=+e.currentTarget.dataset.sheetToggle; const wasOpen=!!openMap[i]; Object.keys(openMap).forEach(k=>{openMap[k]=false;}); openMap[i]=!wasOpen; if(openMap[i]){ await activateBranchSelection(i); } renderSheetScreen(); });
@@ -4773,7 +4799,6 @@ function getSheetBranchOpenMap(){
     });
     contentWrap.querySelectorAll('[data-sheet-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetLink(+e.currentTarget.dataset.sheetSave));
     contentWrap.querySelectorAll('[data-sheet-import]').forEach(el=>el.onclick=(e)=>importBranchSheet(+e.currentTarget.dataset.sheetImport));
-    contentWrap.querySelectorAll('[data-sheet-copy]').forEach(el=>el.onclick=async (e)=>{ const fromIndex=+e.currentTarget.dataset.sheetCopy; const options=appState.admin.branches.map((b,idx)=> idx===fromIndex ? '' : `<option value="${idx}">${escapeHtml(branchLabel(b, idx))}</option>`).join(''); if(!options){ showToast('No hay otra sucursal disponible para copiar.', 'warn'); return; } const chosen = await new Promise(resolve => { openAppModal({ title:'Copiar configuración de sheet', message:'Selecciona la sucursal destino desde la lista inferior.', actions:[{label:'Cancelar', value:false, cls:'secondary'},{label:'Copiar', value:true, cls:'primary'}] }).then(ok => resolve(ok)); appModalBody.innerHTML += `<div style="margin-top:10px"><select id="copyBranchSelect"><option value="">Selecciona una sucursal</option>${options}</select></div>`; }); if(!chosen) return; const select=document.getElementById('copyBranchSelect'); const toIndex=Number(select?.value||-1); if(toIndex<0){ showToast('Selecciona una sucursal destino.', 'warn'); return; } copyBranchSheetConfig(fromIndex, toIndex); });
     contentWrap.querySelectorAll('[data-sheet-clear-products]').forEach(el=>el.onclick=(e)=>clearBranchImportedData(+e.currentTarget.dataset.sheetClearProducts,'products'));
     contentWrap.querySelectorAll('[data-sheet-clear-cache]').forEach(el=>el.onclick=(e)=>clearBranchImportedData(+e.currentTarget.dataset.sheetClearCache,'cache'));
     contentWrap.querySelectorAll('[data-sheet-map-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetMapping(+e.currentTarget.dataset.sheetMapSave));
@@ -6493,6 +6518,8 @@ function getSheetBranchOpenMap(){
     detailTitle.textContent = 'Edición de layout';
     detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
     setTags([
+      { label:'↶ Undo', active: true, action:'history-undo-layout', extraClass:'history-chip' },
+      { label:'↷ Redo', active: true, action:'history-redo-layout', extraClass:'history-chip' },
       { label:'Seleccionar', active: appState.editor.mode === 'select', action:'toggle-select' },
       { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
       { label:'Bloquear zonas', active: !!appState.editor.zonesLocked, action:'toggle-lock-zones' },
@@ -6509,7 +6536,7 @@ function getSheetBranchOpenMap(){
         <div class="layout-shell">
           <aside class="layout-inner-sidebar">
             <div class="layout-tool-top">
-              <div class="save-strip" style="display:grid;gap:8px"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="seg-btn" type="button" data-history-undo="layout">↶ Undo</button><button class="seg-btn" type="button" data-history-redo="layout">↷ Redo</button></div><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
+              <div class="save-strip" style="display:grid;gap:8px"><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
               <select id="layoutBranchSelect" class="seg-btn" style="width:100%;padding-right:28px">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
             </div>
             <div class="layout-tool-list">
@@ -7255,6 +7282,10 @@ function zoomLayout(factor, center){
       else if(action === 'toggle-racks') appState.editor.racksVisible = appState.editor.racksVisible === false ? true : false;
       else if(action === 'toggle-zone-props') appState.editor.inspectorZoneOpen = !appState.editor.inspectorZoneOpen;
       else if(action === 'toggle-rack-props') appState.editor.rackPropsOpen = !appState.editor.rackPropsOpen;
+      else if(action === 'history-undo-layout'){ undoHistory('layout'); return; }
+      else if(action === 'history-redo-layout'){ redoHistory('layout'); return; }
+      else if(action === 'history-undo-racks'){ undoHistory('racks'); return; }
+      else if(action === 'history-redo-racks'){ redoHistory('racks'); return; }
       renderLayoutEditor();
     });
     if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
@@ -7901,7 +7932,11 @@ function zoomLayout(factor, center){
     contentSubtitle.textContent = 'Diseña modelos reutilizables de rack, sus niveles y su preview técnico.';
     detailTitle.textContent = 'Preview del modelo';
     detailSubtitle.textContent = 'Arrastra para mover y usa la rueda para acercar o alejar.';
-    setTags(['modelos', 'niveles', 'preview', 'biblioteca']);
+    setTags([
+      { label:'↶ Undo', active:true, action:'history-undo-racks', extraClass:'history-chip' },
+      { label:'↷ Redo', active:true, action:'history-redo-racks', extraClass:'history-chip' },
+      'modelos', 'niveles', 'preview', 'biblioteca'
+    ]);
 
     if (!Array.isArray(appState.models) || !appState.models.length){
       appState.models = [
@@ -7934,8 +7969,6 @@ function zoomLayout(factor, center){
               </div>
             </div>
             <div class="model-actions">
-              <button class="seg-btn" type="button" data-history-undo="racks">↶ Undo</button>
-              <button class="seg-btn" type="button" data-history-redo="racks">↷ Redo</button>
               <button class="btn" id="btnSaveModel">Guardar modelo</button>
               <button class="btn alt" id="btnNewModel">Nuevo modelo</button>
               <button class="btn alt" id="btnDuplicateModel">Duplicar modelo</button>
