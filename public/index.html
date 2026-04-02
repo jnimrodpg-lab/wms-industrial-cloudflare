@@ -2077,23 +2077,57 @@ function escapeHtml(str){
     if(!product) return;
   }
 
+  const LOGICAL_SIZE_ORDER = ['XXXS','3XS','XXS','2XS','XS','S','M','L','XL','XXL','2XL','XXXL','3XL','XXXXL','4XL','5XL','6XL','U','UNICA','ÚNICA','ONE SIZE'];
+  function getLogicalSizeRank(value){
+    const raw = String(value || '').trim().toUpperCase();
+    if(!raw) return 9999;
+    const normalized = raw
+      .replace(/TALLA\s+/g, '')
+      .replace(/\s+/g, '')
+      .replace(/^ÚNICA$/, 'UNICA');
+    const directIndex = LOGICAL_SIZE_ORDER.indexOf(normalized);
+    if(directIndex >= 0) return directIndex;
+    const num = normalized.match(/^(\d{1,3})$/);
+    if(num) return 500 + Number(num[1]);
+    return 9999;
+  }
+
+  function compareProductsAZ(a,b){
+    const nameCmp = String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity:'base', numeric:true });
+    if(nameCmp) return nameCmp;
+    const sizeA = getProductSizeValue(a) || '';
+    const sizeB = getProductSizeValue(b) || '';
+    const sizeRankCmp = getLogicalSizeRank(sizeA) - getLogicalSizeRank(sizeB);
+    if(sizeRankCmp) return sizeRankCmp;
+    const sizeCmp = String(sizeA).localeCompare(String(sizeB), 'es', { sensitivity:'base', numeric:true });
+    if(sizeCmp) return sizeCmp;
+    const colorCmp = String(getProductColorValue(a) || '').localeCompare(String(getProductColorValue(b) || ''), 'es', { sensitivity:'base', numeric:true });
+    if(colorCmp) return colorCmp;
+    const variantCmp = String(a?.variante || '').localeCompare(String(b?.variante || ''), 'es', { sensitivity:'base', numeric:true });
+    if(variantCmp) return variantCmp;
+    const skuCmp = String(a?.sku || '').localeCompare(String(b?.sku || ''), 'es', { sensitivity:'base', numeric:true });
+    if(skuCmp) return skuCmp;
+    return String(a?.ubicacion || '').localeCompare(String(b?.ubicacion || ''), 'es', { sensitivity:'base', numeric:true });
+  }
+
   function renderProducts(list){
     const frag = document.createDocumentFragment();
     const maxRows = appState.ui.productGroupMode ? 220 : 450;
     const items = [];
+    const sortedList = (Array.isArray(list) ? list.slice() : []).sort(compareProductsAZ);
     if(appState.ui.productGroupMode){
       const groups = new Map();
-      list.forEach(p => {
+      sortedList.forEach(p => {
         const key = norm(p.nombre || '') || '__sin_nombre__';
         if(!groups.has(key)) groups.set(key, { nombre:p.nombre || 'Sin nombre', items:[], sample:p });
         groups.get(key).items.push(p);
       });
       Array.from(groups.values())
-        .sort((a,b) => b.items.length - a.items.length || String(a.nombre).localeCompare(String(b.nombre)))
+        .sort((a,b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity:'base', numeric:true }))
         .slice(0, maxRows)
         .forEach(g => items.push({ type:'group', data:g }));
     } else {
-      list.slice(0, maxRows).forEach(p => items.push({ type:'product', data:p }));
+      sortedList.slice(0, maxRows).forEach(p => items.push({ type:'product', data:p }));
     }
     productList.innerHTML = '';
     items.forEach(entry => {
