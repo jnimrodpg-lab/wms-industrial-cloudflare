@@ -3687,6 +3687,16 @@ function escapeHtml(str){
       return false;
     }
   }
+  function getSheetSourceSignature(url, sheetName){
+    const sheetId = parseSheetId(url || '');
+    const cleanName = norm(sheetName || 'productos').replace(/[^a-z0-9]+/g,'_');
+    return `${sheetId || 'sinurl'}__${cleanName || 'sinhoja'}`;
+  }
+  function getBranchStoragePrefix(branchIndex){
+    const branch = (appState.admin?.branches || [])[branchIndex] || {};
+    const branchName = norm(branch.name || `branch_${branchIndex}`).replace(/[^a-z0-9]+/g,'_');
+    return `wms_products_branch_v2_${branchName}__`;
+  }
   function getBranchStorageKey(branchIndex){
     const branch = (appState.admin?.branches || [])[branchIndex] || {};
     const branchName = norm(branch.name || `branch_${branchIndex}`).replace(/[^a-z0-9]+/g,'_');
@@ -3756,6 +3766,42 @@ function escapeHtml(str){
     return false;
   }
   function resetSheetPanelList(){ productList.innerHTML = '<div class="empty" style="padding:18px">Aún no hay productos importados en este asistente.</div>'; productSummary.textContent = 'Importa productos en el paso 3 para verlos aquí.'; countProducts.textContent='0'; }
+  function clearImportedProductsForBranch(branchIndex, { resetUi=false, clearHeaders=false } = {}){
+    try{
+      const branch = (appState.admin?.branches || [])[branchIndex];
+      const prefix = getBranchStoragePrefix(branchIndex);
+      const staleKeys = [];
+      for(let i=0;i<localStorage.length;i+=1){
+        const key = localStorage.key(i);
+        if(key && key.startsWith(prefix)) staleKeys.push(key);
+      }
+      staleKeys.forEach(key=>localStorage.removeItem(key));
+      localStorage.removeItem(`wms_products_branch_${branchIndex}`);
+      localStorage.removeItem('wms_products_v2');
+      if(branch){
+        branch.sheetPreviewProducts = [];
+        branch.lastSheetCount = 0;
+        branch.sheetConnected = false;
+        branch.lastImportedSourceSignature = '';
+        if(clearHeaders){
+          branch.sheetHeaders = [];
+          branch.sheetHeaderIndex = 0;
+          branch.sheetMapRows = (branch.sheetMapRows||[]).map(row=>({ ...row, header:'' }));
+        }
+      }
+    }catch{}
+    if(resetUi){
+      appState.products = [];
+      appState.filtered = [];
+      appState.selectedProduct = null;
+      appState.selectedRack = '';
+      appState.selectedRackLayoutId = '';
+      renderProducts([]);
+      resetSheetPanelList();
+      countProducts.textContent='0';
+    }
+  }
+
   function clearCurrentProductsForSheetLink(branchIndex){
     appState.products = [];
     appState.filtered = [];
@@ -3769,11 +3815,8 @@ function escapeHtml(str){
           branch.sheetPreviewProducts = [];
           branch.lastSheetCount = 0;
         }
-        const modernKey = getBranchStorageKey(branchIndex);
-        localStorage.removeItem(modernKey);
-        localStorage.removeItem(`wms_products_branch_${branchIndex}`);
+        clearImportedProductsForBranch(branchIndex, { resetUi:false, clearHeaders:false });
       }
-      localStorage.removeItem('wms_products_v2');
     }catch{}
     renderProducts([]);
     resetSheetPanelList();
@@ -4023,6 +4066,7 @@ function escapeHtml(str){
     appState.activeBranchIndex = index;
     if(appState.admin) appState.admin.activeBranch = index;
 
+    const previousSourceSignature = getSheetSourceSignature(branch.sheetUrl || '', branch.sheetName || '');
     const previewBackup = Array.isArray(branch.sheetPreviewProducts) ? branch.sheetPreviewProducts.slice(0,12000) : [];
     const productsBackup = Array.isArray(appState.products) ? appState.products.slice(0,12000) : [];
     const filteredBackup = Array.isArray(appState.filtered) ? appState.filtered.slice(0,12000) : [];
@@ -4032,6 +4076,8 @@ function escapeHtml(str){
     const nameInput = contentWrap.querySelector(`[data-sheet-name="${index}"]`);
     if(urlInput) branch.sheetUrl = String(urlInput.value || '').trim();
     if(nameInput) branch.sheetName = String(nameInput.value || '').trim();
+    const nextSourceSignature = getSheetSourceSignature(branch.sheetUrl || '', branch.sheetName || '');
+    const sourceChanged = previousSourceSignature !== nextSourceSignature;
     const root = contentWrap.querySelector(`[data-sheet-branch="${index}"]`);
     if(root){
       (branch.sheetMapRows||[]).forEach(row=>{
@@ -4044,26 +4090,40 @@ function escapeHtml(str){
       });
     }
 
-    branch.sheetConnected = !!branch.sheetConnected || previewBackup.length > 0 || productsBackup.length > 0;
-    branch.lastSheetCount = Number(branch.lastSheetCount || previewBackup.length || productsBackup.length || 0);
-    branch.sheetStatusText = 'Cambios guardados';
+    if(sourceChanged){
+      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders:true });
+      branch.sheetStatusText = 'Vinculación actualizada. Vuelve a leer fila 1 e importa los productos.';
+    }else{
+      branch.sheetConnected = !!branch.sheetConnected || previewBackup.length > 0 || productsBackup.length > 0;
+      branch.lastSheetCount = Number(branch.lastSheetCount || previewBackup.length || productsBackup.length || 0);
+      branch.sheetStatusText = 'Cambios guardados';
+    }
 
     try{
       await persistBranchSheetMetadataOnly(index);
-      // Restaurar SIEMPRE el estado visible. Este botón no debe tocar productos ni vista previa.
-      branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-      appState.products = productsBackup.slice(0,12000);
-      appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
-      if(selectedBackup) appState.selectedProduct = selectedBackup;
-      renderProducts(appState.filtered);
-      countProducts.textContent = appState.products.length.toLocaleString('es-PE');
-      renderSheetDetailPreview();
-      contentStatus.textContent = 'Guardado: cambios de vinculación';
+      if(sourceChanged){
+        renderProducts(appState.filtered || []);
+        countProducts.textContent = (appState.products || []).length.toLocaleString('es-PE');
+        renderSheetDetailPreview();
+        contentStatus.textContent = 'Guardado: se limpió la importación anterior de la sucursal.';
+      }else{
+        // Restaurar SIEMPRE el estado visible. Este botón no debe tocar productos ni vista previa.
+        branch.sheetPreviewProducts = previewBackup.slice(0,12000);
+        appState.products = productsBackup.slice(0,12000);
+        appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
+        if(selectedBackup) appState.selectedProduct = selectedBackup;
+        renderProducts(appState.filtered);
+        countProducts.textContent = appState.products.length.toLocaleString('es-PE');
+        renderSheetDetailPreview();
+        contentStatus.textContent = 'Guardado: cambios de vinculación';
+      }
     }catch(err){
       console.error(err);
-      branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-      appState.products = productsBackup.slice(0,12000);
-      appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
+      if(!sourceChanged){
+        branch.sheetPreviewProducts = previewBackup.slice(0,12000);
+        appState.products = productsBackup.slice(0,12000);
+        appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
+      }
       if(selectedBackup) appState.selectedProduct = selectedBackup;
       renderProducts(appState.filtered);
       countProducts.textContent = appState.products.length.toLocaleString('es-PE');
@@ -4088,6 +4148,13 @@ function escapeHtml(str){
     const branch = appState.admin.branches[index]; if(!branch) return;
     const url = String(branch.sheetUrl||'').trim(); const sheetName = String(branch.sheetName||'').trim();
     if(!url || !sheetName) return alert('Completa la URL/ID del Sheet y el nombre de la hoja.');
+    const currentSourceSignature = getSheetSourceSignature(url, sheetName);
+    const hadImportedProducts = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length) || Number(branch.lastSheetCount || 0) > 0 || (appState.activeBranchIndex===index && Array.isArray(appState.products) && appState.products.length);
+    if(hadImportedProducts){
+      const replaceOk = confirm('Esta sucursal ya tiene productos importados. ¿Deseas reemplazarlos por la nueva importación?');
+      if(!replaceOk) return;
+      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders: branch.lastImportedSourceSignature !== currentSourceSignature });
+    }
     if(!branch.sheetHeaders || !branch.sheetHeaders.length) {
       branch.sheetStatusText = 'Leyendo fila 1...'; saveAdminState(); renderSheetScreen();
       try { await readBranchHeaders(index); } catch(err){ alert(err.message||'No se pudieron leer encabezados'); return; }
@@ -4183,6 +4250,7 @@ function escapeHtml(str){
       syncBranchLayoutWithProducts(index, list);
       appState.activeBranchIndex = index;
       branch.sheetPreviewProducts = list.slice(0, 12000);
+      branch.lastImportedSourceSignature = currentSourceSignature;
       if(list[0]) selectProduct(list[0]); else appState.selectedProduct = null;
       renderProducts(appState.filtered);
       saveProductsLocal(index);
