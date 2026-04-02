@@ -88,72 +88,8 @@
     ],
     admin: loadAdminState(),
     ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
-    sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
-    unsaved: { admin:false, sheet:false, layout:false, racks:false }
+    sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' }
   };
-
-  function screenDirtyKey(screen = appState.screen){
-    if(screen === 'admin') return 'admin';
-    if(screen === 'sheet') return 'sheet';
-    if(screen === 'layout') return 'layout';
-    if(screen === 'racks') return 'racks';
-    return '';
-  }
-  function markScreenDirty(screen = appState.screen){
-    const key = screenDirtyKey(screen);
-    if(key) appState.unsaved[key] = true;
-  }
-  function clearScreenDirty(screen = appState.screen){
-    const key = screenDirtyKey(screen);
-    if(key) appState.unsaved[key] = false;
-  }
-  function hasUnsavedForScreen(screen = appState.screen){
-    const key = screenDirtyKey(screen);
-    return !!(key && appState.unsaved[key]);
-  }
-  function hasAnyUnsavedChanges(){
-    return Object.values(appState.unsaved || {}).some(Boolean);
-  }
-  function saveScreenChanges(screen = appState.screen){
-    const key = screenDirtyKey(screen);
-    if(!key || !hasUnsavedForScreen(screen)) return true;
-    try{
-      if(screen === 'admin'){
-        const names = appState.admin.branches.map(b=>norm(b.name));
-        if(new Set(names).size!==names.length){ alert('Hay sucursales con nombres repetidos.'); return false; }
-        for(const b of appState.admin.branches){
-          const ws=(b.warehouses||[]).map(x=>norm(x));
-          if(new Set(ws).size!==ws.length){ alert(`Hay almacenes repetidos en ${b.name}.`); return false; }
-        }
-        saveAdminState();
-      }else if(screen === 'sheet'){
-        saveAdminState();
-      }else if(screen === 'layout'){
-        persistActiveLayout();
-      }else if(screen === 'racks'){
-        saveRackModels();
-      }
-      clearScreenDirty(screen);
-      return true;
-    }catch(err){
-      alert(err?.message || 'No se pudieron guardar los cambios.');
-      return false;
-    }
-  }
-  function confirmLeaveWithSave(targetScreen){
-    if(!hasUnsavedForScreen(appState.screen) || targetScreen === appState.screen) return true;
-    const labels = { admin:'Datos de empresa', sheet:'Vincular Sheet', layout:'Edición de layout', racks:'Edición de racks' };
-    const label = labels[appState.screen] || 'esta pestaña';
-    const ok = confirm(`Hay cambios pendientes en ${label}.\n\nAceptar = guardar cambios y cambiar de pestaña.\nCancelar = seguir aquí sin cambiar.`);
-    if(!ok) return false;
-    return saveScreenChanges(appState.screen);
-  }
-
-  window.addEventListener('beforeunload', (e) => {
-    if(!hasAnyUnsavedChanges()) return;
-    e.preventDefault();
-    e.returnValue = '';
-  });
 
   const storedRackModels = loadRackModels();
   if (storedRackModels) appState.models = storedRackModels;
@@ -174,7 +110,6 @@
   }
   function saveRackModels(){
     try{ localStorage.setItem('wms_rack_models_v3', JSON.stringify(appState.models || [])); }catch{}
-    markScreenDirty('racks');
   }
 
   function makeDemoProducts(total = 8000){
@@ -559,7 +494,6 @@
   }
 
   function setScreen(screen){
-    if(screen !== appState.screen && !confirmLeaveWithSave(screen)) return;
     appState.screen = screen;
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     const showSearch = ['sheet','viewer'].includes(screen);
@@ -1565,7 +1499,6 @@
     (appState.layout?.zones || []).forEach(zone => ensureZoneSectionCuts(zone));
   }
   function persistActiveLayout(){
-    markScreenDirty('layout');
     const idx = getActiveLayoutBranchIndex();
     if(!appState.branchLayouts) appState.branchLayouts = {};
     normalizeLayoutSectionState();
@@ -2079,15 +2012,15 @@
   }
   function renderBranchCard(branch,index){ return `<div class="branch-card${index!==appState.admin.activeBranch?' collapsed':''}" data-branch-card="${index}"><div class="branch-head"><button class="tiny-btn" data-action="toggle-branch" data-index="${index}">${index===appState.admin.activeBranch?'−':'+'}</button><input data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name)}"><input type="color" data-field="branch-color" data-index="${index}" value="${escapeHtml(branch.color||'#f5a623')}" title="Color identificador" class="company-color-circle"><button class="tiny-btn" data-action="move-up" data-index="${index}">↑</button><button class="tiny-btn" data-action="move-down" data-index="${index}">↓</button><button class="tiny-btn danger" data-action="delete-branch" data-index="${index}">🗑</button></div><div class="branch-body"><div><label class="tiny muted">Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div><div class="grid"><label class="tiny muted">Almacenes</label><div style="display:grid;gap:8px">${(branch.warehouses||[]).map((w,wi)=>`<div class="ware-row"><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(w)}"><button class="tiny-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}">🗑</button></div>`).join('')}</div></div><button class="tiny-btn" data-action="add-warehouse" data-index="${index}">＋ Almacén</button></div></div>`; }
   function bindAdminScreenEvents(){
-    $('#companyNameInput').addEventListener('input', e=>{ appState.admin.company=e.target.value; markScreenDirty('admin'); }); $('#companyLogoBtn').onclick=()=>$('#companyLogoInput').click();
-    $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; markScreenDirty('admin'); saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
-    $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:'#f5a623',warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; markScreenDirty('admin'); renderAdminScreen(); };
-    $('#saveCompanyBtn').onclick=()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); clearScreenDirty('admin'); alert('Configuración guardada.'); renderAdminScreen(); };
-    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].name=e.target.value; markScreenDirty('admin'); });
-    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>{ appState.admin.branches[+e.target.dataset.index].type=e.target.value; markScreenDirty('admin'); });
-    contentWrap.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; markScreenDirty('admin'); });
-    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value; markScreenDirty('admin'); });
-    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; markScreenDirty('admin'); renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; markScreenDirty('admin'); renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); markScreenDirty('admin'); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); markScreenDirty('admin'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; markScreenDirty('admin'); renderAdminScreen(); } } );
+    $('#companyNameInput').addEventListener('input', e=>appState.admin.company=e.target.value); $('#companyLogoBtn').onclick=()=>$('#companyLogoInput').click();
+    $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
+    $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:'#f5a623',warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
+    $('#saveCompanyBtn').onclick=()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); alert('Configuración guardada.'); renderAdminScreen(); };
+    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
+    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
+    contentWrap.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });
+    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value);
+    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; renderAdminScreen(); } } );
     applyBrand();
   }
   async function httpJson(url, opts={}){ const res=await fetch(url, opts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
@@ -2304,7 +2237,6 @@
     if(!branch) return;
     branch.sheetUrl = String(branch.sheetUrl||'').trim();
     branch.sheetName = String(branch.sheetName||'').trim();
-    markScreenDirty('sheet');
     clearCurrentProductsForSheetLink(index);
     branch.sheetStatusText = 'Leyendo fila 1...';
     appState.sheetConfig.lastMode = 'google';
@@ -2312,7 +2244,6 @@
     renderSheetScreen();
     try{
       await readBranchHeaders(index);
-      clearScreenDirty('sheet');
       renderSheetScreen();
     }catch(err){
       branch.sheetConnected = false;
@@ -2326,13 +2257,11 @@
   function addSheetMapRow(index){
     const branch = appState.admin.branches[index]; if(!branch) return;
     branch.sheetMapRows.push({ id: uid('map'), field:'personalizado', label:'Encabezado', header:'' });
-    markScreenDirty('sheet');
     saveAdminState(); renderSheetScreen();
   }
   function deleteSheetMapRow(index,rowId){
     const branch = appState.admin.branches[index]; if(!branch) return;
     branch.sheetMapRows = (branch.sheetMapRows||[]).filter(r=>r.id!==rowId);
-    markScreenDirty('sheet');
     if(!branch.sheetMapRows.length) branch.sheetMapRows = defaultSheetMapRows();
     saveAdminState(); renderSheetScreen();
   }
@@ -2342,7 +2271,6 @@
     const idx = rows.findIndex(r=>r.id===rowId); if(idx<0) return;
     const ni = idx + dir; if(ni<0 || ni>=rows.length) return;
     const tmp = rows[idx]; rows[idx]=rows[ni]; rows[ni]=tmp;
-    markScreenDirty('sheet');
     saveAdminState(); renderSheetScreen();
   }
   function saveBranchSheetMapping(index){
@@ -2360,7 +2288,6 @@
     });
     branch.sheetStatusText = 'Mapeo guardado';
     saveAdminState();
-    clearScreenDirty('sheet');
     renderSheetScreen();
   }
 
@@ -2387,7 +2314,6 @@
     ensureBranchSheetFields();
     const branch = appState.admin.branches[index]; if(!branch) return;
     const url = String(branch.sheetUrl||'').trim(); const sheetName = String(branch.sheetName||'').trim();
-    markScreenDirty('sheet');
     if(!url || !sheetName) return alert('Completa la URL/ID del Sheet y el nombre de la hoja.');
     if(!branch.sheetHeaders || !branch.sheetHeaders.length) {
       branch.sheetStatusText = 'Leyendo fila 1...'; saveAdminState(); renderSheetScreen();
@@ -2492,7 +2418,6 @@
       branch.sheetConnected = true;
       branch.sheetStatusText = `Importados: ${list.length.toLocaleString('es-PE')} • detectados ${branch.lastSheetCount.toLocaleString('es-PE')}`;
       saveAdminState();
-      clearScreenDirty('sheet');
       renderSheetScreen();
     }catch(err){
       branch.sheetStatusText = err.message || 'Error al importar'; saveAdminState(); renderSheetScreen(); alert(branch.sheetStatusText);
@@ -2510,8 +2435,8 @@
     const openMap = getSheetBranchOpenMap();
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
-    setTags(['por sucursal','fila 1','columnas visibles','orden']);
-    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="sheet-layout-toggle" id="btnSheetExpand">${appState.ui.sheetExpanded ? 'Reducir panel' : 'Expandir panel'}<span>${appState.ui.sheetExpanded ? '2X' : 'X→2X'}</span></button>`);
+    setTags([]);
+    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button>`);
     renderSheetDetailPreview();
 
     contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar"><div><b style="font-size:18px;letter-spacing:.2px">Vinculación por sucursal</b><div class="tiny muted" style="margin-top:6px;max-width:860px;line-height:1.45">1) Guarda sucursal + hoja 2) Se listan los encabezados de la fila 1 3) Elige qué columnas usar y en qué orden verlas</div></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
@@ -2524,8 +2449,8 @@
     }).join('')}</div></div></div>`;
 
     contentWrap.querySelectorAll('[data-sheet-toggle]').forEach(el=>el.onclick=async (e)=>{ const i=+e.currentTarget.dataset.sheetToggle; const wasOpen=!!openMap[i]; Object.keys(openMap).forEach(k=>{openMap[k]=false;}); openMap[i]=!wasOpen; if(openMap[i]){ await activateBranchSelection(i); } renderSheetScreen(); });
-    contentWrap.querySelectorAll('[data-sheet-url]').forEach(el=>el.oninput=(e)=>{ appState.admin.branches[+e.target.dataset.sheetUrl].sheetUrl=e.target.value; markScreenDirty('sheet'); });
-    contentWrap.querySelectorAll('[data-sheet-name]').forEach(el=>el.oninput=(e)=>{ appState.admin.branches[+e.target.dataset.sheetName].sheetName=e.target.value; markScreenDirty('sheet'); });
+    contentWrap.querySelectorAll('[data-sheet-url]').forEach(el=>el.oninput=(e)=>{ appState.admin.branches[+e.target.dataset.sheetUrl].sheetUrl=e.target.value; });
+    contentWrap.querySelectorAll('[data-sheet-name]').forEach(el=>el.oninput=(e)=>{ appState.admin.branches[+e.target.dataset.sheetName].sheetName=e.target.value; });
     contentWrap.querySelectorAll('[data-sheet-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetLink(+e.currentTarget.dataset.sheetSave));
     contentWrap.querySelectorAll('[data-sheet-import]').forEach(el=>el.onclick=(e)=>importBranchSheet(+e.currentTarget.dataset.sheetImport));
     contentWrap.querySelectorAll('[data-sheet-map-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetMapping(+e.currentTarget.dataset.sheetMapSave));
@@ -2533,10 +2458,6 @@
     contentWrap.querySelectorAll('[data-map-del]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapDel.split(':'); deleteSheetMapRow(+i,id); });
     contentWrap.querySelectorAll('[data-map-up]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapUp.split(':'); moveSheetMapRow(+i,id,-1); });
     contentWrap.querySelectorAll('[data-map-down]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapDown.split(':'); moveSheetMapRow(+i,id,1); });
-    contentWrap.querySelectorAll('[data-map-field], [data-map-header], [data-map-label]').forEach(el=>{
-      const evt = el.tagName === 'INPUT' ? 'input' : 'change';
-      el.addEventListener(evt, ()=>markScreenDirty('sheet'));
-    });
     const btnSheetExpand = document.getElementById('btnSheetExpand');
     if(btnSheetExpand) btnSheetExpand.onclick = toggleSheetExpanded;
   }
