@@ -4141,8 +4141,8 @@ function getSheetBranchOpenMap(){
     }
 
     if(sourceChanged){
-      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders:true });
-      branch.sheetStatusText = 'Vinculación actualizada. Vuelve a leer fila 1 e importa los productos.';
+      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders:false });
+      branch.sheetStatusText = 'Vinculación actualizada. Se conservaron los encabezados/mapeo guardados; vuelve a leer fila 1 si quieres revalidarlos antes de importar.';
     }else{
       branch.sheetConnected = !!branch.sheetConnected || previewBackup.length > 0 || productsBackup.length > 0;
       branch.lastSheetCount = Number(branch.lastSheetCount || previewBackup.length || productsBackup.length || 0);
@@ -4203,14 +4203,14 @@ function getSheetBranchOpenMap(){
     if(hadImportedProducts){
       const replaceOk = confirm('Esta sucursal ya tiene productos importados. ¿Deseas reemplazarlos por la nueva importación?');
       if(!replaceOk) return;
-      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders: branch.lastImportedSourceSignature !== currentSourceSignature });
+      clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders:false });
     }
     if(!branch.sheetHeaders || !branch.sheetHeaders.length) {
       branch.sheetStatusText = 'Leyendo fila 1...'; saveAdminState(); renderSheetScreen();
       try { await readBranchHeaders(index); } catch(err){ alert(err.message||'No se pudieron leer encabezados'); return; }
     }
     await saveBranchSheetMapping(index);
-    branch.sheetStatusText = 'Importando productos...'; saveAdminState(); renderSheetScreen();
+    branch.sheetStatusText = 'Importando productos sin borrar el mapeo de columnas...'; saveAdminState(); renderSheetScreen();
     try{
       const data = await httpJson(`/api/sheets/rows?url=${encodeURIComponent(url)}&sheet=${encodeURIComponent(sheetName)}&limit=12000`);
       const headers = Array.isArray(data.headers)?data.headers:[];

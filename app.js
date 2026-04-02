@@ -2385,7 +2385,7 @@ function getSheetBranchOpenMap(){
     }
     saveBranchSheetMapping(index);
     clearCurrentProductsForSheetLink(index);
-    branch.sheetStatusText = 'Importando productos...'; saveAdminState(); renderSheetScreen();
+    branch.sheetStatusText = 'Importando productos sin borrar el mapeo de columnas...'; saveAdminState(); renderSheetScreen();
     try{
       const data = await httpJson(`/api/sheets/rows?url=${encodeURIComponent(url)}&sheet=${encodeURIComponent(sheetName)}&limit=12000`);
       const headers = Array.isArray(data.headers)?data.headers:[];
