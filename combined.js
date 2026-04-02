@@ -94,6 +94,10 @@
       background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0));
     }
     .panel-header h2,.panel-header h3{margin:0;font-size:clamp(13px,.92vw,14px);letter-spacing:.3px}
+    .search-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
+    .search-header-actions .chip,.search-header-actions .seg-btn{flex:0 0 auto}
+    .search-header-actions #toggleGroupProducts{order:2}
+    .search-header-actions #countProductsChip{order:1}
     .tiny{font-size:clamp(11px,.78vw,12px)}
     .muted{color:var(--muted)}
     .chip{
@@ -219,10 +223,10 @@
     .product-list.mobile-list{display:grid;gap:0;padding-bottom:12px}
     .product-head.mobile-hidden{display:none}
     .loc-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,216,77,.18);background:rgba(255,216,77,.11);color:#ffe27a;font-size:11px;font-weight:800}
-    .product-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:space-between}
+    .product-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:flex-start}
     .product-toolbar-actions{display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin-left:auto}
     .product-toolbar .seg-btn,.product-toolbar .chip{flex:0 0 auto}
-    .product-toolbar #productSummary{min-width:0;flex:1 1 320px}
+    .product-toolbar #productSummary{min-width:0;flex:1 1 auto}
 
     /* CONTENT */
     .content-panel,.detail-panel{display:grid;grid-template-rows:auto 1fr auto;min-height:0}
@@ -266,7 +270,7 @@
       .app.sheet-swap-layout.sheet-expanded{grid-template-columns:var(--sidebar-w) minmax(0,1.58fr) minmax(0,.96fr)}
       .search-card{grid-template-columns:clamp(132px,31%,176px) minmax(0,1fr)}
     }
-    @media (max-width:1200px){.search-card{grid-template-columns:180px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.product-toolbar-actions{justify-content:flex-start}}
+    @media (max-width:1200px){.search-card{grid-template-columns:180px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.search-header-actions{justify-content:flex-end}}
     @media (max-width:760px){.search-card{grid-template-columns:1fr}.product-photo{min-height:220px;max-height:260px}.search-card-title-row{flex-direction:column;align-items:flex-start}.search-results-wrap{overflow:visible}.product-list{padding:0 0 10px}.product-head{position:static}.search-panel{grid-template-rows:auto auto auto auto minmax(0,1fr)}.active-product-card{position:static;width:100%}}
     .search-branch-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg, rgba(30,84,69,.22), rgba(10,20,20,.6));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
     .search-branch-card .branch-copy{display:grid;gap:3px;min-width:0}
@@ -836,7 +840,7 @@ body.theme-light .seg-btn,
     .layout-header-card{min-width:360px;max-width:440px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(7,17,29,.96),rgba(10,22,36,.98));box-shadow:0 16px 34px rgba(0,0,0,.22);padding:14px;pointer-events:auto;}
     .layout-header-card .layout-tool-group{margin:0 !important;background:transparent;border:none;box-shadow:none;padding:0;}
     .layout-header-card .layout-tool-group-title{margin-bottom:10px;}
-    @media (max-width:900px){.panel-header.has-actions{flex-direction:column;}.detail-head-actions{width:100%;justify-content:flex-start;}}
+    @media (max-width:900px){.panel-header.has-actions{flex-direction:column;}.detail-head-actions{width:100%;justify-content:flex-start;}.search-header-actions{width:100%;justify-content:flex-end;}}
 
 
     /* theme switch */
@@ -1113,7 +1117,10 @@ body.theme-light .seg-btn,
           <h2>Búsqueda de producto</h2>
           <div class="muted tiny">Barra de búsqueda + lector QR / código de barras</div>
         </div>
-        
+        <div class="search-header-actions">
+          <span class="chip" id="countProductsChip"><span id="countProducts">0</span> productos</span>
+          <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
+        </div>
       </div>
       <div class="search-top">
         <div class="search-shell">
@@ -1164,10 +1171,6 @@ body.theme-light .seg-btn,
       </div>
       <div class="product-toolbar">
         <span class="muted tiny" id="productSummary">Mostrando 0 resultados</span>
-        <div class="product-toolbar-actions">
-          <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
-          <span class="chip" id="countProductsChip"><span id="countProducts">0</span> productos</span>
-        </div>
       </div>
       <div class="search-results-wrap">
         <div class="product-head">
