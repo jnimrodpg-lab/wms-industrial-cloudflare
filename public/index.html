@@ -1399,6 +1399,13 @@ function escapeHtml(str){
   function face(points, attrs={}){ const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`; const baseAttrs = { d, 'stroke-linejoin':'round', 'stroke-linecap':'round', 'vector-effect':'non-scaling-stroke' }; return svgEl('path', { ...baseAttrs, ...attrs }); }
   function centroid(pts){ const s=pts.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0}); return { x:s.x/pts.length, y:s.y/pts.length }; }
   function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+
+  function parseSheetId(input){
+    const value = String(input || '').trim();
+    const match = value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
+    return match ? match[1] : value;
+  }
+
   function parseSheetUrl(url){
     const t = String(url||'').trim();
     const m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
