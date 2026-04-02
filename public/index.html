@@ -1095,11 +1095,6 @@ body.theme-light .seg-btn,
                 <div class="muted tiny">Detalle visual del producto activo o escaneado</div>
               </div>
             </div>
-            <div class="search-mode-row">
-              <div class="search-mode-toggle">
-                <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
-              </div>
-            </div>
           </div>
           <div class="search-card">
             <div class="product-photo empty" id="activeProductImageWrap">
@@ -1142,7 +1137,7 @@ body.theme-light .seg-btn,
       <div class="product-toolbar">
         <span class="muted tiny" id="productSummary">Mostrando 0 resultados</span>
         <div class="product-toolbar-actions">
-          <span class="chip" id="sheetStatusChip">Sheet demo</span>
+          <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
         </div>
       </div>
       <div class="search-results-wrap">
@@ -2575,7 +2570,7 @@ function escapeHtml(str){
     const sheetName = appState.sheetConfig.sheetName || 'Productos';
     const id = parseSheetUrl(url);
     if(!id){ alert('URL o ID de Google Sheet inválido.'); return; }
-    sheetStatusChip.textContent = 'Cargando sheet...';
+    if(sheetStatusChip) sheetStatusChip.textContent = 'Cargando sheet...';
     contentStatus.textContent = 'Intentando leer Google Sheet...';
     try {
       const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheetName)}`;
@@ -2782,7 +2777,7 @@ function escapeHtml(str){
         appState.filtered = parsed;
         appState.sheetConfig.lastMode = 'google';
         syncBranchLayoutWithProducts(getActiveLayoutBranchIndex(), parsed);
-        sheetStatusChip.textContent = `${parsed.length.toLocaleString('es-PE')} filas`;
+        if(sheetStatusChip) sheetStatusChip.textContent = `${parsed.length.toLocaleString('es-PE')} filas`;
         contentStatus.textContent = `Sheet vinculado. Encabezados detectados en fila ${headerRowIndex + 1}. Columnas: SKU ${iSKU+1}, Nombre ${iNombre+1}, Variante ${iVar+1}, Ubicación ${iUb+1}, Almacén ${iAlm+1}. Layout sincronizado por niveles/slots.`;
         selectProduct(parsed[0]);
         renderProducts(parsed);
@@ -2792,7 +2787,7 @@ function escapeHtml(str){
       }
     } catch (err) {
       console.error(err);
-      sheetStatusChip.textContent = 'Error de lectura';
+      if(sheetStatusChip) sheetStatusChip.textContent = 'Error de lectura';
       contentStatus.textContent = 'No se pudo leer la hoja. Verifica permisos, URL, fila de encabezados y nombre de hoja.';
       alert('No se pudo leer el Google Sheet. Verifica que esté compartido y que el nombre de hoja sea correcto.');
     }
@@ -4214,8 +4209,7 @@ function escapeHtml(str){
     const openMap = getSheetBranchOpenMap();
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
-    setTags(['por sucursal','fila 1','columnas visibles','orden']);
-    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="sheet-layout-toggle" id="btnSheetExpand">${appState.ui.sheetExpanded ? 'Reducir panel' : 'Expandir panel'}<span>${appState.ui.sheetExpanded ? '2X' : 'X→2X'}</span></button>`);
+    setTags([]);
     renderSheetDetailPreview();
     const currentSheetIndex = getCurrentSheetBranchIndex();
     const currentSheetBranch = (appState.admin?.branches || [])[currentSheetIndex];
@@ -4244,8 +4238,6 @@ function escapeHtml(str){
     contentWrap.querySelectorAll('[data-map-del]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapDel.split(':'); deleteSheetMapRow(+i,id); });
     contentWrap.querySelectorAll('[data-map-up]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapUp.split(':'); moveSheetMapRow(+i,id,-1); });
     contentWrap.querySelectorAll('[data-map-down]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapDown.split(':'); moveSheetMapRow(+i,id,1); });
-    const btnSheetExpand = document.getElementById('btnSheetExpand');
-    if(btnSheetExpand) btnSheetExpand.onclick = toggleSheetExpanded;
     const btnSheetSaveCurrent = document.getElementById('btnSheetSaveCurrent');
     if(btnSheetSaveCurrent) btnSheetSaveCurrent.onclick = async ()=>{ const idx = getCurrentSheetBranchIndex(); await saveBranchSheetCurrent(idx); };
   }
