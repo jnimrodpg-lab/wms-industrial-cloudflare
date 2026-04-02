@@ -94,10 +94,6 @@
       background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,0));
     }
     .panel-header h2,.panel-header h3{margin:0;font-size:clamp(13px,.92vw,14px);letter-spacing:.3px}
-    .search-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-left:auto}
-    .search-header-actions .chip,.search-header-actions .seg-btn{flex:0 0 auto}
-    .search-header-actions #toggleGroupProducts{order:2}
-    .search-header-actions #countProductsChip{order:1}
     .tiny{font-size:clamp(11px,.78vw,12px)}
     .muted{color:var(--muted)}
     .chip{
@@ -167,7 +163,7 @@
     .action-btn.primary{background:linear-gradient(180deg,#174a82,#0b6fcb)}
     .search-shell{display:grid;gap:12px}
     .search-input-wrap{display:grid;grid-template-columns:1fr;gap:10px;align-items:center}
-    .search-action-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.search-action-row.compact{display:flex;justify-content:flex-end}
+    .search-action-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
     .search-mode-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .search-mode-toggle{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
     .search-card{display:grid;grid-template-columns:clamp(150px,34%,210px) minmax(0,1fr);gap:clamp(10px,.9vw,16px);padding:clamp(12px,.95vw,14px);border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.035);align-items:stretch}
@@ -223,10 +219,10 @@
     .product-list.mobile-list{display:grid;gap:0;padding-bottom:12px}
     .product-head.mobile-hidden{display:none}
     .loc-pill{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,216,77,.18);background:rgba(255,216,77,.11);color:#ffe27a;font-size:11px;font-weight:800}
-    .product-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:flex-start}
+    .product-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;justify-content:space-between}
     .product-toolbar-actions{display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin-left:auto}
     .product-toolbar .seg-btn,.product-toolbar .chip{flex:0 0 auto}
-    .product-toolbar #productSummary{min-width:0;flex:1 1 auto}
+    .product-toolbar #productSummary{min-width:0;flex:1 1 320px}
 
     /* CONTENT */
     .content-panel,.detail-panel{display:grid;grid-template-rows:auto 1fr auto;min-height:0}
@@ -270,7 +266,7 @@
       .app.sheet-swap-layout.sheet-expanded{grid-template-columns:var(--sidebar-w) minmax(0,1.58fr) minmax(0,.96fr)}
       .search-card{grid-template-columns:clamp(132px,31%,176px) minmax(0,1fr)}
     }
-    @media (max-width:1200px){.search-card{grid-template-columns:180px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.search-header-actions{justify-content:flex-end}}
+    @media (max-width:1200px){.search-card{grid-template-columns:180px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.product-toolbar-actions{justify-content:flex-start}}
     @media (max-width:760px){.search-card{grid-template-columns:1fr}.product-photo{min-height:220px;max-height:260px}.search-card-title-row{flex-direction:column;align-items:flex-start}.search-results-wrap{overflow:visible}.product-list{padding:0 0 10px}.product-head{position:static}.search-panel{grid-template-rows:auto auto auto auto minmax(0,1fr)}.active-product-card{position:static;width:100%}}
     .search-branch-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg, rgba(30,84,69,.22), rgba(10,20,20,.6));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
     .search-branch-card .branch-copy{display:grid;gap:3px;min-width:0}
@@ -358,7 +354,7 @@
     .form-wrap,.models-wrap{padding:14px;display:grid;gap:12px;min-height:0;overflow:auto}
     .model-card{padding:12px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03);display:grid;gap:8px;cursor:pointer}
     .model-card.active{outline:1px solid rgba(54,163,255,.22);background:rgba(54,163,255,.08)}
-    .tag-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+    .tag-row{display:flex;gap:8px;flex-wrap:wrap}
     .tag{padding:12px 18px;border-radius:999px;font-size:13px;font-weight:800;min-height:42px;border:1px solid var(--line);color:var(--muted);background:rgba(255,255,255,.03);transition:background .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease,opacity .18s ease,transform .18s ease}
     .tag.active{color:#ecfff8;border-color:rgba(76,225,116,.5);background:linear-gradient(180deg,rgba(34,102,72,.92),rgba(19,62,44,.96));box-shadow:0 0 0 1px rgba(76,225,116,.12),0 10px 20px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.06)}
     .tag.inactive{opacity:.72;background:rgba(255,255,255,.022)}
@@ -840,7 +836,7 @@ body.theme-light .seg-btn,
     .layout-header-card{min-width:360px;max-width:440px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(7,17,29,.96),rgba(10,22,36,.98));box-shadow:0 16px 34px rgba(0,0,0,.22);padding:14px;pointer-events:auto;}
     .layout-header-card .layout-tool-group{margin:0 !important;background:transparent;border:none;box-shadow:none;padding:0;}
     .layout-header-card .layout-tool-group-title{margin-bottom:10px;}
-    @media (max-width:900px){.panel-header.has-actions{flex-direction:column;}.detail-head-actions{width:100%;justify-content:flex-start;}.search-header-actions{width:100%;justify-content:flex-end;}}
+    @media (max-width:900px){.panel-header.has-actions{flex-direction:column;}.detail-head-actions{width:100%;justify-content:flex-start;}}
 
 
     /* theme switch */
@@ -1117,10 +1113,7 @@ body.theme-light .seg-btn,
           <h2>Búsqueda de producto</h2>
           <div class="muted tiny">Barra de búsqueda + lector QR / código de barras</div>
         </div>
-        <div class="search-header-actions">
-          <span class="chip" id="countProductsChip"><span id="countProducts">0</span> productos</span>
-          <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
-        </div>
+        <span class="chip"><span id="countProducts">0</span> productos</span>
       </div>
       <div class="search-top">
         <div class="search-shell">
@@ -1129,6 +1122,19 @@ body.theme-light .seg-btn,
               <input id="searchInput" placeholder="Buscar por SKU, nombre, ubicación o rack..." />
               <button class="icon-btn" id="btnSearch" title="Buscar">⌕</button>
               <button class="action-btn primary" id="btnScanCode">Escanear QR / barras</button>
+            </div>
+          </div>
+          <div class="search-action-row">
+            <div class="panel-header" style="padding:0;border:none;background:transparent">
+              <div>
+                <h2 style="font-size:15px">Búsqueda producto</h2>
+                <div class="muted tiny">Detalle visual del producto activo o escaneado</div>
+              </div>
+            </div>
+            <div class="search-mode-row">
+              <div class="search-mode-toggle">
+                <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
+              </div>
             </div>
           </div>
           <div class="search-card">
@@ -1171,6 +1177,9 @@ body.theme-light .seg-btn,
       </div>
       <div class="product-toolbar">
         <span class="muted tiny" id="productSummary">Mostrando 0 resultados</span>
+        <div class="product-toolbar-actions">
+          <span class="chip" id="sheetStatusChip">Sheet demo</span>
+        </div>
       </div>
       <div class="search-results-wrap">
         <div class="product-head">
@@ -4348,8 +4357,8 @@ function escapeHtml(str){
     const openMap = getSheetBranchOpenMap();
     contentTitle.textContent='Vincular Google Sheet';
     contentSubtitle.textContent='Guarda la URL del Sheet, la hoja y elige qué columnas quieres usar por sucursal';
-    setTags([]);
-    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button>`);
+    setTags(['por sucursal','fila 1','columnas visibles','orden']);
+    contentTags.insertAdjacentHTML('beforeend', `<button type="button" class="sheet-layout-toggle" id="btnSheetExpand">${appState.ui.sheetExpanded ? 'Reducir panel' : 'Expandir panel'}<span>${appState.ui.sheetExpanded ? '2X' : 'X→2X'}</span></button>`);
     renderSheetDetailPreview();
     const currentSheetIndex = getCurrentSheetBranchIndex();
     const currentSheetBranch = (appState.admin?.branches || [])[currentSheetIndex];
@@ -4359,7 +4368,7 @@ function escapeHtml(str){
       countProducts.textContent = currentSheetBranch.sheetPreviewProducts.length.toLocaleString('es-PE');
     }
 
-    contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
+    contentWrap.innerHTML = `<div class="form-wrap" style="height:100%;display:flex;flex-direction:column"><div class="branches-panel" style="min-height:0;flex:1;border-radius:22px;background:linear-gradient(180deg,rgba(9,22,40,.78),rgba(6,16,30,.9));box-shadow:0 20px 46px rgba(0,0,0,.24)"><div class="branches-toolbar"><div><b style="font-size:18px;letter-spacing:.2px">Vinculación por sucursal</b><div class="tiny muted" style="margin-top:6px;max-width:860px;line-height:1.45">1) Define URL y hoja 2) Lee la fila 1 3) Elige columnas 4) Importa productos 5) Guarda solo los cambios</div></div><div class="save-strip"><button class="btn primary" id="btnSheetSaveCurrent">Guardar cambios</button></div></div><div class="branches-scroll" style="max-height:none;flex:1;padding:18px" id="sheetBranchesList">${appState.admin.branches.map((b,i)=>{
       const isOpen = !!openMap[i];
       const statusClass = b.sheetConnected ? 'ok' : (b.sheetUrl || b.sheetName ? 'warn' : '');
       const statusText = b.sheetStatusText || (b.sheetConnected ? `Vinculado • ${Number(b.lastSheetCount||0).toLocaleString('es-PE')} filas` : 'Sin vincular');
