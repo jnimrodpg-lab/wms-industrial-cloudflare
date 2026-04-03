@@ -227,23 +227,6 @@
     .app.sheet-swap-layout .content-wrap{padding:20px 22px 18px}
     .app.sheet-swap-layout .search-top{padding:14px}
     .app.sheet-swap-layout .search-panel .panel-header{padding:12px 14px}
-
-    /* Viewer: usar el mismo molde visual de Vincular Sheet para búsqueda */
-    .app:not(.sheet-swap-layout) .search-panel{display:grid;grid-template-rows:auto auto minmax(0,1fr);min-height:0;overflow:hidden}
-    .app:not(.sheet-swap-layout) .search-panel .panel-header{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
-    .app:not(.sheet-swap-layout) .search-top{padding:14px 16px 12px;background:linear-gradient(180deg,#1f3a32,#183129);border:1px solid #3f6d60;border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.18);margin:10px 10px 0}
-    .app:not(.sheet-swap-layout) .search-top .search-shell{display:grid;gap:12px}
-    .app:not(.sheet-swap-layout) .search-top .search-card{background:rgba(8,18,28,.28);border:1px solid rgba(207,224,243,.16);border-radius:18px;box-shadow:none}
-    .app:not(.sheet-swap-layout) .search-top .searchbar{grid-template-columns:minmax(0,1fr) 52px max-content;gap:8px}
-    .app:not(.sheet-swap-layout) .search-top .searchbar input{min-height:40px}
-    .app:not(.sheet-swap-layout) .search-panel .product-toolbar{margin:0 10px;padding:10px 14px;background:linear-gradient(180deg,#1f3a32,#183129);border-inline:1px solid #3f6d60;border-bottom:0;border-top:1px solid rgba(255,255,255,.08)}
-    .app:not(.sheet-swap-layout) .search-panel .search-results-wrap{margin:0 10px 10px;background:linear-gradient(180deg,#1f3a32,#183129);border:1px solid #3f6d60;border-top:0;border-radius:0 0 18px 18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.18)}
-    .app:not(.sheet-swap-layout) .search-panel .product-head{background:rgba(8,18,28,.22);border-top:1px solid rgba(255,255,255,.08)}
-    .app:not(.sheet-swap-layout) .search-panel .product-list{background:transparent}
-    .app:not(.sheet-swap-layout) .search-panel .product-row{background:transparent}
-    .app:not(.sheet-swap-layout) .search-panel .product-row:hover{background:rgba(255,255,255,.03)}
-    .app:not(.sheet-swap-layout) .search-panel .product-head,.app:not(.sheet-swap-layout) .search-panel .product-row{grid-template-columns:minmax(112px,1fr) minmax(220px,2.1fr) minmax(165px,1.45fr) minmax(138px,1.1fr) minmax(150px,1.15fr);gap:10px;padding-inline:14px}
-
     .app.sheet-swap-layout .search-panel .searchbar input{font-size:14px}
     .app.sheet-swap-layout .search-panel .scanner-row{grid-template-columns:1fr}
     .app.sheet-swap-layout .search-panel .result-summary{grid-template-columns:1fr}
@@ -257,7 +240,6 @@
     .viewer-branch-bar .viewer-branch-select{min-width:220px;max-width:320px;width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-weight:700}
     .search-branch-host{display:none;margin-bottom:12px}
     .search-branch-host.active{display:block}
-    @media (max-width:1200px){.app:not(.sheet-swap-layout) .search-top{margin:8px 8px 0}.app:not(.sheet-swap-layout) .search-panel .product-toolbar,.app:not(.sheet-swap-layout) .search-panel .search-results-wrap{margin-inline:8px}.app:not(.sheet-swap-layout) .search-panel .product-head,.app:not(.sheet-swap-layout) .search-panel .product-row{grid-template-columns:minmax(96px,1fr) minmax(190px,2fr) minmax(150px,1.3fr) minmax(130px,1fr) minmax(138px,1.05fr)}}
     @media (max-width:1200px){.search-card{grid-template-columns:198px 1fr}.search-card-meta{grid-template-columns:1fr}.search-action-row{grid-template-columns:1fr}.search-mode-row{align-items:flex-start}.searchbar{grid-template-columns:minmax(0,1fr) 52px}.searchbar .action-btn{grid-column:1 / -1}.product-photo{min-height:280px}.product-toolbar{grid-template-columns:1fr}.product-toolbar-actions{justify-content:flex-start}}
     @media (max-width:760px){.search-card{grid-template-columns:1fr}.product-photo{min-height:220px;max-height:260px}.search-card-title-row{flex-direction:column;align-items:flex-start}}
     .search-branch-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg, rgba(30,84,69,.22), rgba(10,20,20,.6));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
