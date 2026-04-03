@@ -2132,8 +2132,24 @@ function escapeHtml(str){
     return 9999;
   }
 
+  function splitAlphaNumericLead(value){
+    const text = String(value || '').trim();
+    if(!text) return { type:2, normalized:'', text:'' };
+    const first = text.charAt(0);
+    const isLetter = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(first);
+    const isDigit = /\d/.test(first);
+    return { type:isLetter ? 0 : (isDigit ? 1 : 2), normalized:norm(text), text };
+  }
+
+  function compareTextLettersFirst(a,b){
+    const aa = splitAlphaNumericLead(a);
+    const bb = splitAlphaNumericLead(b);
+    if(aa.type !== bb.type) return aa.type - bb.type;
+    return aa.text.localeCompare(bb.text, 'es', { sensitivity:'base', numeric:true });
+  }
+
   function compareProductsAZ(a,b){
-    const nameCmp = String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity:'base', numeric:true });
+    const nameCmp = compareTextLettersFirst(a?.nombre || '', b?.nombre || '');
     if(nameCmp) return nameCmp;
     const sizeA = getProductSizeValue(a) || '';
     const sizeB = getProductSizeValue(b) || '';
@@ -2164,7 +2180,7 @@ function escapeHtml(str){
         groups.get(key).items.push(p);
       });
       Array.from(groups.values())
-        .sort((a,b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity:'base', numeric:true }))
+        .sort((a,b) => compareTextLettersFirst(a.nombre || '', b.nombre || ''))
         .slice(0, maxRows)
         .forEach(g => items.push({ type:'group', data:g }));
     } else {

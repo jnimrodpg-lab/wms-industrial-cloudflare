@@ -165,8 +165,8 @@
     .search-card.is-clickable:hover{border-color:rgba(138,255,203,.24);box-shadow:0 14px 34px rgba(0,0,0,.22)}
     .search-card-overlay{position:fixed;inset:0;background:rgba(3,8,15,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .24s ease;z-index:1100}
     .search-card-overlay.active{opacity:1;pointer-events:auto}
-    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1.04);width:min(860px,calc(100vw - 36px));max-height:calc(100vh - 48px);overflow:auto;padding:18px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default}
-    .search-card.search-card-expanded .product-photo{min-height:380px}
+    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:22px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default}
+    .search-card.search-card-expanded .product-photo{min-height:56vh;max-height:none}
     .search-card.search-card-expanded .search-card-title{font-size:26px}
     .search-card.search-card-expanded .search-card-sku{font-size:13px}
     .search-card.search-card-expanded .search-card-meta{gap:12px}
@@ -177,14 +177,14 @@
     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
     body.search-card-modal-open{overflow:hidden}
     @media (max-width:760px){
-      .search-card.search-card-expanded{width:min(96vw,560px);max-height:calc(100vh - 24px);padding:14px;transform:translate(-50%,-50%) scale(1)}
-      .search-card.search-card-expanded .product-photo{min-height:240px;max-height:300px}
+      .search-card.search-card-expanded{width:min(94vw,720px);max-width:94vw;height:min(84vh,760px);max-height:84vh;padding:14px;transform:translate(-50%,-50%) scale(1)}
+      .search-card.search-card-expanded .product-photo{min-height:38vh;max-height:none}
       .search-card.search-card-expanded .search-card-title{font-size:21px}
       .search-card-expand-hint{display:none}
     }
 
-    .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02));min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
-    .product-photo img{width:100%;height:100%;object-fit:cover;object-position:center center;display:block;transition:opacity .28s ease}
+    .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:transparent;min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
+    .product-photo img{width:100%;height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .28s ease;background:transparent}
     .product-photo.empty::after{content:"Sin imagen";font-weight:700;color:var(--muted);font-size:13px;position:absolute;inset:0;display:grid;place-items:center;z-index:2}
     .search-card-body{display:grid;gap:12px;min-width:0}
     .search-card-title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
@@ -2455,8 +2455,24 @@ function escapeHtml(str){
     return 9999;
   }
 
+  function splitAlphaNumericLead(value){
+    const text = String(value || '').trim();
+    if(!text) return { type:2, normalized:'', text:'' };
+    const first = text.charAt(0);
+    const isLetter = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(first);
+    const isDigit = /\d/.test(first);
+    return { type:isLetter ? 0 : (isDigit ? 1 : 2), normalized:norm(text), text };
+  }
+
+  function compareTextLettersFirst(a,b){
+    const aa = splitAlphaNumericLead(a);
+    const bb = splitAlphaNumericLead(b);
+    if(aa.type !== bb.type) return aa.type - bb.type;
+    return aa.text.localeCompare(bb.text, 'es', { sensitivity:'base', numeric:true });
+  }
+
   function compareProductsAZ(a,b){
-    const nameCmp = String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity:'base', numeric:true });
+    const nameCmp = compareTextLettersFirst(a?.nombre || '', b?.nombre || '');
     if(nameCmp) return nameCmp;
     const sizeA = getProductSizeValue(a) || '';
     const sizeB = getProductSizeValue(b) || '';
@@ -2473,12 +2489,23 @@ function escapeHtml(str){
     return String(a?.ubicacion || '').localeCompare(String(b?.ubicacion || ''), 'es', { sensitivity:'base', numeric:true });
   }
 
+  function shouldForceIndividualView(list){
+    const rawQ = String(searchInput?.value || '').trim();
+    if(!rawQ) return false;
+    const items = Array.isArray(list) ? list.filter(Boolean) : [];
+    if(items.length <= 1) return false;
+    const familyKeys = Array.from(new Set(items.map(p => norm(p?.nombre || '') || '__sin_nombre__'))).filter(Boolean);
+    return familyKeys.length === 1;
+  }
+
   function renderProducts(list){
     const frag = document.createDocumentFragment();
-    const maxRows = appState.ui.productGroupMode ? 220 : 450;
+    const forceIndividual = shouldForceIndividualView(list);
+    const groupedMode = !!appState.ui.productGroupMode && !forceIndividual;
+    const maxRows = groupedMode ? 220 : 450;
     const items = [];
     const sortedList = (Array.isArray(list) ? list.slice() : []).sort(compareProductsAZ);
-    if(appState.ui.productGroupMode){
+    if(groupedMode){
       const groups = new Map();
       sortedList.forEach(p => {
         const key = norm(p.nombre || '') || '__sin_nombre__';
@@ -2486,7 +2513,7 @@ function escapeHtml(str){
         groups.get(key).items.push(p);
       });
       Array.from(groups.values())
-        .sort((a,b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity:'base', numeric:true }))
+        .sort((a,b) => compareTextLettersFirst(a.nombre || '', b.nombre || ''))
         .slice(0, maxRows)
         .forEach(g => items.push({ type:'group', data:g }));
     } else {
@@ -2524,8 +2551,11 @@ function escapeHtml(str){
     productList.appendChild(frag);
     countProducts.textContent = appState.products.length.toLocaleString('es-PE');
     const shown = items.length;
-    const modeLabel = appState.ui.productGroupMode ? 'familias' : 'resultados';
-    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + (appState.ui.productGroupMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
+    const modeLabel = groupedMode ? 'familias' : 'resultados';
+    const modeInfo = forceIndividual
+      ? ' • vista por unidad automática para variantes del mismo producto'
+      : (groupedMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
+    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + modeInfo;
   }
 
 
@@ -4402,24 +4432,8 @@ function escapeHtml(str){
     appState.viewerBranchIndex = Number(activeBranchIndex);
     renderViewerMenu();
     if(!searchBranchHost) return;
-    const branches = appState.admin?.branches || [];
-    if(appState.screen !== 'viewer' || !branches.length){
-      searchBranchHost.classList.remove('active');
-      searchBranchHost.innerHTML = '';
-      return;
-    }
-    const options = branches.map((branch, index) => `<option value="${index}" ${index===activeBranchIndex?'selected':''}>${escapeHtml(branch.name || `Sucursal ${index+1}`)}</option>`).join('');
-    searchBranchHost.classList.add('active');
-    searchBranchHost.innerHTML = `
-      <div class="search-branch-card">
-        <div class="branch-copy">
-          <b>Sucursal en visualización</b>
-          <div class="muted tiny">Selecciona la sede que quieres ver en el plano general y en los racks.</div>
-        </div>
-        <select id="viewerBranchSelectTop">${options}</select>
-      </div>`;
-    const topSelect = document.getElementById('viewerBranchSelectTop');
-    if(topSelect) topSelect.onchange = (e) => switchViewerBranch(e.target.value);
+    searchBranchHost.classList.remove('active');
+    searchBranchHost.innerHTML = '';
   }
   function getBranchPreviewProducts(branch){
     return Array.isArray(branch?.sheetPreviewProducts) ? branch.sheetPreviewProducts : [];
