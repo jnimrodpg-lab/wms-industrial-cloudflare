@@ -165,8 +165,8 @@
     .search-card.is-clickable:hover{border-color:rgba(138,255,203,.24);box-shadow:0 14px 34px rgba(0,0,0,.22)}
     .search-card-overlay{position:fixed;inset:0;background:rgba(3,8,15,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .24s ease;z-index:1100}
     .search-card-overlay.active{opacity:1;pointer-events:auto}
-    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:22px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default}
-    .search-card.search-card-expanded .product-photo{min-height:56vh;max-height:none}
+    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:22px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default;grid-template-columns:minmax(300px,34%) minmax(0,1fr);align-items:stretch}
+    .search-card.search-card-expanded .product-photo{min-height:56vh;max-height:none;height:100%;display:flex;align-items:center;justify-content:center;padding:10px;background:transparent}
     .search-card.search-card-expanded .search-card-title{font-size:26px}
     .search-card.search-card-expanded .search-card-sku{font-size:13px}
     .search-card.search-card-expanded .search-card-meta{gap:12px}
@@ -177,14 +177,14 @@
     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
     body.search-card-modal-open{overflow:hidden}
     @media (max-width:760px){
-      .search-card.search-card-expanded{width:min(94vw,720px);max-width:94vw;height:min(84vh,760px);max-height:84vh;padding:14px;transform:translate(-50%,-50%) scale(1)}
+      .search-card.search-card-expanded{width:min(94vw,720px);max-width:94vw;height:min(84vh,760px);max-height:84vh;padding:14px;transform:translate(-50%,-50%) scale(1);grid-template-columns:1fr}
       .search-card.search-card-expanded .product-photo{min-height:38vh;max-height:none}
       .search-card.search-card-expanded .search-card-title{font-size:21px}
       .search-card-expand-hint{display:none}
     }
 
     .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:transparent;min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
-    .product-photo img{width:100%;height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .28s ease;background:transparent}
+    .product-photo img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .28s ease;background:transparent}
     .product-photo.empty::after{content:"Sin imagen";font-weight:700;color:var(--muted);font-size:13px;position:absolute;inset:0;display:grid;place-items:center;z-index:2}
     .search-card-body{display:grid;gap:12px;min-width:0}
     .search-card-title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
@@ -2608,9 +2608,9 @@ function escapeHtml(str){
       }
       if(e.key === 'Escape') closeActiveProductCard();
     });
-    if(overlay) overlay.addEventListener('click', closeActiveProductCard);
-    if(closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); });
-    document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); });
+    if(overlay && overlay.dataset.boundCardExpand !== '1'){ overlay.addEventListener('click', closeActiveProductCard); overlay.dataset.boundCardExpand = '1'; }
+    if(closeBtn && closeBtn.dataset.boundCardExpand !== '1'){ closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); }); closeBtn.dataset.boundCardExpand = '1'; }
+    if(document.body.dataset.boundCardExpandEsc !== '1'){ document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); }); document.body.dataset.boundCardExpandEsc = '1'; }
     syncActiveProductCardHint();
   }
 
