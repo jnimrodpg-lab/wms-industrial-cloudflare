@@ -160,6 +160,29 @@
     .search-mode-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .search-mode-toggle{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
     .search-card{display:grid;grid-template-columns:231px minmax(0,1fr);gap:16px;padding:14px;border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.035);align-items:stretch}
+
+    .search-card.is-clickable{cursor:zoom-in;transition:transform .28s ease, box-shadow .28s ease, border-color .28s ease}
+    .search-card.is-clickable:hover{border-color:rgba(138,255,203,.24);box-shadow:0 14px 34px rgba(0,0,0,.22)}
+    .search-card-overlay{position:fixed;inset:0;background:rgba(3,8,15,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .24s ease;z-index:1100}
+    .search-card-overlay.active{opacity:1;pointer-events:auto}
+    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1.04);width:min(860px,calc(100vw - 36px));max-height:calc(100vh - 48px);overflow:auto;padding:18px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default}
+    .search-card.search-card-expanded .product-photo{min-height:380px}
+    .search-card.search-card-expanded .search-card-title{font-size:26px}
+    .search-card.search-card-expanded .search-card-sku{font-size:13px}
+    .search-card.search-card-expanded .search-card-meta{gap:12px}
+    .search-card.search-card-expanded .search-meta-block{padding:16px 18px}
+    .search-card.search-card-expanded .variant-strip .chip{transform:scale(1.02)}
+    .search-card-expand-hint{position:absolute;right:14px;bottom:12px;font-size:11px;font-weight:700;color:rgba(236,255,246,.72);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(5,14,24,.58);pointer-events:none;z-index:3}
+    .search-card-expand-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.76);color:var(--text);font-size:18px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
+    .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
+    body.search-card-modal-open{overflow:hidden}
+    @media (max-width:760px){
+      .search-card.search-card-expanded{width:min(96vw,560px);max-height:calc(100vh - 24px);padding:14px;transform:translate(-50%,-50%) scale(1)}
+      .search-card.search-card-expanded .product-photo{min-height:240px;max-height:300px}
+      .search-card.search-card-expanded .search-card-title{font-size:21px}
+      .search-card-expand-hint{display:none}
+    }
+
     .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.02));min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
     .product-photo img{width:100%;height:100%;object-fit:cover;object-position:center center;display:block;transition:opacity .28s ease}
     .product-photo.empty::after{content:"Sin imagen";font-weight:700;color:var(--muted);font-size:13px;position:absolute;inset:0;display:grid;place-items:center;z-index:2}
@@ -1128,7 +1151,8 @@ body.theme-light .seg-btn,
               <button class="action-btn primary" id="btnScanCode">Escanear QR / barras</button>
             </div>
           </div>
-          <div class="search-card">
+          <div class="search-card is-clickable" id="activeProductCard" role="button" tabindex="0" aria-label="Expandir tarjeta del producto">
+            <div class="search-card-expand-close" id="activeProductCardClose" aria-label="Cerrar detalle expandido">✕</div>
             <div class="product-photo empty" id="activeProductImageWrap">
               <img id="activeProductImage" alt="Imagen del producto" style="display:none" />
             </div>
@@ -2504,6 +2528,62 @@ function escapeHtml(str){
     productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + (appState.ui.productGroupMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
   }
 
+
+  let activeExpandedSearchCard = null;
+  function syncActiveProductCardHint(){
+    const card = document.getElementById('activeProductCard');
+    const hint = card ? card.querySelector('.search-card-expand-hint') : null;
+    if(!hint || !card) return;
+    const hasProduct = !!(appState && appState.selectedProduct && (appState.selectedProduct.nombre || appState.selectedProduct.sku));
+    hint.style.display = hasProduct ? '' : 'none';
+  }
+  function openActiveProductCard(){
+    const card = document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    if(!card || !overlay) return;
+    if(card.classList.contains('search-card-expanded')) return;
+    activeExpandedSearchCard = card;
+    card.classList.add('search-card-expanded');
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden','false');
+    document.body.classList.add('search-card-modal-open');
+  }
+  function closeActiveProductCard(){
+    const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    if(card) card.classList.remove('search-card-expanded');
+    if(overlay){
+      overlay.classList.remove('active');
+      overlay.setAttribute('aria-hidden','true');
+    }
+    document.body.classList.remove('search-card-modal-open');
+    activeExpandedSearchCard = null;
+  }
+  function bindActiveProductCardExpansion(){
+    const card = document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    const closeBtn = document.getElementById('activeProductCardClose');
+    if(!card || card.dataset.expandBound === '1') return;
+    card.dataset.expandBound = '1';
+    card.addEventListener('click', (e) => {
+      if(e.target && e.target.closest('#activeProductCardClose')) return;
+      if(card.classList.contains('search-card-expanded')) return;
+      openActiveProductCard();
+    });
+    card.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        if(card.classList.contains('search-card-expanded')) closeActiveProductCard();
+        else openActiveProductCard();
+      }
+      if(e.key === 'Escape') closeActiveProductCard();
+    });
+    if(overlay) overlay.addEventListener('click', closeActiveProductCard);
+    if(closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); });
+    document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); });
+    syncActiveProductCardHint();
+  }
+
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
     const q = norm(rawQ);
@@ -2564,6 +2644,7 @@ function escapeHtml(str){
     setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
     if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
     else { updateActiveProductCard(null); clearSearchHighlights(); }
+    syncActiveProductCardHint();
     renderProducts(appState.filtered);
     if(appState.screen === 'dashboard') renderDashboard();
     else if(['products','viewer'].includes(appState.screen)) renderMapView();
@@ -2575,6 +2656,7 @@ function escapeHtml(str){
     appState.selectedRack = p.rack;
     appState.selectedRackLayoutId = p.rack;
     updateActiveProductCard(p);
+    syncActiveProductCardHint();
     if(appState.screen === 'dashboard'){
       appState.selectedRackLayoutId = p.rack || p.rackStore || '';
       renderDashboard();
@@ -9090,7 +9172,9 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
       rehydratePersistedBranchView();
     }
     renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products);
+    bindActiveProductCardExpansion();
     if(appState.products[0]) selectProduct(appState.products[0]);
+    else syncActiveProductCardHint();
     applyBrand();
     if(viewerToken){
       setScreen('viewer');
@@ -9134,6 +9218,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   </div>
 </div>
 <div id="toastStack" class="toast-stack"></div>
+<div id="searchCardOverlay" class="search-card-overlay" aria-hidden="true"></div>
+
 <input id="configImportInput" class="sheet-upload-hidden" type="file" accept="application/json">
 
 </body>

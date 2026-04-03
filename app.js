@@ -869,7 +869,63 @@
     productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + (appState.ui.productGroupMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
   }
 
-  function filterProducts(){
+  
+let activeExpandedSearchCard = null;
+function syncActiveProductCardHint(){
+const card = document.getElementById('activeProductCard');
+const hint = card ? card.querySelector('.search-card-expand-hint') : null;
+if(!hint || !card) return;
+const hasProduct = !!(appState && appState.selectedProduct && (appState.selectedProduct.nombre || appState.selectedProduct.sku));
+hint.style.display = hasProduct ? '' : 'none';
+}
+function openActiveProductCard(){
+const card = document.getElementById('activeProductCard');
+const overlay = document.getElementById('searchCardOverlay');
+if(!card || !overlay) return;
+if(card.classList.contains('search-card-expanded')) return;
+activeExpandedSearchCard = card;
+card.classList.add('search-card-expanded');
+overlay.classList.add('active');
+overlay.setAttribute('aria-hidden','false');
+document.body.classList.add('search-card-modal-open');
+}
+function closeActiveProductCard(){
+const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
+const overlay = document.getElementById('searchCardOverlay');
+if(card) card.classList.remove('search-card-expanded');
+if(overlay){
+overlay.classList.remove('active');
+overlay.setAttribute('aria-hidden','true');
+}
+document.body.classList.remove('search-card-modal-open');
+activeExpandedSearchCard = null;
+}
+function bindActiveProductCardExpansion(){
+const card = document.getElementById('activeProductCard');
+const overlay = document.getElementById('searchCardOverlay');
+const closeBtn = document.getElementById('activeProductCardClose');
+if(!card || card.dataset.expandBound === '1') return;
+card.dataset.expandBound = '1';
+card.addEventListener('click', (e) => {
+if(e.target && e.target.closest('#activeProductCardClose')) return;
+if(card.classList.contains('search-card-expanded')) return;
+openActiveProductCard();
+});
+card.addEventListener('keydown', (e) => {
+if(e.key === 'Enter' || e.key === ' '){
+e.preventDefault();
+if(card.classList.contains('search-card-expanded')) closeActiveProductCard();
+else openActiveProductCard();
+}
+if(e.key === 'Escape') closeActiveProductCard();
+});
+if(overlay) overlay.addEventListener('click', closeActiveProductCard);
+if(closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); });
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); });
+syncActiveProductCardHint();
+}
+
+function filterProducts(){
     const rawQ = String(searchInput.value || '');
     const q = norm(rawQ);
     if(!q){
@@ -958,6 +1014,7 @@
     appState.selectedRack = p.rack;
     appState.selectedRackLayoutId = p.rack;
     updateActiveProductCard(p);
+  syncActiveProductCardHint();
     if(appState.screen === 'dashboard'){
       appState.selectedRackLayoutId = p.rack || p.rackStore || '';
       renderDashboard();
@@ -5271,7 +5328,9 @@ function zoomLayout(factor, center){
   seedState();
   loadProductsLocal();
   renderProducts(appState.filtered);
+  bindActiveProductCardExpansion();
   if(appState.products[0]) selectProduct(appState.products[0]);
+  else syncActiveProductCardHint();
   applyBrand();
   setScreen('admin');
 
