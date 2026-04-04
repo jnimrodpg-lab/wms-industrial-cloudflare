@@ -8755,20 +8755,24 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
 </html>
 
 
-/* === card expanded image fill container override === */
+
+
+
+/* === card expanded image adapt to container override === */
 (function(){
-  if (document.getElementById('cardExpandImageFillStyle')) return;
+  if (document.getElementById('cardExpandImageAdaptStyle')) return;
   const style = document.createElement('style');
-  style.id = 'cardExpandImageFillStyle';
+  style.id = 'cardExpandImageAdaptStyle';
   style.textContent = `
     #activeProductCard.search-card-expanded .product-photo{
       background: transparent !important;
-      min-height: 100% !important;
+      width: 100% !important;
       height: 100% !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
+      min-height: 0 !important;
+      display: grid !important;
+      place-items: center !important;
       overflow: hidden !important;
+      align-self: stretch !important;
     }
     #activeProductCard.search-card-expanded .product-photo.empty::after{
       background: transparent !important;
@@ -8776,12 +8780,15 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
     #activeProductCard.search-card-expanded .product-photo img{
       width: 100% !important;
       height: 100% !important;
-      max-width: none !important;
-      max-height: none !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
       object-fit: contain !important;
       object-position: center center !important;
       background: transparent !important;
       display: block !important;
+    }
+    #activeProductCard.search-card-expanded{
+      align-items: stretch !important;
     }
   `;
   document.head.appendChild(style);
