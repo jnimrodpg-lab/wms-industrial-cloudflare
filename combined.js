@@ -9429,6 +9429,54 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
   })();
 
 
+
+  /* === FORCE Option 3 previews visible + stronger image crop (verified) === */
+  (function(){
+    const style = document.createElement('style');
+    style.id = 'wmsOption3ForceVisibleStyle';
+    style.textContent = `
+      /* stronger crop/zoom for images with black margins */
+      body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo img{
+        object-fit:cover !important;
+        object-position:center center !important;
+        transform:scale(1.22) !important;
+        transform-origin:center center !important;
+      }
+
+      /* allow previews even with DevTools docking */
+      .wms-side-preview{
+        width:clamp(130px, 14vw, 175px) !important;
+        min-width:130px !important;
+        max-width:175px !important;
+        height:clamp(260px, 50vh, 420px) !important;
+        opacity:.88 !important;
+      }
+      .wms-side-preview.visible{
+        display:grid !important;
+      }
+
+      /* do NOT hide previews at 1100px; only hide on small phones */
+      @media (max-width: 760px){
+        .wms-side-preview{ display:none !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    function forceRefreshPreviews(){
+      try{
+        if (typeof refreshSidePreviews === 'function') {
+          refreshSidePreviews();
+        } else if (typeof window.refreshSidePreviews === 'function'){
+          window.refreshSidePreviews();
+        }
+      }catch(e){}
+    }
+
+    // keep them positioned if DevTools changes the viewport
+    window.addEventListener('resize', () => setTimeout(forceRefreshPreviews, 60));
+    document.addEventListener('visibilitychange', () => setTimeout(forceRefreshPreviews, 60));
+  })();
+
   bootstrapApp();
 
 })();
