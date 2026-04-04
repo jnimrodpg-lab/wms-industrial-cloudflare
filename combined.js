@@ -8753,3 +8753,37 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
 
   </body>
 </html>
+
+
+/* === card expanded image fill container override === */
+(function(){
+  if (document.getElementById('cardExpandImageFillStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'cardExpandImageFillStyle';
+  style.textContent = `
+    #activeProductCard.search-card-expanded .product-photo{
+      background: transparent !important;
+      min-height: 100% !important;
+      height: 100% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      overflow: hidden !important;
+    }
+    #activeProductCard.search-card-expanded .product-photo.empty::after{
+      background: transparent !important;
+    }
+    #activeProductCard.search-card-expanded .product-photo img{
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      object-fit: contain !important;
+      object-position: center center !important;
+      background: transparent !important;
+      display: block !important;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
