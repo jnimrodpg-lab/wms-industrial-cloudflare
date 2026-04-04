@@ -2272,11 +2272,23 @@ function escapeHtml(str){
     const closeBtn = document.getElementById('activeProductCardClose');
     if(!card || card.dataset.expandBound === '1') return;
     card.dataset.expandBound = '1';
-    card.addEventListener('click', (e) => {
-      if(e.target && e.target.closest('#activeProductCardClose')) return;
+
+    const tryOpenCard = (e) => {
+      if(e){
+        if(e.target && e.target.closest && e.target.closest('#activeProductCardClose')) return;
+        if(typeof e.preventDefault === 'function') e.preventDefault();
+        if(typeof e.stopPropagation === 'function') e.stopPropagation();
+      }
       if(card.classList.contains('search-card-expanded')) return;
       openActiveProductCard();
-    });
+    };
+
+    card.addEventListener('click', tryOpenCard, { passive:false });
+    card.addEventListener('pointerup', (e) => {
+      if(e.pointerType === 'touch' || e.pointerType === 'pen') tryOpenCard(e);
+    }, { passive:false });
+    card.addEventListener('touchend', tryOpenCard, { passive:false });
+
     card.addEventListener('keydown', (e) => {
       if(e.key === 'Enter' || e.key === ' '){
         e.preventDefault();
@@ -2285,9 +2297,28 @@ function escapeHtml(str){
       }
       if(e.key === 'Escape') closeActiveProductCard();
     });
-    if(overlay) overlay.addEventListener('click', closeActiveProductCard);
-    if(closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); });
-    document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); });
+
+    if(overlay){
+      overlay.addEventListener('click', closeActiveProductCard, { passive:true });
+      overlay.addEventListener('pointerup', (e) => {
+        if(e.pointerType === 'touch' || e.pointerType === 'pen') closeActiveProductCard();
+      }, { passive:true });
+      overlay.addEventListener('touchend', closeActiveProductCard, { passive:true });
+    }
+
+    if(closeBtn){
+      const closeHandler = (e) => { if(e){ e.preventDefault && e.preventDefault(); e.stopPropagation && e.stopPropagation(); } closeActiveProductCard(); };
+      closeBtn.addEventListener('click', closeHandler, { passive:false });
+      closeBtn.addEventListener('pointerup', (e) => {
+        if(e.pointerType === 'touch' || e.pointerType === 'pen') closeHandler(e);
+      }, { passive:false });
+      closeBtn.addEventListener('touchend', closeHandler, { passive:false });
+    }
+
+    if(!document.body.dataset.activeProductCardEscBound){
+      document.body.dataset.activeProductCardEscBound = '1';
+      document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); });
+    }
     syncActiveProductCardHint();
   }
 
@@ -8789,6 +8820,37 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
     }
     #activeProductCard.search-card-expanded{
       align-items: stretch !important;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+
+
+/* tablet/touch fix for expandable active product card */
+(function(){
+  if (document.getElementById('tabletCardTouchFixStyle')) return;
+  const style = document.createElement('style');
+  style.id = 'tabletCardTouchFixStyle';
+  style.textContent = `
+    #activeProductCard{
+      touch-action: manipulation !important;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    #activeProductCard .product-photo,
+    #activeProductCard .search-card-body,
+    #activeProductCard .search-card-title,
+    #activeProductCard .search-card-sku,
+    #activeProductCard .variant-chip{
+      touch-action: manipulation;
+    }
+    #searchCardOverlay{
+      touch-action: manipulation !important;
+    }
+    #activeProductCardClose{
+      touch-action: manipulation !important;
+      pointer-events: auto !important;
     }
   `;
   document.head.appendChild(style);
