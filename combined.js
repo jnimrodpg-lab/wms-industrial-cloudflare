@@ -8991,10 +8991,25 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
       min-width: 118px;
     }
     .search-card-nav-meta{
-      margin-right: auto;
+      flex: 1 1 auto;
+      text-align: center;
       font-size: 12px;
       color: var(--muted);
       font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 0 8px;
+    }
+    .search-card-nav .seg-btn .nav-label{
+      display:block;
+      font-size:11px;
+      font-weight:700;
+      opacity:.85;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      max-width:180px;
     }
     @media (max-width: 760px){
       #activeProductCard.search-card-expanded{
@@ -9074,8 +9089,8 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
       nav = document.createElement('div');
       nav.className = 'search-card-nav';
       nav.innerHTML = `
-        <div class="search-card-nav-meta" id="expandedCardNavMeta">Producto 1 de 1</div>
         <button type="button" class="seg-btn" id="expandedCardPrevBtn">Anterior</button>
+        <div class="search-card-nav-meta" id="expandedCardNavMeta">Producto 1 de 1</div>
         <button type="button" class="seg-btn" id="expandedCardNextBtn">Siguiente</button>
       `;
       body.appendChild(nav);
@@ -9124,10 +9139,20 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
     const info = getCurrentProductGroupIndex();
     const total = info.groups.length;
     const pos = info.idx >= 0 ? info.idx + 1 : (total ? 1 : 0);
+    const prevGroup = total ? info.groups[(pos - 2 + total) % total] : null;
+    const nextGroup = total ? info.groups[(pos + total) % total] : null;
     if (meta) meta.textContent = total ? `Producto ${pos} de ${total}` : 'Producto 0 de 0';
     const disabled = total <= 1;
-    if (prevBtn) prevBtn.disabled = disabled;
-    if (nextBtn) nextBtn.disabled = disabled;
+    if (prevBtn) {
+      prevBtn.disabled = disabled;
+      prevBtn.innerHTML = prevGroup ? `Anterior<span class="nav-label">${String(prevGroup.nombre || 'Sin nombre')}</span>` : 'Anterior';
+      prevBtn.title = prevGroup ? `Anterior: ${String(prevGroup.nombre || 'Sin nombre')}` : 'Anterior';
+    }
+    if (nextBtn) {
+      nextBtn.disabled = disabled;
+      nextBtn.innerHTML = nextGroup ? `Siguiente<span class="nav-label">${String(nextGroup.nombre || 'Sin nombre')}</span>` : 'Siguiente';
+      nextBtn.title = nextGroup ? `Siguiente: ${String(nextGroup.nombre || 'Sin nombre')}` : 'Siguiente';
+    }
   }
 
   function adjustExpandedImageFrame(){
