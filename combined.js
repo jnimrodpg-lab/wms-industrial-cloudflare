@@ -2042,7 +2042,21 @@ function escapeHtml(str){
 
   function getProductImageUrls(product){
     if(!product) return [];
-    const raw = [product.imagen, product.image, product.imagen2, product.image2, product.foto2, product.img2].filter(Boolean).map(v => String(v).trim());
+    const collectFields = (item) => [item?.imagen, item?.image, item?.imagen2, item?.image2, item?.foto2, item?.img2]
+      .filter(Boolean)
+      .map(v => String(v).trim());
+    let raw = collectFields(product);
+    if(!raw.length && Array.isArray(appState?.products)){
+      const productName = norm(product?.nombre || '');
+      const productSku = norm(product?.sku || '');
+      const siblings = appState.products.filter(item => {
+        if(!item) return false;
+        const sameName = productName && norm(item.nombre || '') === productName;
+        const sameSku = productSku && norm(item.sku || '') === productSku;
+        return sameName || sameSku;
+      });
+      siblings.forEach(item => { raw.push(...collectFields(item)); });
+    }
     const split = [];
     raw.forEach(value => {
       if(/[|\n,;]/.test(value)) split.push(...value.split(/[|\n,;]+/));
@@ -2050,7 +2064,10 @@ function escapeHtml(str){
     });
     const out = [];
     const seen = new Set();
-    split.map(v => String(v || '').trim()).filter(Boolean).forEach(url => { if(!seen.has(url)){ seen.add(url); out.push(url); } });
+    split
+      .map(v => String(v || '').trim())
+      .filter(Boolean)
+      .forEach(url => { if(!seen.has(url)){ seen.add(url); out.push(url); } });
     return out;
   }
 
@@ -2064,21 +2081,46 @@ function escapeHtml(str){
     activeImageCycleUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
     if(!activeProductImageWrap || !activeProductImage) return;
     if(!activeImageCycleUrls.length){
+      activeProductImage.onload = null;
+      activeProductImage.onerror = null;
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
       activeProductImageWrap.classList.add('empty');
       return;
     }
     let index = 0;
-    const apply = () => {
-      const nextUrl = activeImageCycleUrls[index % activeImageCycleUrls.length];
-      activeProductImage.src = nextUrl;
-      activeProductImage.style.display = 'block';
-      activeProductImageWrap.classList.remove('empty');
-      index += 1;
+    const loadAt = (startIndex = 0) => {
+      let attempts = 0;
+      const tryNext = () => {
+        if(attempts >= activeImageCycleUrls.length){
+          activeProductImage.onload = null;
+          activeProductImage.onerror = null;
+          activeProductImage.removeAttribute('src');
+          activeProductImage.style.display = 'none';
+          activeProductImageWrap.classList.add('empty');
+          return;
+        }
+        const nextIndex = (startIndex + attempts) % activeImageCycleUrls.length;
+        const nextUrl = activeImageCycleUrls[nextIndex];
+        attempts += 1;
+        activeProductImage.onload = () => {
+          activeProductImage.style.display = 'block';
+          activeProductImageWrap.classList.remove('empty');
+          activeProductImage.onload = null;
+          activeProductImage.onerror = null;
+          index = (nextIndex + 1) % activeImageCycleUrls.length;
+        };
+        activeProductImage.onerror = () => {
+          tryNext();
+        };
+        activeProductImage.src = nextUrl;
+      };
+      tryNext();
     };
-    apply();
-    if(activeImageCycleUrls.length > 1) activeImageCycleTimer = setInterval(apply, 1800);
+    loadAt(0);
+    if(activeImageCycleUrls.length > 1){
+      activeImageCycleTimer = setInterval(() => loadAt(index), 1800);
+    }
   }
 
   function renderActiveVariantStrip(product){
@@ -2108,7 +2150,8 @@ function escapeHtml(str){
     activeLocation.textContent = hasProduct ? (p.ubicacion || '—') : '—';
     if(activeStoreLocation) activeStoreLocation.textContent = hasProduct ? (p.almacen || '—') : '—';
     if(activeProductImageWrap && activeProductImage){
-      startActiveProductImageCycle(getProductImageUrls(p));
+      const imageUrls = getProductImageUrls(p);
+      startActiveProductImageCycle(imageUrls);
     }
     renderActiveVariantStrip(p);
   }
@@ -2324,6 +2367,7 @@ function escapeHtml(str){
 
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
+    appState.searchQuery = rawQ;
     const q = norm(rawQ);
     if(!q){
       appState.filtered = appState.products;
@@ -2407,7 +2451,15 @@ function escapeHtml(str){
     }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
       .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || String(a.p.nombre||'').localeCompare(String(b.p.nombre||'')) || String(a.p.variante||'').localeCompare(String(b.p.variante||'')));
     appState.filtered = scored.map(x => x.p);
-    const primary = appState.filtered[0] || null;
+    const sameSelected = appState.selectedProduct
+      ? appState.filtered.find(p =>
+          String(p.sku||'') === String(appState.selectedProduct?.sku||'') &&
+          String(p.variante||'') === String(appState.selectedProduct?.variante||'') &&
+          String(p.ubicacion||'') === String(appState.selectedProduct?.ubicacion||'') &&
+          String(p.almacen||'') === String(appState.selectedProduct?.almacen||'')
+        )
+      : null;
+    const primary = sameSelected || appState.filtered[0] || null;
     if(primary){
       appState.selectedProduct = primary;
       appState.selectedRack = primary.rack || primary.rackStore || appState.selectedRack;
@@ -2430,17 +2482,27 @@ function escapeHtml(str){
   }
 
   function selectProduct(p){
-    appState.selectedProduct = p;
-    appState.selectedRack = p.rack;
-    appState.selectedRackLayoutId = p.rack;
-    updateActiveProductCard(p);
+    if(!p) return;
+    const stable = (Array.isArray(appState.products) ? appState.products.find(item =>
+      String(item.sku||'') === String(p.sku||'') &&
+      String(item.variante||'') === String(p.variante||'') &&
+      String(item.ubicacion||'') === String(p.ubicacion||'') &&
+      String(item.almacen||'') === String(p.almacen||'')
+    ) : null) || p;
+    appState.selectedProduct = stable;
+    appState.selectedRack = stable.rack || stable.rackStore || '';
+    appState.selectedRackLayoutId = stable.rack || stable.rackStore || '';
+    updateActiveProductCard(stable);
     syncActiveProductCardHint();
+    if(typeof searchInput !== 'undefined' && searchInput && typeof appState.searchQuery === 'string'){
+      searchInput.value = appState.searchQuery;
+    }
     if(appState.screen === 'dashboard'){
-      appState.selectedRackLayoutId = p.rack || p.rackStore || '';
+      appState.selectedRackLayoutId = stable.rack || stable.rackStore || '';
       renderDashboard();
     } else if(['products','reports','viewer'].includes(appState.screen)){
       renderMapView();
-      renderRackDetail(p.rack, p);
+      renderRackDetail(stable.rack || stable.rackStore || '', stable);
     } else if (appState.screen === 'layout') {
       renderLayoutEditor();
       renderLayoutInspector();
@@ -2448,7 +2510,7 @@ function escapeHtml(str){
       renderRackModels();
       renderRackModelPreview();
     }
-    renderProducts(appState.filtered);
+    renderProducts(Array.isArray(appState.filtered) ? appState.filtered : []);
   }
 
   function findRackById(id){ return appState.layout.racks.find(r => r.id === id); }
