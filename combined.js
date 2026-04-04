@@ -9498,3 +9498,126 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
   window.addEventListener('resize', function(){ setTimeout(adjustImage, 20); });
 })();
 
+
+
+
+/* final fix: arrow icons inside expanded card bottom only */
+(function(){
+  if (window.__wmsExpandedCardArrowInsideFix) return;
+  window.__wmsExpandedCardArrowInsideFix = true;
+
+  const style = document.createElement('style');
+  style.id = 'expandedCardArrowInsideFixStyle';
+  style.textContent = `
+    /* hide any previous text nav when not expanded */
+    #activeProductCard .search-card-nav{
+      display:none !important;
+    }
+
+    /* show only in expanded state */
+    #activeProductCard.search-card-expanded .search-card-nav{
+      display:flex !important;
+      position:absolute !important;
+      left:50% !important;
+      bottom:18px !important;
+      transform:translateX(-50%) !important;
+      width:auto !important;
+      min-width:140px !important;
+      max-width:220px !important;
+      padding:8px 10px !important;
+      border-radius:999px !important;
+      background:rgba(8,18,30,.82) !important;
+      backdrop-filter:blur(8px) !important;
+      border:1px solid rgba(255,255,255,.10) !important;
+      box-shadow:0 12px 28px rgba(0,0,0,.28) !important;
+      gap:10px !important;
+      z-index:8 !important;
+      justify-content:center !important;
+      align-items:center !important;
+    }
+
+    #activeProductCard.search-card-expanded{
+      position:fixed !important;
+    }
+
+    #activeProductCard.search-card-expanded .search-card-body{
+      position:relative !important;
+      padding-bottom:72px !important;
+    }
+
+    #activeProductCard.search-card-expanded .search-card-nav-meta{
+      display:none !important;
+    }
+
+    #activeProductCard.search-card-expanded .search-card-nav .seg-btn{
+      min-width:48px !important;
+      width:48px !important;
+      height:48px !important;
+      padding:0 !important;
+      border-radius:999px !important;
+      display:inline-flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      font-size:0 !important;
+      line-height:1 !important;
+      overflow:hidden !important;
+      text-indent:-9999px !important;
+      position:relative !important;
+      background:rgba(64,138,113,.18) !important;
+      border:1px solid rgba(176,228,204,.24) !important;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04) !important;
+    }
+
+    #activeProductCard.search-card-expanded .search-card-nav .seg-btn::before{
+      content:'' !important;
+      position:absolute !important;
+      inset:0 !important;
+      display:grid !important;
+      place-items:center !important;
+      text-indent:0 !important;
+      font-size:22px !important;
+      color:#e9fff5 !important;
+      font-weight:900 !important;
+    }
+
+    #activeProductCard.search-card-expanded #expandedCardPrevBtn::before{
+      content:'←' !important;
+    }
+
+    #activeProductCard.search-card-expanded #expandedCardNextBtn::before{
+      content:'→' !important;
+    }
+
+    #activeProductCard.search-card-expanded .search-card-nav .seg-btn:disabled{
+      opacity:.45 !important;
+      filter:saturate(.7) !important;
+      cursor:not-allowed !important;
+    }
+
+    @media (max-width: 760px){
+      #activeProductCard.search-card-expanded .search-card-nav{
+        bottom:12px !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  function ensureArrowTitles(){
+    const prev = document.getElementById('expandedCardPrevBtn');
+    const next = document.getElementById('expandedCardNextBtn');
+    if(prev && !prev.title) prev.title = 'Anterior';
+    if(next && !next.title) next.title = 'Siguiente';
+  }
+
+  const prevUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
+  if (prevUpdate && !window.__wmsExpandedCardArrowInsideWrapped){
+    window.__wmsExpandedCardArrowInsideWrapped = true;
+    updateActiveProductCard = function(p){
+      prevUpdate(p);
+      ensureArrowTitles();
+    };
+  } else {
+    ensureArrowTitles();
+  }
+})();
+
