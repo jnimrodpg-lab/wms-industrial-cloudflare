@@ -184,8 +184,18 @@
     }
 
     .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:transparent;min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
-    .product-photo img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .28s ease;background:transparent}
+    .product-photo img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .22s ease;background:transparent}
     .product-photo.empty::after{content:"Sin imagen";font-weight:700;color:var(--muted);font-size:13px;position:absolute;inset:0;display:grid;place-items:center;z-index:2}
+    .carousel-btn{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(4,12,22,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:10;opacity:0;transition:opacity .18s ease,background .18s ease;padding:0;line-height:1}
+    .product-photo:hover .carousel-btn,.product-photo:focus-within .carousel-btn{opacity:1}
+    .carousel-btn:hover{background:rgba(54,163,255,.38);border-color:rgba(54,163,255,.5)}
+    .carousel-btn.prev{left:10px}
+    .carousel-btn.next{right:10px}
+    .carousel-btn:disabled{opacity:0!important;pointer-events:none}
+    .carousel-dots{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);display:flex;gap:5px;z-index:10;pointer-events:none}
+    .carousel-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.28);transition:background .18s ease,transform .18s ease}
+    .carousel-dot.active{background:rgba(138,255,203,.9);transform:scale(1.25)}
+    .carousel-counter{position:absolute;top:10px;right:10px;font-size:11px;font-weight:700;color:rgba(236,255,246,.7);background:rgba(4,12,22,.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:3px 9px;z-index:10;display:none}
     .search-card-body{display:grid;gap:12px;min-width:0}
     .search-card-title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
     .search-card-title{font-size:18px;font-weight:800;line-height:1.1;color:var(--text)}
@@ -1155,6 +1165,10 @@ body.theme-light .seg-btn,
             <div class="search-card-expand-close" id="activeProductCardClose" aria-label="Cerrar detalle expandido">✕</div>
             <div class="product-photo empty" id="activeProductImageWrap">
               <img id="activeProductImage" alt="Imagen del producto" style="display:none" />
+              <button class="carousel-btn prev" id="carouselPrev" aria-label="Imagen anterior" type="button">&#8249;</button>
+              <button class="carousel-btn next" id="carouselNext" aria-label="Imagen siguiente" type="button">&#8250;</button>
+              <div class="carousel-dots" id="carouselDots"></div>
+              <span class="carousel-counter" id="carouselCounter"></span>
             </div>
             <div class="search-card-body">
               <div class="search-card-title-row">
@@ -1307,6 +1321,7 @@ function escapeHtml(str){
   const activeColorStrip = $('#activeColorStrip');
   let activeImageCycleTimer = null;
   let activeImageCycleUrls = [];
+  let activeCarouselIndex = 0;
   const sheetStatusChip = $('#sheetStatusChip');
   const authModal = $('#authModal');
   const btnAuthAction = $('#btnAuthAction');
@@ -2380,28 +2395,85 @@ function escapeHtml(str){
   function stopActiveProductImageCycle(){
     if(activeImageCycleTimer){ clearInterval(activeImageCycleTimer); activeImageCycleTimer = null; }
     activeImageCycleUrls = [];
+    activeCarouselIndex = 0;
+  }
+
+  function _updateCarouselUI(){
+    const wrap = activeProductImageWrap;
+    const img = activeProductImage;
+    const dotsEl = document.getElementById('carouselDots');
+    const counterEl = document.getElementById('carouselCounter');
+    const prevBtn = document.getElementById('carouselPrev');
+    const nextBtn = document.getElementById('carouselNext');
+    if(!wrap || !img) return;
+    const urls = activeImageCycleUrls;
+    const total = urls.length;
+    if(!total){
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      wrap.classList.add('empty');
+      if(dotsEl) dotsEl.innerHTML = '';
+      if(counterEl) counterEl.style.display = 'none';
+      if(prevBtn) prevBtn.style.display = 'none';
+      if(nextBtn) nextBtn.style.display = 'none';
+      return;
+    }
+    const idx = ((activeCarouselIndex % total) + total) % total;
+    activeCarouselIndex = idx;
+    /* fade transition */
+    img.style.opacity = '0';
+    setTimeout(() => {
+      img.src = urls[idx];
+      img.style.display = 'block';
+      img.style.opacity = '1';
+    }, 80);
+    wrap.classList.remove('empty');
+    /* dots */
+    if(dotsEl){
+      if(total > 1){
+        dotsEl.innerHTML = urls.map((_,i) => `<span class="carousel-dot${i===idx?' active':''}"></span>`).join('');
+      } else {
+        dotsEl.innerHTML = '';
+      }
+    }
+    /* counter */
+    if(counterEl){
+      if(total > 1){
+        counterEl.textContent = `${idx+1} / ${total}`;
+        counterEl.style.display = 'block';
+      } else {
+        counterEl.style.display = 'none';
+      }
+    }
+    /* prev/next buttons */
+    if(prevBtn) prevBtn.style.display = total > 1 ? 'flex' : 'none';
+    if(nextBtn) nextBtn.style.display = total > 1 ? 'flex' : 'none';
   }
 
   function startActiveProductImageCycle(urls){
     stopActiveProductImageCycle();
     activeImageCycleUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
-    if(!activeProductImageWrap || !activeProductImage) return;
-    if(!activeImageCycleUrls.length){
-      activeProductImage.removeAttribute('src');
-      activeProductImage.style.display = 'none';
-      activeProductImageWrap.classList.add('empty');
-      return;
+    activeCarouselIndex = 0;
+    _updateCarouselUI();
+    /* bind buttons once */
+    const prevBtn = document.getElementById('carouselPrev');
+    const nextBtn = document.getElementById('carouselNext');
+    if(prevBtn && !prevBtn.dataset.carouselBound){
+      prevBtn.dataset.carouselBound = '1';
+      prevBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activeCarouselIndex = activeCarouselIndex - 1;
+        _updateCarouselUI();
+      });
     }
-    let index = 0;
-    const apply = () => {
-      const nextUrl = activeImageCycleUrls[index % activeImageCycleUrls.length];
-      activeProductImage.src = nextUrl;
-      activeProductImage.style.display = 'block';
-      activeProductImageWrap.classList.remove('empty');
-      index += 1;
-    };
-    apply();
-    if(activeImageCycleUrls.length > 1) activeImageCycleTimer = setInterval(apply, 1800);
+    if(nextBtn && !nextBtn.dataset.carouselBound){
+      nextBtn.dataset.carouselBound = '1';
+      nextBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activeCarouselIndex = activeCarouselIndex + 1;
+        _updateCarouselUI();
+      });
+    }
   }
 
   function renderActiveVariantStrip(product){
