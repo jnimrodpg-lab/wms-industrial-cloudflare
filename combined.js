@@ -9197,3 +9197,304 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
     setTimeout(adjustExpandedImageFrame, 20);
   });
 })();
+
+
+
+/* strong fix: always show prev/next in expanded card + maximize image area */
+(function(){
+  if (window.__wmsExpandedCardStrongFix) return;
+  window.__wmsExpandedCardStrongFix = true;
+
+  const style = document.createElement('style');
+  style.id = 'expandedCardStrongFixStyle';
+  style.textContent = `
+    #activeProductCard.search-card-expanded{
+      width:min(82vw, 1380px) !important;
+      max-width:min(82vw, 1380px) !important;
+      height:min(82vh, 900px) !important;
+      max-height:min(82vh, 900px) !important;
+      grid-template-columns:minmax(280px, var(--expanded-photo-w, 420px)) minmax(0,1fr) !important;
+      gap:18px !important;
+      align-items:stretch !important;
+      overflow:hidden !important;
+    }
+    #activeProductCard.search-card-expanded .product-photo{
+      width:var(--expanded-photo-w, 420px) !important;
+      min-width:280px !important;
+      max-width:min(46vw, 620px) !important;
+      height:100% !important;
+      min-height:100% !important;
+      align-self:stretch !important;
+      background:transparent !important;
+      display:flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      overflow:hidden !important;
+      border-radius:18px !important;
+    }
+    #activeProductCard.search-card-expanded .product-photo img{
+      width:auto !important;
+      height:100% !important;
+      min-height:100% !important;
+      max-height:none !important;
+      max-width:none !important;
+      object-fit:cover !important;
+      object-position:center center !important;
+      display:block !important;
+      background:transparent !important;
+    }
+    #activeProductCard.search-card-expanded .search-card-body{
+      min-height:0 !important;
+      height:100% !important;
+      display:flex !important;
+      flex-direction:column !important;
+      gap:14px !important;
+      overflow:hidden !important;
+    }
+    #activeProductCard.search-card-expanded .variant-groups{
+      flex:1 1 auto !important;
+      overflow:auto !important;
+      padding-right:4px !important;
+      min-height:0 !important;
+    }
+    #activeProductCard.search-card-expanded .search-card-nav{
+      display:flex !important;
+      position:sticky !important;
+      bottom:0 !important;
+      background:linear-gradient(180deg, rgba(10,20,32,.2), rgba(10,20,32,.88)) !important;
+      backdrop-filter:blur(6px) !important;
+      margin-top:auto !important;
+      padding:12px 0 2px !important;
+      z-index:3 !important;
+    }
+    .search-card-nav{
+      display:flex !important;
+      align-items:center !important;
+      justify-content:flex-end !important;
+      gap:10px !important;
+      border-top:1px solid rgba(255,255,255,.08) !important;
+    }
+    .search-card-nav .seg-btn{
+      min-width:160px !important;
+      max-width:240px !important;
+      white-space:nowrap !important;
+      overflow:hidden !important;
+      text-overflow:ellipsis !important;
+    }
+    .search-card-nav-meta{
+      margin-right:auto !important;
+      font-size:12px !important;
+      color:var(--muted) !important;
+      font-weight:700 !important;
+      white-space:nowrap !important;
+    }
+    @media (max-width: 760px){
+      #activeProductCard.search-card-expanded{
+        width:min(95vw,95vw) !important;
+        max-width:95vw !important;
+        height:min(90vh,90vh) !important;
+        max-height:90vh !important;
+        grid-template-columns:1fr !important;
+        grid-template-rows:minmax(260px, 46vh) minmax(0,1fr) !important;
+      }
+      #activeProductCard.search-card-expanded .product-photo{
+        width:100% !important;
+        max-width:100% !important;
+        min-width:100% !important;
+      }
+      #activeProductCard.search-card-expanded .product-photo img{
+        width:100% !important;
+        height:100% !important;
+        object-fit:cover !important;
+      }
+      .search-card-nav{
+        flex-wrap:wrap !important;
+      }
+      .search-card-nav-meta{
+        width:100% !important;
+        margin-right:0 !important;
+      }
+      .search-card-nav .seg-btn{
+        flex:1 1 0 !important;
+        min-width:0 !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  function shortName(name){
+    const t = String(name || '').trim();
+    if(!t) return '—';
+    return t.length > 22 ? t.slice(0, 22).trim() + '…' : t;
+  }
+
+  function currentList(){
+    if (Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
+    if (Array.isArray(appState?.products)) return appState.products.slice();
+    return [];
+  }
+
+  function productGroups(){
+    const list = currentList();
+    const map = new Map();
+    list.forEach((p) => {
+      const k = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
+      if(!map.has(k)) map.set(k, { key:k, nombre:p?.nombre || 'Sin nombre', items:[] });
+      map.get(k).items.push(p);
+    });
+    const arr = Array.from(map.values());
+    arr.sort((a,b) => {
+      if(typeof compareTextLettersFirst === 'function') return compareTextLettersFirst(a.nombre || '', b.nombre || '');
+      return String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true });
+    });
+    return arr;
+  }
+
+  function currentGroupInfo(){
+    const groups = productGroups();
+    const currentName = appState?.selectedProduct?.nombre || '';
+    const key = (typeof norm === 'function' ? norm(currentName) : String(currentName).trim().toLowerCase()) || '__sin_nombre__';
+    let idx = groups.findIndex(g => g.key === key);
+    if(idx < 0) idx = 0;
+    return { groups, idx };
+  }
+
+  function groupRepresentative(group){
+    if(!group || !group.items?.length) return null;
+    const items = group.items.slice();
+    if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
+    return items[0] || group.items[0] || null;
+  }
+
+  function ensureNav(){
+    const card = document.getElementById('activeProductCard');
+    if(!card) return null;
+    const body = card.querySelector('.search-card-body');
+    if(!body) return null;
+    let nav = card.querySelector('.search-card-nav');
+    if(!nav){
+      nav = document.createElement('div');
+      nav.className = 'search-card-nav';
+      nav.innerHTML = `
+        <div class="search-card-nav-meta" id="expandedCardNavMeta">Producto 1 de 1</div>
+        <button type="button" class="seg-btn" id="expandedCardPrevBtn">← Anterior</button>
+        <button type="button" class="seg-btn" id="expandedCardNextBtn">Siguiente →</button>
+      `;
+      body.appendChild(nav);
+    }
+    const prev = nav.querySelector('#expandedCardPrevBtn');
+    const next = nav.querySelector('#expandedCardNextBtn');
+    if(prev && !prev.dataset.boundStrong){
+      prev.dataset.boundStrong = '1';
+      prev.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        move(-1);
+      });
+    }
+    if(next && !next.dataset.boundStrong){
+      next.dataset.boundStrong = '1';
+      next.addEventListener('click', function(e){
+        e.preventDefault(); e.stopPropagation();
+        move(1);
+      });
+    }
+    return nav;
+  }
+
+  function updateNavLabels(){
+    const nav = ensureNav();
+    if(!nav) return;
+    const meta = nav.querySelector('#expandedCardNavMeta');
+    const prev = nav.querySelector('#expandedCardPrevBtn');
+    const next = nav.querySelector('#expandedCardNextBtn');
+    const info = currentGroupInfo();
+    const total = info.groups.length;
+    const idx = info.idx;
+    if(meta) meta.textContent = total ? `Producto ${idx+1} de ${total}` : 'Producto 0 de 0';
+    if(total <= 1){
+      if(prev){ prev.disabled = true; prev.textContent = '← Anterior'; prev.title=''; }
+      if(next){ next.disabled = true; next.textContent = 'Siguiente →'; next.title=''; }
+      return;
+    }
+    const prevGroup = info.groups[(idx - 1 + total) % total];
+    const nextGroup = info.groups[(idx + 1) % total];
+    if(prev){
+      prev.disabled = false;
+      const label = shortName(prevGroup?.nombre);
+      prev.textContent = `← ${label}`;
+      prev.title = prevGroup?.nombre || '';
+    }
+    if(next){
+      next.disabled = false;
+      const label = shortName(nextGroup?.nombre);
+      next.textContent = `${label} →`;
+      next.title = nextGroup?.nombre || '';
+    }
+  }
+
+  function adjustImage(){
+    const card = document.getElementById('activeProductCard');
+    if(!card || !card.classList.contains('search-card-expanded')) return;
+    const img = document.getElementById('activeProductImage');
+    const body = card.querySelector('.search-card-body');
+    const close = document.getElementById('activeProductCardClose');
+    if(!body) return;
+    const cardH = card.clientHeight || 0;
+    const pad = 26;
+    const closeOffset = close ? 12 : 0;
+    const targetH = Math.max(280, Math.floor(cardH - pad - closeOffset));
+    let width = Math.round(targetH * 0.72);
+    if(img && img.naturalWidth && img.naturalHeight){
+      width = Math.round(targetH * (img.naturalWidth / img.naturalHeight));
+    }
+    width = Math.min(width, Math.floor(window.innerWidth * 0.46), 620);
+    width = Math.max(width, 300);
+    card.style.setProperty('--expanded-photo-w', width + 'px');
+  }
+
+  function move(dir){
+    const info = currentGroupInfo();
+    if(!info.groups.length) return;
+    const total = info.groups.length;
+    let nextIndex = info.idx + dir;
+    if(nextIndex < 0) nextIndex = total - 1;
+    if(nextIndex >= total) nextIndex = 0;
+    const target = groupRepresentative(info.groups[nextIndex]);
+    if(target && typeof selectProduct === 'function'){
+      selectProduct(target);
+      if(typeof openActiveProductCard === 'function'){
+        setTimeout(() => {
+          try{ openActiveProductCard(); }catch(e){}
+          updateNavLabels();
+          adjustImage();
+        }, 0);
+      }
+    }
+  }
+
+  const originalUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
+  if(originalUpdate && !window.__wmsExpandedCardStrongWrapped){
+    window.__wmsExpandedCardStrongWrapped = true;
+    updateActiveProductCard = function(p){
+      originalUpdate(p);
+      ensureNav();
+      updateNavLabels();
+      const img = document.getElementById('activeProductImage');
+      if(img && !img.dataset.boundStrongFixLoad){
+        img.dataset.boundStrongFixLoad = '1';
+        img.addEventListener('load', () => setTimeout(adjustImage, 20));
+      }
+      setTimeout(adjustImage, 20);
+    };
+  }
+
+  document.addEventListener('keydown', function(e){
+    const card = document.getElementById('activeProductCard');
+    if(!card || !card.classList.contains('search-card-expanded')) return;
+    if(e.key === 'ArrowLeft'){ e.preventDefault(); move(-1); }
+    if(e.key === 'ArrowRight'){ e.preventDefault(); move(1); }
+  });
+
+  window.addEventListener('resize', function(){ setTimeout(adjustImage, 20); });
+})();
+
