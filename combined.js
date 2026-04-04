@@ -8839,6 +8839,301 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
   if(loginPassword) loginPassword.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
   if(loginUsername) loginUsername.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
 
+
+  /* === Option 3 real side carousel for expanded product card === */
+  (function(){
+    const style = document.createElement('style');
+    style.textContent = `
+      /* expanded main card: image fills its frame and frame crops */
+      body.search-card-modal-open #activeProductCard.search-card-expanded{
+        width:min(84vw, 1380px) !important;
+        max-width:min(84vw, 1380px) !important;
+        height:min(84vh, 900px) !important;
+        max-height:min(84vh, 900px) !important;
+        grid-template-columns:minmax(340px, 42%) minmax(0,1fr) !important;
+        gap:18px !important;
+        overflow:hidden !important;
+        align-items:stretch !important;
+      }
+      body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo{
+        width:100% !important;
+        height:100% !important;
+        min-height:100% !important;
+        overflow:hidden !important;
+        background:transparent !important;
+        display:block !important;
+        border-radius:18px !important;
+      }
+      body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo img{
+        width:100% !important;
+        height:100% !important;
+        min-width:100% !important;
+        min-height:100% !important;
+        max-width:none !important;
+        max-height:none !important;
+        object-fit:cover !important;
+        object-position:center center !important;
+        display:block !important;
+        background:transparent !important;
+      }
+      body.search-card-modal-open #activeProductCard.search-card-expanded .search-card-body{
+        position:relative !important;
+        min-height:0 !important;
+      }
+
+      /* hide old next/prev bar in option 3 */
+      body.search-card-modal-open #activeProductCard.search-card-expanded .search-card-nav{
+        display:none !important;
+      }
+
+      .wms-side-preview{
+        position:fixed;
+        top:50%;
+        transform:translateY(-50%);
+        width:min(18vw, 240px);
+        min-width:190px;
+        max-width:240px;
+        height:min(64vh, 520px);
+        border-radius:24px;
+        overflow:hidden;
+        background:rgba(8,18,30,.70);
+        border:1px solid rgba(255,255,255,.09);
+        box-shadow:0 20px 48px rgba(0,0,0,.34);
+        backdrop-filter:blur(10px);
+        z-index:1003;
+        cursor:pointer;
+        opacity:.76;
+        transition:transform .22s ease, opacity .22s ease, box-shadow .22s ease;
+        display:none;
+      }
+      .wms-side-preview.visible{
+        display:grid;
+        grid-template-rows:minmax(0,1fr) auto;
+      }
+      .wms-side-preview:hover{
+        opacity:.94;
+        box-shadow:0 24px 56px rgba(0,0,0,.42);
+      }
+      .wms-side-preview.left:hover{
+        transform:translateY(-50%) translateX(4px);
+      }
+      .wms-side-preview.right:hover{
+        transform:translateY(-50%) translateX(-4px);
+      }
+      .wms-side-preview-media{
+        overflow:hidden;
+        background:transparent;
+      }
+      .wms-side-preview-media img{
+        width:100%;
+        height:100%;
+        object-fit:cover;
+        display:block;
+        background:transparent;
+      }
+      .wms-side-preview-info{
+        padding:12px 14px 14px;
+        display:grid;
+        gap:4px;
+        background:linear-gradient(180deg, rgba(8,18,30,.12), rgba(8,18,30,.94));
+      }
+      .wms-side-preview-kicker{
+        font-size:10px;
+        text-transform:uppercase;
+        letter-spacing:.06em;
+        color:rgba(233,255,245,.66);
+        font-weight:800;
+      }
+      .wms-side-preview-name{
+        font-size:13px;
+        font-weight:800;
+        color:#fff;
+        line-height:1.15;
+        display:-webkit-box;
+        -webkit-line-clamp:2;
+        -webkit-box-orient:vertical;
+        overflow:hidden;
+      }
+      .wms-side-preview-sku{
+        font-size:11px;
+        color:rgba(233,255,245,.72);
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      }
+      .wms-side-preview.left::after,
+      .wms-side-preview.right::after{
+        content:'';
+        position:absolute;
+        inset:0;
+        pointer-events:none;
+        background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,0));
+      }
+      @media (max-width: 980px){
+        .wms-side-preview{ display:none !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    function shortName(name){
+      const t = String(name || '').trim();
+      return t.length > 28 ? t.slice(0, 28).trim() + '…' : (t || 'Sin nombre');
+    }
+    function getBaseList(){
+      if(Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
+      if(Array.isArray(appState?.products)) return appState.products.slice();
+      return [];
+    }
+    function groupedProducts(){
+      const list = getBaseList();
+      const map = new Map();
+      list.forEach((p) => {
+        const key = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
+        if(!map.has(key)) map.set(key, { key, nombre:p?.nombre || 'Sin nombre', items:[] });
+        map.get(key).items.push(p);
+      });
+      const arr = Array.from(map.values());
+      arr.sort((a,b) => typeof compareTextLettersFirst === 'function'
+        ? compareTextLettersFirst(a.nombre || '', b.nombre || '')
+        : String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true }));
+      return arr;
+    }
+    function representative(group){
+      if(!group || !Array.isArray(group.items) || !group.items.length) return null;
+      const items = group.items.slice();
+      if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
+      return items[0] || group.items[0] || null;
+    }
+    function currentGroupIndex(groups){
+      const selectedName = appState?.selectedProduct?.nombre || '';
+      const selectedKey = (typeof norm === 'function' ? norm(selectedName) : String(selectedName).trim().toLowerCase()) || '__sin_nombre__';
+      const idx = groups.findIndex(g => g.key === selectedKey);
+      return idx >= 0 ? idx : 0;
+    }
+    function ensureSidePreview(side){
+      let el = document.getElementById('wmsSidePreview-' + side);
+      if(el) return el;
+      el = document.createElement('div');
+      el.id = 'wmsSidePreview-' + side;
+      el.className = 'wms-side-preview ' + side;
+      el.innerHTML = `
+        <div class="wms-side-preview-media"><img alt="Preview producto" /></div>
+        <div class="wms-side-preview-info">
+          <div class="wms-side-preview-kicker">${side === 'left' ? 'Anterior' : 'Siguiente'}</div>
+          <div class="wms-side-preview-name">—</div>
+          <div class="wms-side-preview-sku">SKU —</div>
+        </div>
+      `;
+      document.body.appendChild(el);
+      return el;
+    }
+    function setPreviewContent(el, product, side){
+      if(!el) return;
+      const img = el.querySelector('img');
+      const name = el.querySelector('.wms-side-preview-name');
+      const sku = el.querySelector('.wms-side-preview-sku');
+      const kicker = el.querySelector('.wms-side-preview-kicker');
+      kicker.textContent = side === 'left' ? 'Anterior' : 'Siguiente';
+      if(!product){
+        el.classList.remove('visible');
+        return;
+      }
+      const urls = typeof getProductImageUrls === 'function' ? getProductImageUrls(product) : [];
+      if(img){
+        if(Array.isArray(urls) && urls[0]){
+          img.src = urls[0];
+          img.style.display = '';
+        }else{
+          img.removeAttribute('src');
+          img.style.display = 'none';
+        }
+      }
+      if(name) name.textContent = shortName(product.nombre);
+      if(sku) sku.textContent = `SKU ${product.sku || '—'}`;
+      el.classList.add('visible');
+      el.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if(typeof selectProduct === 'function'){
+          selectProduct(product);
+          setTimeout(refreshSidePreviews, 30);
+        }
+      };
+    }
+    function hideSidePreviews(){
+      ['left','right'].forEach(side => {
+        const el = document.getElementById('wmsSidePreview-' + side);
+        if(el) el.classList.remove('visible');
+      });
+    }
+    function positionSidePreviews(){
+      const main = document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 980){ hideSidePreviews(); return; }
+      const rect = main.getBoundingClientRect();
+      const left = ensureSidePreview('left');
+      const right = ensureSidePreview('right');
+      const gap = 18;
+      const leftX = Math.max(12, rect.left - left.offsetWidth - gap);
+      const rightX = Math.min(window.innerWidth - right.offsetWidth - 12, rect.right + gap);
+      left.style.top = (rect.top + rect.height / 2) + 'px';
+      right.style.top = (rect.top + rect.height / 2) + 'px';
+      left.style.left = leftX + 'px';
+      right.style.left = rightX + 'px';
+    }
+    function refreshSidePreviews(){
+      const main = document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 980){ hideSidePreviews(); return; }
+      const groups = groupedProducts();
+      if(groups.length <= 1){ hideSidePreviews(); return; }
+      const idx = currentGroupIndex(groups);
+      const prev = representative(groups[(idx - 1 + groups.length) % groups.length]);
+      const next = representative(groups[(idx + 1) % groups.length]);
+      setPreviewContent(ensureSidePreview('left'), prev, 'left');
+      setPreviewContent(ensureSidePreview('right'), next, 'right');
+      setTimeout(positionSidePreviews, 20);
+    }
+
+    const _open = typeof openActiveProductCard === 'function' ? openActiveProductCard : null;
+    if(_open){
+      openActiveProductCard = function(){
+        _open();
+        setTimeout(refreshSidePreviews, 30);
+      };
+    }
+    const _close = typeof closeActiveProductCard === 'function' ? closeActiveProductCard : null;
+    if(_close){
+      closeActiveProductCard = function(){
+        _close();
+        hideSidePreviews();
+      };
+    }
+    const _update = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
+    if(_update){
+      updateActiveProductCard = function(p){
+        _update(p);
+        setTimeout(refreshSidePreviews, 30);
+      };
+    }
+    document.addEventListener('keydown', function(e){
+      const main = document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded')) return;
+      const groups = groupedProducts();
+      if(groups.length <= 1) return;
+      const idx = currentGroupIndex(groups);
+      if(e.key === 'ArrowLeft'){
+        e.preventDefault();
+        const target = representative(groups[(idx - 1 + groups.length) % groups.length]);
+        if(target && typeof selectProduct === 'function'){ selectProduct(target); setTimeout(refreshSidePreviews, 30); }
+      } else if(e.key === 'ArrowRight'){
+        e.preventDefault();
+        const target = representative(groups[(idx + 1) % groups.length]);
+        if(target && typeof selectProduct === 'function'){ selectProduct(target); setTimeout(refreshSidePreviews, 30); }
+      }
+    });
+    window.addEventListener('resize', function(){ setTimeout(refreshSidePreviews, 30); });
+  })();
+
+
   bootstrapApp();
 
 })();
@@ -8846,1357 +9141,3 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
 
   </body>
 </html>
-
-
-
-
-
-/* === card expanded image adapt to container override === */
-(function(){
-  if (document.getElementById('cardExpandImageAdaptStyle')) return;
-  const style = document.createElement('style');
-  style.id = 'cardExpandImageAdaptStyle';
-  style.textContent = `
-    #activeProductCard.search-card-expanded .product-photo{
-      background: transparent !important;
-      width: 100% !important;
-      height: 100% !important;
-      min-height: 0 !important;
-      display: grid !important;
-      place-items: center !important;
-      overflow: hidden !important;
-      align-self: stretch !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo.empty::after{
-      background: transparent !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo img{
-      width: 100% !important;
-      height: 100% !important;
-      max-width: 100% !important;
-      max-height: 100% !important;
-      object-fit: contain !important;
-      object-position: center center !important;
-      background: transparent !important;
-      display: block !important;
-    }
-    #activeProductCard.search-card-expanded{
-      align-items: stretch !important;
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-
-
-/* tablet/touch fix for expandable active product card */
-(function(){
-  if (document.getElementById('tabletCardTouchFixStyle')) return;
-  const style = document.createElement('style');
-  style.id = 'tabletCardTouchFixStyle';
-  style.textContent = `
-    #activeProductCard{
-      touch-action: manipulation !important;
-      -webkit-tap-highlight-color: transparent;
-      cursor: pointer;
-    }
-    #activeProductCard .product-photo,
-    #activeProductCard .search-card-body,
-    #activeProductCard .search-card-title,
-    #activeProductCard .search-card-sku,
-    #activeProductCard .variant-chip{
-      touch-action: manipulation;
-    }
-    #searchCardOverlay{
-      touch-action: manipulation !important;
-    }
-    #activeProductCardClose{
-      touch-action: manipulation !important;
-      pointer-events: auto !important;
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-
-
-
-/* expanded card nav + adaptive image frame */
-(function(){
-  if (window.__wmsExpandedCardNavPatched) return;
-  window.__wmsExpandedCardNavPatched = true;
-
-  const style = document.createElement('style');
-  style.id = 'expandedCardNavAndFrameStyle';
-  style.textContent = `
-    #activeProductCard.search-card-expanded{
-      width: min(75vw, 1240px) !important;
-      max-width: min(75vw, 1240px) !important;
-      height: min(75vh, 860px) !important;
-      max-height: min(75vh, 860px) !important;
-      grid-template-columns: var(--expanded-photo-w, 320px) minmax(0,1fr) !important;
-      align-items: stretch !important;
-      overflow: hidden !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo{
-      width: var(--expanded-photo-w, 320px) !important;
-      min-width: var(--expanded-photo-w, 320px) !important;
-      max-width: min(42vw, 520px) !important;
-      height: 100% !important;
-      min-height: 0 !important;
-      align-self: stretch !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      background: transparent !important;
-      overflow: hidden !important;
-      border-radius: 18px !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo img{
-      height: 100% !important;
-      width: auto !important;
-      min-height: 100% !important;
-      max-height: none !important;
-      max-width: none !important;
-      object-fit: cover !important;
-      object-position: center center !important;
-      display: block !important;
-      background: transparent !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-body{
-      min-height: 0 !important;
-      display: grid !important;
-      grid-template-rows: auto auto 1fr auto !important;
-      align-content: start !important;
-      overflow: hidden !important;
-    }
-    #activeProductCard.search-card-expanded .variant-groups{
-      align-content: start !important;
-      overflow: auto !important;
-      padding-right: 4px !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-nav{
-      display: flex !important;
-    }
-    .search-card-nav{
-      display: none;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid rgba(255,255,255,.08);
-    }
-    .search-card-nav .seg-btn{
-      min-width: 118px;
-    }
-    .search-card-nav-meta{
-      flex: 1 1 auto;
-      text-align: center;
-      font-size: 12px;
-      color: var(--muted);
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      padding: 0 8px;
-    }
-    .search-card-nav .seg-btn .nav-label{
-      display:block;
-      font-size:11px;
-      font-weight:700;
-      opacity:.85;
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-      max-width:180px;
-    }
-    @media (max-width: 760px){
-      #activeProductCard.search-card-expanded{
-        width: min(94vw, 94vw) !important;
-        max-width: 94vw !important;
-        height: min(86vh, 86vh) !important;
-        max-height: 86vh !important;
-        grid-template-columns: 1fr !important;
-        grid-template-rows: minmax(220px, 42vh) minmax(0,1fr) !important;
-      }
-      #activeProductCard.search-card-expanded .product-photo{
-        width: 100% !important;
-        min-width: 100% !important;
-        max-width: 100% !important;
-      }
-      #activeProductCard.search-card-expanded .product-photo img{
-        width: 100% !important;
-        height: auto !important;
-        min-height: 100% !important;
-      }
-      .search-card-nav{
-        justify-content: stretch;
-      }
-      .search-card-nav .seg-btn{
-        flex: 1;
-        min-width: 0;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  function getActiveProductCard(){
-    return document.getElementById('activeProductCard');
-  }
-
-  function getCurrentViewerList(){
-    if (Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
-    if (Array.isArray(appState?.products)) return appState.products.slice();
-    return [];
-  }
-
-  function getUniqueProductGroups(){
-    const list = getCurrentViewerList().slice().sort(typeof compareProductsAZ === 'function' ? compareProductsAZ : undefined);
-    const map = new Map();
-    list.forEach((p) => {
-      const key = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-      if (!map.has(key)) map.set(key, { key, nombre: p?.nombre || 'Sin nombre', items: [] });
-      map.get(key).items.push(p);
-    });
-    return Array.from(map.values()).sort((a,b) => {
-      if (typeof compareTextLettersFirst === 'function') return compareTextLettersFirst(a.nombre || '', b.nombre || '');
-      return String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true });
-    });
-  }
-
-  function getCurrentProductGroupIndex(){
-    const groups = getUniqueProductGroups();
-    const selected = appState?.selectedProduct;
-    const currentKey = (typeof norm === 'function' ? norm(selected?.nombre || '') : String(selected?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-    const idx = groups.findIndex(g => g.key === currentKey);
-    return { groups, idx };
-  }
-
-  function getRepresentativeProductForGroup(group){
-    if(!group || !Array.isArray(group.items) || !group.items.length) return null;
-    const items = group.items.slice().sort(typeof compareProductsAZ === 'function' ? compareProductsAZ : undefined);
-    return items[0] || group.items[0] || null;
-  }
-
-  function ensureExpandedNavControls(){
-    const card = getActiveProductCard();
-    if(!card) return null;
-    const body = card.querySelector('.search-card-body');
-    if(!body) return null;
-    let nav = card.querySelector('.search-card-nav');
-    if(!nav){
-      nav = document.createElement('div');
-      nav.className = 'search-card-nav';
-      nav.innerHTML = `
-        <button type="button" class="seg-btn" id="expandedCardPrevBtn">Anterior</button>
-        <div class="search-card-nav-meta" id="expandedCardNavMeta">Producto 1 de 1</div>
-        <button type="button" class="seg-btn" id="expandedCardNextBtn">Siguiente</button>
-      `;
-      body.appendChild(nav);
-    }
-    const prevBtn = nav.querySelector('#expandedCardPrevBtn');
-    const nextBtn = nav.querySelector('#expandedCardNextBtn');
-    if (prevBtn && !prevBtn.dataset.boundNav) {
-      prevBtn.dataset.boundNav = '1';
-      prevBtn.addEventListener('click', function(e){
-        e.preventDefault(); e.stopPropagation();
-        navigateExpandedCardByProduct(-1);
-      });
-    }
-    if (nextBtn && !nextBtn.dataset.boundNav) {
-      nextBtn.dataset.boundNav = '1';
-      nextBtn.addEventListener('click', function(e){
-        e.preventDefault(); e.stopPropagation();
-        navigateExpandedCardByProduct(1);
-      });
-    }
-    return nav;
-  }
-
-  window.navigateExpandedCardByProduct = function(dir){
-    const info = getCurrentProductGroupIndex();
-    if (!info.groups.length) return;
-    const currentIdx = info.idx >= 0 ? info.idx : 0;
-    let nextIdx = currentIdx + (dir < 0 ? -1 : 1);
-    if (nextIdx < 0) nextIdx = info.groups.length - 1;
-    if (nextIdx >= info.groups.length) nextIdx = 0;
-    const target = getRepresentativeProductForGroup(info.groups[nextIdx]);
-    if (target && typeof selectProduct === 'function') {
-      selectProduct(target);
-      if (typeof openActiveProductCard === 'function') {
-        setTimeout(() => openActiveProductCard(), 0);
-      }
-    }
-  };
-
-  function updateExpandedNavState(){
-    const nav = ensureExpandedNavControls();
-    if(!nav) return;
-    const meta = nav.querySelector('#expandedCardNavMeta');
-    const prevBtn = nav.querySelector('#expandedCardPrevBtn');
-    const nextBtn = nav.querySelector('#expandedCardNextBtn');
-    const info = getCurrentProductGroupIndex();
-    const total = info.groups.length;
-    const pos = info.idx >= 0 ? info.idx + 1 : (total ? 1 : 0);
-    const prevGroup = total ? info.groups[(pos - 2 + total) % total] : null;
-    const nextGroup = total ? info.groups[(pos + total) % total] : null;
-    if (meta) meta.textContent = total ? `Producto ${pos} de ${total}` : 'Producto 0 de 0';
-    const disabled = total <= 1;
-    if (prevBtn) {
-      prevBtn.disabled = disabled;
-      prevBtn.innerHTML = prevGroup ? `Anterior<span class="nav-label">${String(prevGroup.nombre || 'Sin nombre')}</span>` : 'Anterior';
-      prevBtn.title = prevGroup ? `Anterior: ${String(prevGroup.nombre || 'Sin nombre')}` : 'Anterior';
-    }
-    if (nextBtn) {
-      nextBtn.disabled = disabled;
-      nextBtn.innerHTML = nextGroup ? `Siguiente<span class="nav-label">${String(nextGroup.nombre || 'Sin nombre')}</span>` : 'Siguiente';
-      nextBtn.title = nextGroup ? `Siguiente: ${String(nextGroup.nombre || 'Sin nombre')}` : 'Siguiente';
-    }
-  }
-
-  function adjustExpandedImageFrame(){
-    const card = getActiveProductCard();
-    if(!card || !card.classList.contains('search-card-expanded')) return;
-    const photo = card.querySelector('.product-photo');
-    const img = card.querySelector('#activeProductImage');
-    if(!photo) return;
-    const cardH = card.clientHeight || 0;
-    const targetH = Math.max(260, Math.floor(cardH - 46));
-    let width = 320;
-    if (img && img.naturalWidth && img.naturalHeight){
-      const ratio = img.naturalWidth / img.naturalHeight;
-      width = Math.round(targetH * ratio);
-    } else {
-      width = Math.round(targetH * 0.72);
-    }
-    width = Math.max(230, Math.min(width, Math.floor(window.innerWidth * 0.42), 520));
-    card.style.setProperty('--expanded-photo-w', width + 'px');
-  }
-
-  window.__updateExpandedNavState = updateExpandedNavState;
-  window.__adjustExpandedImageFrame = adjustExpandedImageFrame;
-
-  const baseUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-  if (baseUpdate && !window.__wrappedUpdateActiveProductCardForNav) {
-    window.__wrappedUpdateActiveProductCardForNav = true;
-    updateActiveProductCard = function(p){
-      baseUpdate(p);
-      ensureExpandedNavControls();
-      updateExpandedNavState();
-      const img = document.getElementById('activeProductImage');
-      if (img && !img.dataset.expandedFrameBound){
-        img.dataset.expandedFrameBound = '1';
-        img.addEventListener('load', adjustExpandedImageFrame);
-      }
-      setTimeout(adjustExpandedImageFrame, 20);
-    };
-  }
-
-  window.addEventListener('resize', function(){
-    setTimeout(adjustExpandedImageFrame, 20);
-  });
-})();
-
-
-
-/* strong fix: always show prev/next in expanded card + maximize image area */
-(function(){
-  if (window.__wmsExpandedCardStrongFix) return;
-  window.__wmsExpandedCardStrongFix = true;
-
-  const style = document.createElement('style');
-  style.id = 'expandedCardStrongFixStyle';
-  style.textContent = `
-    #activeProductCard.search-card-expanded{
-      width:min(82vw, 1380px) !important;
-      max-width:min(82vw, 1380px) !important;
-      height:min(82vh, 900px) !important;
-      max-height:min(82vh, 900px) !important;
-      grid-template-columns:minmax(280px, var(--expanded-photo-w, 420px)) minmax(0,1fr) !important;
-      gap:18px !important;
-      align-items:stretch !important;
-      overflow:hidden !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo{
-      width:var(--expanded-photo-w, 420px) !important;
-      min-width:280px !important;
-      max-width:min(46vw, 620px) !important;
-      height:100% !important;
-      min-height:100% !important;
-      align-self:stretch !important;
-      background:transparent !important;
-      display:flex !important;
-      align-items:center !important;
-      justify-content:center !important;
-      overflow:hidden !important;
-      border-radius:18px !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo img{
-      width:auto !important;
-      height:100% !important;
-      min-height:100% !important;
-      max-height:none !important;
-      max-width:none !important;
-      object-fit:cover !important;
-      object-position:center center !important;
-      display:block !important;
-      background:transparent !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-body{
-      min-height:0 !important;
-      height:100% !important;
-      display:flex !important;
-      flex-direction:column !important;
-      gap:14px !important;
-      overflow:hidden !important;
-    }
-    #activeProductCard.search-card-expanded .variant-groups{
-      flex:1 1 auto !important;
-      overflow:auto !important;
-      padding-right:4px !important;
-      min-height:0 !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-nav{
-      display:flex !important;
-      position:sticky !important;
-      bottom:0 !important;
-      background:linear-gradient(180deg, rgba(10,20,32,.2), rgba(10,20,32,.88)) !important;
-      backdrop-filter:blur(6px) !important;
-      margin-top:auto !important;
-      padding:12px 0 2px !important;
-      z-index:3 !important;
-    }
-    .search-card-nav{
-      display:flex !important;
-      align-items:center !important;
-      justify-content:flex-end !important;
-      gap:10px !important;
-      border-top:1px solid rgba(255,255,255,.08) !important;
-    }
-    .search-card-nav .seg-btn{
-      min-width:160px !important;
-      max-width:240px !important;
-      white-space:nowrap !important;
-      overflow:hidden !important;
-      text-overflow:ellipsis !important;
-    }
-    .search-card-nav-meta{
-      margin-right:auto !important;
-      font-size:12px !important;
-      color:var(--muted) !important;
-      font-weight:700 !important;
-      white-space:nowrap !important;
-    }
-    @media (max-width: 760px){
-      #activeProductCard.search-card-expanded{
-        width:min(95vw,95vw) !important;
-        max-width:95vw !important;
-        height:min(90vh,90vh) !important;
-        max-height:90vh !important;
-        grid-template-columns:1fr !important;
-        grid-template-rows:minmax(260px, 46vh) minmax(0,1fr) !important;
-      }
-      #activeProductCard.search-card-expanded .product-photo{
-        width:100% !important;
-        max-width:100% !important;
-        min-width:100% !important;
-      }
-      #activeProductCard.search-card-expanded .product-photo img{
-        width:100% !important;
-        height:100% !important;
-        object-fit:cover !important;
-      }
-      .search-card-nav{
-        flex-wrap:wrap !important;
-      }
-      .search-card-nav-meta{
-        width:100% !important;
-        margin-right:0 !important;
-      }
-      .search-card-nav .seg-btn{
-        flex:1 1 0 !important;
-        min-width:0 !important;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  function shortName(name){
-    const t = String(name || '').trim();
-    if(!t) return '—';
-    return t.length > 22 ? t.slice(0, 22).trim() + '…' : t;
-  }
-
-  function currentList(){
-    if (Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
-    if (Array.isArray(appState?.products)) return appState.products.slice();
-    return [];
-  }
-
-  function productGroups(){
-    const list = currentList();
-    const map = new Map();
-    list.forEach((p) => {
-      const k = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-      if(!map.has(k)) map.set(k, { key:k, nombre:p?.nombre || 'Sin nombre', items:[] });
-      map.get(k).items.push(p);
-    });
-    const arr = Array.from(map.values());
-    arr.sort((a,b) => {
-      if(typeof compareTextLettersFirst === 'function') return compareTextLettersFirst(a.nombre || '', b.nombre || '');
-      return String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true });
-    });
-    return arr;
-  }
-
-  function currentGroupInfo(){
-    const groups = productGroups();
-    const currentName = appState?.selectedProduct?.nombre || '';
-    const key = (typeof norm === 'function' ? norm(currentName) : String(currentName).trim().toLowerCase()) || '__sin_nombre__';
-    let idx = groups.findIndex(g => g.key === key);
-    if(idx < 0) idx = 0;
-    return { groups, idx };
-  }
-
-  function groupRepresentative(group){
-    if(!group || !group.items?.length) return null;
-    const items = group.items.slice();
-    if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
-    return items[0] || group.items[0] || null;
-  }
-
-  function ensureNav(){
-    const card = document.getElementById('activeProductCard');
-    if(!card) return null;
-    const body = card.querySelector('.search-card-body');
-    if(!body) return null;
-    let nav = card.querySelector('.search-card-nav');
-    if(!nav){
-      nav = document.createElement('div');
-      nav.className = 'search-card-nav';
-      nav.innerHTML = `
-        <div class="search-card-nav-meta" id="expandedCardNavMeta">Producto 1 de 1</div>
-        <button type="button" class="seg-btn" id="expandedCardPrevBtn">← Anterior</button>
-        <button type="button" class="seg-btn" id="expandedCardNextBtn">Siguiente →</button>
-      `;
-      body.appendChild(nav);
-    }
-    const prev = nav.querySelector('#expandedCardPrevBtn');
-    const next = nav.querySelector('#expandedCardNextBtn');
-    if(prev && !prev.dataset.boundStrong){
-      prev.dataset.boundStrong = '1';
-      prev.addEventListener('click', function(e){
-        e.preventDefault(); e.stopPropagation();
-        move(-1);
-      });
-    }
-    if(next && !next.dataset.boundStrong){
-      next.dataset.boundStrong = '1';
-      next.addEventListener('click', function(e){
-        e.preventDefault(); e.stopPropagation();
-        move(1);
-      });
-    }
-    return nav;
-  }
-
-  function updateNavLabels(){
-    const nav = ensureNav();
-    if(!nav) return;
-    const meta = nav.querySelector('#expandedCardNavMeta');
-    const prev = nav.querySelector('#expandedCardPrevBtn');
-    const next = nav.querySelector('#expandedCardNextBtn');
-    const info = currentGroupInfo();
-    const total = info.groups.length;
-    const idx = info.idx;
-    if(meta) meta.textContent = total ? `Producto ${idx+1} de ${total}` : 'Producto 0 de 0';
-    if(total <= 1){
-      if(prev){ prev.disabled = true; prev.textContent = '← Anterior'; prev.title=''; }
-      if(next){ next.disabled = true; next.textContent = 'Siguiente →'; next.title=''; }
-      return;
-    }
-    const prevGroup = info.groups[(idx - 1 + total) % total];
-    const nextGroup = info.groups[(idx + 1) % total];
-    if(prev){
-      prev.disabled = false;
-      const label = shortName(prevGroup?.nombre);
-      prev.textContent = `← ${label}`;
-      prev.title = prevGroup?.nombre || '';
-    }
-    if(next){
-      next.disabled = false;
-      const label = shortName(nextGroup?.nombre);
-      next.textContent = `${label} →`;
-      next.title = nextGroup?.nombre || '';
-    }
-  }
-
-  function adjustImage(){
-    const card = document.getElementById('activeProductCard');
-    if(!card || !card.classList.contains('search-card-expanded')) return;
-    const img = document.getElementById('activeProductImage');
-    const body = card.querySelector('.search-card-body');
-    const close = document.getElementById('activeProductCardClose');
-    if(!body) return;
-    const cardH = card.clientHeight || 0;
-    const pad = 26;
-    const closeOffset = close ? 12 : 0;
-    const targetH = Math.max(280, Math.floor(cardH - pad - closeOffset));
-    let width = Math.round(targetH * 0.72);
-    if(img && img.naturalWidth && img.naturalHeight){
-      width = Math.round(targetH * (img.naturalWidth / img.naturalHeight));
-    }
-    width = Math.min(width, Math.floor(window.innerWidth * 0.46), 620);
-    width = Math.max(width, 300);
-    card.style.setProperty('--expanded-photo-w', width + 'px');
-  }
-
-  function move(dir){
-    const info = currentGroupInfo();
-    if(!info.groups.length) return;
-    const total = info.groups.length;
-    let nextIndex = info.idx + dir;
-    if(nextIndex < 0) nextIndex = total - 1;
-    if(nextIndex >= total) nextIndex = 0;
-    const target = groupRepresentative(info.groups[nextIndex]);
-    if(target && typeof selectProduct === 'function'){
-      selectProduct(target);
-      if(typeof openActiveProductCard === 'function'){
-        setTimeout(() => {
-          try{ openActiveProductCard(); }catch(e){}
-          updateNavLabels();
-          adjustImage();
-        }, 0);
-      }
-    }
-  }
-
-  const originalUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-  if(originalUpdate && !window.__wmsExpandedCardStrongWrapped){
-    window.__wmsExpandedCardStrongWrapped = true;
-    updateActiveProductCard = function(p){
-      originalUpdate(p);
-      ensureNav();
-      updateNavLabels();
-      const img = document.getElementById('activeProductImage');
-      if(img && !img.dataset.boundStrongFixLoad){
-        img.dataset.boundStrongFixLoad = '1';
-        img.addEventListener('load', () => setTimeout(adjustImage, 20));
-      }
-      setTimeout(adjustImage, 20);
-    };
-  }
-
-  document.addEventListener('keydown', function(e){
-    const card = document.getElementById('activeProductCard');
-    if(!card || !card.classList.contains('search-card-expanded')) return;
-    if(e.key === 'ArrowLeft'){ e.preventDefault(); move(-1); }
-    if(e.key === 'ArrowRight'){ e.preventDefault(); move(1); }
-  });
-
-  window.addEventListener('resize', function(){ setTimeout(adjustImage, 20); });
-})();
-
-
-
-
-/* final fix: arrow icons inside expanded card bottom only */
-(function(){
-  if (window.__wmsExpandedCardArrowInsideFix) return;
-  window.__wmsExpandedCardArrowInsideFix = true;
-
-  const style = document.createElement('style');
-  style.id = 'expandedCardArrowInsideFixStyle';
-  style.textContent = `
-    /* hide any previous text nav when not expanded */
-    #activeProductCard .search-card-nav{
-      display:none !important;
-    }
-
-    /* show only in expanded state */
-    #activeProductCard.search-card-expanded .search-card-nav{
-      display:flex !important;
-      position:absolute !important;
-      left:50% !important;
-      bottom:18px !important;
-      transform:translateX(-50%) !important;
-      width:auto !important;
-      min-width:140px !important;
-      max-width:220px !important;
-      padding:8px 10px !important;
-      border-radius:999px !important;
-      background:rgba(8,18,30,.82) !important;
-      backdrop-filter:blur(8px) !important;
-      border:1px solid rgba(255,255,255,.10) !important;
-      box-shadow:0 12px 28px rgba(0,0,0,.28) !important;
-      gap:10px !important;
-      z-index:8 !important;
-      justify-content:center !important;
-      align-items:center !important;
-    }
-
-    #activeProductCard.search-card-expanded{
-      position:fixed !important;
-    }
-
-    #activeProductCard.search-card-expanded .search-card-body{
-      position:relative !important;
-      padding-bottom:72px !important;
-    }
-
-    #activeProductCard.search-card-expanded .search-card-nav-meta{
-      display:none !important;
-    }
-
-    #activeProductCard.search-card-expanded .search-card-nav .seg-btn{
-      min-width:48px !important;
-      width:48px !important;
-      height:48px !important;
-      padding:0 !important;
-      border-radius:999px !important;
-      display:inline-flex !important;
-      align-items:center !important;
-      justify-content:center !important;
-      font-size:0 !important;
-      line-height:1 !important;
-      overflow:hidden !important;
-      text-indent:-9999px !important;
-      position:relative !important;
-      background:rgba(64,138,113,.18) !important;
-      border:1px solid rgba(176,228,204,.24) !important;
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04) !important;
-    }
-
-    #activeProductCard.search-card-expanded .search-card-nav .seg-btn::before{
-      content:'' !important;
-      position:absolute !important;
-      inset:0 !important;
-      display:grid !important;
-      place-items:center !important;
-      text-indent:0 !important;
-      font-size:22px !important;
-      color:#e9fff5 !important;
-      font-weight:900 !important;
-    }
-
-    #activeProductCard.search-card-expanded #expandedCardPrevBtn::before{
-      content:'←' !important;
-    }
-
-    #activeProductCard.search-card-expanded #expandedCardNextBtn::before{
-      content:'→' !important;
-    }
-
-    #activeProductCard.search-card-expanded .search-card-nav .seg-btn:disabled{
-      opacity:.45 !important;
-      filter:saturate(.7) !important;
-      cursor:not-allowed !important;
-    }
-
-    @media (max-width: 760px){
-      #activeProductCard.search-card-expanded .search-card-nav{
-        bottom:12px !important;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  function ensureArrowTitles(){
-    const prev = document.getElementById('expandedCardPrevBtn');
-    const next = document.getElementById('expandedCardNextBtn');
-    if(prev && !prev.title) prev.title = 'Anterior';
-    if(next && !next.title) next.title = 'Siguiente';
-  }
-
-  const prevUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-  if (prevUpdate && !window.__wmsExpandedCardArrowInsideWrapped){
-    window.__wmsExpandedCardArrowInsideWrapped = true;
-    updateActiveProductCard = function(p){
-      prevUpdate(p);
-      ensureArrowTitles();
-    };
-  } else {
-    ensureArrowTitles();
-  }
-})();
-
-
-
-
-/* final visual fix: fill image container and visible prev/next with labels inside expanded card */
-(function(){
-  if (window.__wmsExpandedCardFinalVisualFix) return;
-  window.__wmsExpandedCardFinalVisualFix = true;
-
-  const style = document.createElement('style');
-  style.id = 'expandedCardFinalVisualFixStyle';
-  style.textContent = `
-    #activeProductCard.search-card-expanded{
-      width:min(84vw, 1420px) !important;
-      max-width:min(84vw, 1420px) !important;
-      height:min(84vh, 920px) !important;
-      max-height:min(84vh, 920px) !important;
-      grid-template-columns:minmax(360px, 42%) minmax(0,1fr) !important;
-      gap:18px !important;
-      align-items:stretch !important;
-      overflow:hidden !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo{
-      width:100% !important;
-      min-width:0 !important;
-      max-width:none !important;
-      height:100% !important;
-      min-height:100% !important;
-      align-self:stretch !important;
-      background:transparent !important;
-      display:flex !important;
-      align-items:center !important;
-      justify-content:center !important;
-      overflow:hidden !important;
-      border-radius:18px !important;
-      position:relative !important;
-    }
-    #activeProductCard.search-card-expanded .product-photo img{
-      width:100% !important;
-      height:100% !important;
-      min-width:100% !important;
-      min-height:100% !important;
-      max-width:none !important;
-      max-height:none !important;
-      object-fit:cover !important;
-      object-position:center center !important;
-      display:block !important;
-      background:transparent !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-body{
-      min-height:0 !important;
-      height:100% !important;
-      display:flex !important;
-      flex-direction:column !important;
-      gap:14px !important;
-      overflow:hidden !important;
-      position:relative !important;
-      padding-bottom:96px !important;
-    }
-    #activeProductCard.search-card-expanded .variant-groups{
-      flex:1 1 auto !important;
-      overflow:auto !important;
-      min-height:0 !important;
-      padding-right:4px !important;
-    }
-    #activeProductCard .search-card-nav{
-      display:none !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-nav{
-      display:grid !important;
-      grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important;
-      gap:12px !important;
-      position:absolute !important;
-      left:0 !important;
-      right:0 !important;
-      bottom:10px !important;
-      width:100% !important;
-      padding-top:12px !important;
-      border-top:1px solid rgba(255,255,255,.08) !important;
-      background:linear-gradient(180deg, rgba(8,18,30,0), rgba(8,18,30,.72) 28%, rgba(8,18,30,.92)) !important;
-      z-index:12 !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-nav-meta{
-      display:none !important;
-    }
-    #activeProductCard.search-card-expanded .search-card-nav .seg-btn{
-      min-width:0 !important;
-      width:100% !important;
-      min-height:60px !important;
-      height:60px !important;
-      padding:10px 14px !important;
-      border-radius:16px !important;
-      display:flex !important;
-      align-items:center !important;
-      gap:10px !important;
-      justify-content:flex-start !important;
-      font-size:13px !important;
-      line-height:1.15 !important;
-      overflow:hidden !important;
-      white-space:normal !important;
-      background:rgba(64,138,113,.16) !important;
-      border:1px solid rgba(176,228,204,.24) !important;
-      color:#e9fff5 !important;
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.04) !important;
-      position:relative !important;
-      text-indent:0 !important;
-    }
-    #activeProductCard.search-card-expanded #expandedCardPrevBtn{
-      justify-content:flex-start !important;
-      text-align:left !important;
-    }
-    #activeProductCard.search-card-expanded #expandedCardNextBtn{
-      justify-content:flex-end !important;
-      text-align:right !important;
-    }
-    #activeProductCard.search-card-expanded .seg-btn .nav-arrow{
-      flex:0 0 auto !important;
-      font-size:22px !important;
-      font-weight:900 !important;
-      line-height:1 !important;
-      opacity:.98 !important;
-    }
-    #activeProductCard.search-card-expanded .seg-btn .nav-text{
-      display:flex !important;
-      flex-direction:column !important;
-      min-width:0 !important;
-      overflow:hidden !important;
-    }
-    #activeProductCard.search-card-expanded .seg-btn .nav-kicker{
-      font-size:10px !important;
-      text-transform:uppercase !important;
-      letter-spacing:.05em !important;
-      color:rgba(233,255,245,.72) !important;
-      margin-bottom:2px !important;
-    }
-    #activeProductCard.search-card-expanded .seg-btn .nav-name{
-      display:block !important;
-      overflow:hidden !important;
-      text-overflow:ellipsis !important;
-      white-space:nowrap !important;
-      font-weight:800 !important;
-      color:#fff !important;
-    }
-    @media (max-width: 760px){
-      #activeProductCard.search-card-expanded{
-        width:min(95vw,95vw) !important;
-        max-width:95vw !important;
-        height:min(90vh,90vh) !important;
-        max-height:90vh !important;
-        grid-template-columns:1fr !important;
-        grid-template-rows:minmax(260px, 44vh) minmax(0,1fr) !important;
-      }
-      #activeProductCard.search-card-expanded .search-card-nav{
-        grid-template-columns:1fr !important;
-      }
-      #activeProductCard.search-card-expanded .search-card-nav .seg-btn{
-        min-height:54px !important;
-        height:54px !important;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  function shortName(name){
-    const t = String(name || '').trim();
-    if(!t) return '—';
-    return t.length > 26 ? t.slice(0, 26).trim() + '…' : t;
-  }
-  function getCurrentList(){
-    if (Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
-    if (Array.isArray(appState?.products)) return appState.products.slice();
-    return [];
-  }
-  function getProductGroups(){
-    const list = getCurrentList();
-    const map = new Map();
-    list.forEach((p) => {
-      const k = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-      if(!map.has(k)) map.set(k, { key:k, nombre:p?.nombre || 'Sin nombre', items:[] });
-      map.get(k).items.push(p);
-    });
-    const arr = Array.from(map.values());
-    arr.sort((a,b) => {
-      if(typeof compareTextLettersFirst === 'function') return compareTextLettersFirst(a.nombre || '', b.nombre || '');
-      return String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true });
-    });
-    return arr;
-  }
-  function getCurrentGroupInfo(){
-    const groups = getProductGroups();
-    const currentName = appState?.selectedProduct?.nombre || '';
-    const key = (typeof norm === 'function' ? norm(currentName) : String(currentName).trim().toLowerCase()) || '__sin_nombre__';
-    let idx = groups.findIndex(g => g.key === key);
-    if(idx < 0) idx = 0;
-    return { groups, idx };
-  }
-  function groupRepresentative(group){
-    if(!group || !group.items?.length) return null;
-    const items = group.items.slice();
-    if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
-    return items[0] || group.items[0] || null;
-  }
-
-  function ensureNav(){
-    const card = document.getElementById('activeProductCard');
-    if(!card) return null;
-    const body = card.querySelector('.search-card-body');
-    if(!body) return null;
-    let nav = card.querySelector('.search-card-nav');
-    if(!nav){
-      nav = document.createElement('div');
-      nav.className = 'search-card-nav';
-      nav.innerHTML = `
-        <button type="button" class="seg-btn" id="expandedCardPrevBtn" title="Anterior"></button>
-        <button type="button" class="seg-btn" id="expandedCardNextBtn" title="Siguiente"></button>
-      `;
-      body.appendChild(nav);
-    }
-    const prev = nav.querySelector('#expandedCardPrevBtn');
-    const next = nav.querySelector('#expandedCardNextBtn');
-    const bind = (btn, dir) => {
-      if(btn && !btn.dataset.boundFinalNav){
-        btn.dataset.boundFinalNav = '1';
-        btn.addEventListener('click', function(e){
-          e.preventDefault(); e.stopPropagation();
-          move(dir);
-        });
-      }
-    };
-    bind(prev, -1);
-    bind(next, 1);
-    return nav;
-  }
-  function renderNavButton(btn, arrow, kicker, name, align){
-    if(!btn) return;
-    btn.innerHTML = `${align === 'left' ? `<span class="nav-arrow">${arrow}</span>` : ''}<span class="nav-text"><span class="nav-kicker">${kicker}</span><span class="nav-name">${name}</span></span>${align === 'right' ? `<span class="nav-arrow">${arrow}</span>` : ''}`;
-  }
-  function updateNav(){
-    const nav = ensureNav();
-    if(!nav) return;
-    const prev = nav.querySelector('#expandedCardPrevBtn');
-    const next = nav.querySelector('#expandedCardNextBtn');
-    const info = getCurrentGroupInfo();
-    const total = info.groups.length;
-    if(total <= 1){
-      renderNavButton(prev, '←', 'Anterior', '—', 'left');
-      renderNavButton(next, '→', 'Siguiente', '—', 'right');
-      if(prev) prev.disabled = true;
-      if(next) next.disabled = true;
-      return;
-    }
-    const prevGroup = info.groups[(info.idx - 1 + total) % total];
-    const nextGroup = info.groups[(info.idx + 1) % total];
-    if(prev){
-      prev.disabled = false;
-      renderNavButton(prev, '←', 'Anterior', shortName(prevGroup?.nombre), 'left');
-      prev.title = prevGroup?.nombre || 'Anterior';
-    }
-    if(next){
-      next.disabled = false;
-      renderNavButton(next, '→', 'Siguiente', shortName(nextGroup?.nombre), 'right');
-      next.title = nextGroup?.nombre || 'Siguiente';
-    }
-  }
-  function move(dir){
-    const info = getCurrentGroupInfo();
-    if(!info.groups.length) return;
-    const total = info.groups.length;
-    let nextIndex = info.idx + dir;
-    if(nextIndex < 0) nextIndex = total - 1;
-    if(nextIndex >= total) nextIndex = 0;
-    const target = groupRepresentative(info.groups[nextIndex]);
-    if(target && typeof selectProduct === 'function'){
-      selectProduct(target);
-      if(typeof openActiveProductCard === 'function'){
-        setTimeout(() => { try{ openActiveProductCard(); }catch(e){} updateNav(); }, 0);
-      }
-    }
-  }
-
-  const baseUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-  if(baseUpdate && !window.__wmsFinalNavWrapped){
-    window.__wmsFinalNavWrapped = true;
-    updateActiveProductCard = function(p){
-      baseUpdate(p);
-      updateNav();
-    };
-  } else {
-    updateNav();
-  }
-})();
-
-
-
-
-/* option 3 carousel: side preview cards around expanded main card */
-(function(){
-  if (window.__wmsOption3SideCarousel) return;
-  window.__wmsOption3SideCarousel = true;
-
-  const style = document.createElement('style');
-  style.id = 'option3SideCarouselStyle';
-  style.textContent = `
-    /* hide old nav in expanded mode for this option */
-    #activeProductCard.search-card-expanded .search-card-nav{
-      display:none !important;
-    }
-    .side-preview-card{
-      position:fixed;
-      top:50%;
-      transform:translateY(-50%) scale(.84);
-      width:min(16vw, 250px);
-      min-width:190px;
-      max-width:250px;
-      height:min(62vh, 520px);
-      border-radius:22px;
-      overflow:hidden;
-      background:rgba(8,18,30,.72);
-      border:1px solid rgba(255,255,255,.08);
-      box-shadow:0 18px 42px rgba(0,0,0,.34);
-      backdrop-filter:blur(8px);
-      z-index:1002;
-      opacity:.78;
-      cursor:pointer;
-      display:none;
-      transition:transform .22s ease, opacity .22s ease, box-shadow .22s ease;
-    }
-    .side-preview-card:hover{
-      transform:translateY(-50%) scale(.88);
-      opacity:.96;
-      box-shadow:0 24px 56px rgba(0,0,0,.42);
-    }
-    .side-preview-card.visible{
-      display:grid;
-      grid-template-rows:minmax(0,1fr) auto;
-    }
-    .side-preview-card.left{ left:max(18px, 3vw); }
-    .side-preview-card.right{ right:max(18px, 3vw); }
-    .side-preview-media{
-      min-height:0;
-      overflow:hidden;
-      background:transparent;
-    }
-    .side-preview-media img{
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      display:block;
-      background:transparent;
-    }
-    .side-preview-info{
-      padding:12px 14px 14px;
-      display:grid;
-      gap:4px;
-      background:linear-gradient(180deg, rgba(8,18,30,.18), rgba(8,18,30,.92));
-    }
-    .side-preview-kicker{
-      font-size:10px;
-      text-transform:uppercase;
-      letter-spacing:.06em;
-      color:rgba(233,255,245,.66);
-      font-weight:800;
-    }
-    .side-preview-name{
-      font-size:13px;
-      font-weight:800;
-      color:#fff;
-      line-height:1.15;
-      display:-webkit-box;
-      -webkit-line-clamp:2;
-      -webkit-box-orient:vertical;
-      overflow:hidden;
-    }
-    .side-preview-sku{
-      font-size:11px;
-      color:rgba(233,255,245,.72);
-      white-space:nowrap;
-      overflow:hidden;
-      text-overflow:ellipsis;
-    }
-    body.search-card-modal-open #activeProductCard.search-card-expanded{
-      z-index:1003 !important;
-    }
-    @media (max-width: 1100px){
-      .side-preview-card{
-        width:min(17vw, 210px);
-        min-width:160px;
-        height:min(54vh, 430px);
-      }
-    }
-    @media (max-width: 860px){
-      .side-preview-card{
-        display:none !important;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  function ensureSideCard(which){
-    let el = document.getElementById('sidePreviewCard_' + which);
-    if(!el){
-      el = document.createElement('button');
-      el.type = 'button';
-      el.id = 'sidePreviewCard_' + which;
-      el.className = 'side-preview-card ' + which;
-      el.innerHTML = `
-        <div class="side-preview-media"><img alt="" /></div>
-        <div class="side-preview-info">
-          <div class="side-preview-kicker">${which === 'left' ? 'Anterior' : 'Siguiente'}</div>
-          <div class="side-preview-name">—</div>
-          <div class="side-preview-sku">SKU —</div>
-        </div>
-      `;
-      document.body.appendChild(el);
-    }
-    return el;
-  }
-
-  function productGroups(){
-    const list = (Array.isArray(appState?.filtered) && appState.filtered.length ? appState.filtered : (Array.isArray(appState?.products) ? appState.products : [])).slice();
-    const map = new Map();
-    list.forEach((p) => {
-      const key = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-      if(!map.has(key)) map.set(key, { key, nombre:p?.nombre || 'Sin nombre', items:[] });
-      map.get(key).items.push(p);
-    });
-    const arr = Array.from(map.values());
-    arr.sort((a,b) => {
-      if(typeof compareTextLettersFirst === 'function') return compareTextLettersFirst(a.nombre || '', b.nombre || '');
-      return String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true });
-    });
-    return arr;
-  }
-
-  function rep(group){
-    if(!group || !group.items || !group.items.length) return null;
-    const items = group.items.slice();
-    if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
-    return items[0] || group.items[0] || null;
-  }
-
-  function currentGroupIndex(groups){
-    const currentName = appState?.selectedProduct?.nombre || '';
-    const key = (typeof norm === 'function' ? norm(currentName) : String(currentName).trim().toLowerCase()) || '__sin_nombre__';
-    let idx = groups.findIndex(g => g.key === key);
-    if(idx < 0) idx = 0;
-    return idx;
-  }
-
-  function firstImageForProduct(p){
-    try{
-      const urls = typeof getProductImageUrls === 'function' ? getProductImageUrls(p) : [];
-      return Array.isArray(urls) && urls.length ? urls[0] : '';
-    }catch(e){ return ''; }
-  }
-
-  function hideSidePreviews(){
-    ['left','right'].forEach(which => {
-      const el = document.getElementById('sidePreviewCard_' + which);
-      if(el){
-        el.classList.remove('visible');
-        el.style.display = 'none';
-      }
-    });
-  }
-
-  function renderSideCard(which, product){
-    const el = ensureSideCard(which);
-    const img = el.querySelector('img');
-    const name = el.querySelector('.side-preview-name');
-    const sku = el.querySelector('.side-preview-sku');
-    if(!product){
-      el.classList.remove('visible');
-      el.style.display='none';
-      return;
-    }
-    const src = firstImageForProduct(product);
-    if(src){
-      img.src = src;
-      img.style.display = 'block';
-    }else{
-      img.removeAttribute('src');
-      img.style.display = 'none';
-    }
-    name.textContent = String(product.nombre || 'Sin nombre');
-    sku.textContent = `SKU ${product.sku || '—'}`;
-    el.classList.add('visible');
-    el.style.display = '';
-    el.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if(typeof selectProduct === 'function'){
-        selectProduct(product);
-        if(typeof openActiveProductCard === 'function'){
-          setTimeout(() => { try{ openActiveProductCard(); }catch(e){} refreshSidePreviews(); }, 0);
-        }
-      }
-    };
-  }
-
-  function positionSidePreviews(){
-    const main = document.getElementById('activeProductCard');
-    if(!main || !main.classList.contains('search-card-expanded')){ hideSidePreviews(); return; }
-    if(window.innerWidth <= 860){ hideSidePreviews(); return; }
-    const rect = main.getBoundingClientRect();
-    const left = ensureSideCard('left');
-    const right = ensureSideCard('right');
-    const gap = Math.max(12, Math.min(28, (window.innerWidth - rect.width) / 10));
-    left.style.top = (rect.top + rect.height/2) + 'px';
-    right.style.top = (rect.top + rect.height/2) + 'px';
-    left.style.left = Math.max(12, rect.left - left.offsetWidth - gap) + 'px';
-    right.style.right = Math.max(12, window.innerWidth - rect.right - right.offsetWidth - gap) + 'px';
-  }
-
-  function refreshSidePreviews(){
-    const main = document.getElementById('activeProductCard');
-    if(!main || !main.classList.contains('search-card-expanded')){ hideSidePreviews(); return; }
-    const groups = productGroups();
-    if(groups.length <= 1 || window.innerWidth <= 860){ hideSidePreviews(); return; }
-    const idx = currentGroupIndex(groups);
-    const prevProduct = rep(groups[(idx - 1 + groups.length) % groups.length]);
-    const nextProduct = rep(groups[(idx + 1) % groups.length]);
-    renderSideCard('left', prevProduct);
-    renderSideCard('right', nextProduct);
-    setTimeout(positionSidePreviews, 20);
-  }
-
-  const originalOpen = typeof openActiveProductCard === 'function' ? openActiveProductCard : null;
-  if(originalOpen && !window.__openActiveProductCardWrappedOption3){
-    window.__openActiveProductCardWrappedOption3 = true;
-    openActiveProductCard = function(){
-      originalOpen();
-      setTimeout(refreshSidePreviews, 30);
-    };
-  }
-
-  const originalClose = typeof closeActiveProductCard === 'function' ? closeActiveProductCard : null;
-  if(originalClose && !window.__closeActiveProductCardWrappedOption3){
-    window.__closeActiveProductCardWrappedOption3 = true;
-    closeActiveProductCard = function(){
-      originalClose();
-      hideSidePreviews();
-    };
-  }
-
-  const originalUpdate = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-  if(originalUpdate && !window.__updateActiveProductCardWrappedOption3){
-    window.__updateActiveProductCardWrappedOption3 = true;
-    updateActiveProductCard = function(p){
-      originalUpdate(p);
-      setTimeout(refreshSidePreviews, 30);
-    };
-  }
-
-  window.addEventListener('resize', () => setTimeout(refreshSidePreviews, 30));
-  document.addEventListener('keydown', function(e){
-    const main = document.getElementById('activeProductCard');
-    if(!main || !main.classList.contains('search-card-expanded')) return;
-    const groups = productGroups();
-    if(groups.length <= 1) return;
-    const idx = currentGroupIndex(groups);
-    if(e.key === 'ArrowLeft'){
-      e.preventDefault();
-      const target = rep(groups[(idx - 1 + groups.length) % groups.length]);
-      if(target && typeof selectProduct === 'function'){
-        selectProduct(target);
-        setTimeout(refreshSidePreviews, 30);
-      }
-    }
-    if(e.key === 'ArrowRight'){
-      e.preventDefault();
-      const target = rep(groups[(idx + 1) % groups.length]);
-      if(target && typeof selectProduct === 'function'){
-        selectProduct(target);
-        setTimeout(refreshSidePreviews, 30);
-      }
-    }
-  });
-})();
-
