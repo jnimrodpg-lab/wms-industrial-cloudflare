@@ -9430,24 +9430,19 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
 
 
 
-  /* === Option 3 visible-edge carousel FINAL REAL FIX === */
+  /* === Option 3 side carousel visible-edge fix === */
   (function(){
-    if(window.__wmsOption3VisibleEdgeFinalFix) return;
-    window.__wmsOption3VisibleEdgeFinalFix = true;
-
     const style = document.createElement('style');
-    style.id = 'wmsOption3VisibleEdgeFinalFixStyle';
+    style.id='wmsOption3VisibleEdgeFix';
     style.textContent = `
       body.search-card-modal-open #activeProductCard.search-card-expanded{
-        width:min(62vw, 960px) !important;
-        max-width:min(62vw, 960px) !important;
+        width:min(64vw, 980px) !important;
+        max-width:min(64vw, 980px) !important;
         height:min(82vh, 900px) !important;
         max-height:min(82vh, 900px) !important;
-        grid-template-columns:minmax(250px, 34%) minmax(0,1fr) !important;
-        gap:18px !important;
+        grid-template-columns:minmax(280px, 38%) minmax(0,1fr) !important;
+        gap:16px !important;
         overflow:hidden !important;
-        align-items:stretch !important;
-        z-index:1101 !important;
       }
       body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo{
         width:100% !important;
@@ -9455,8 +9450,6 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
         min-height:100% !important;
         overflow:hidden !important;
         background:transparent !important;
-        border-radius:18px !important;
-        display:block !important;
       }
       body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo img{
         width:100% !important;
@@ -9468,248 +9461,175 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
         object-fit:cover !important;
         object-position:center center !important;
         transform:scale(1.14) !important;
-        transform-origin:center center !important;
-        display:block !important;
       }
       body.search-card-modal-open #activeProductCard.search-card-expanded .search-card-nav{
         display:none !important;
       }
-
-      .wms-edge-preview{
+      .wms-side-preview{
         position:fixed !important;
         top:50% !important;
-        transform:translateY(-50%) scale(.88) !important;
-        width:clamp(170px, 16vw, 220px) !important;
-        height:clamp(330px, 60vh, 520px) !important;
+        transform:translateY(-50%) !important;
+        width:clamp(150px, 13vw, 180px) !important;
+        min-width:150px !important;
+        max-width:180px !important;
+        height:clamp(300px, 52vh, 430px) !important;
         border-radius:22px !important;
         overflow:hidden !important;
-        background:rgba(8,18,30,.76) !important;
+        background:rgba(8,18,30,.78) !important;
         border:1px solid rgba(255,255,255,.10) !important;
-        box-shadow:0 18px 42px rgba(0,0,0,.34) !important;
+        box-shadow:0 18px 44px rgba(0,0,0,.34) !important;
         backdrop-filter:blur(10px) !important;
-        z-index:1100 !important;
-        cursor:pointer !important;
-        opacity:.86 !important;
+        z-index:1100 !important; /* above overlay, below main card 1101 */
+        opacity:.9 !important;
         display:none !important;
-        transition:transform .22s ease, opacity .22s ease !important;
+        visibility:hidden !important;
+        cursor:pointer !important;
       }
-      .wms-edge-preview.visible{
+      .wms-side-preview.visible{
         display:grid !important;
+        visibility:visible !important;
         grid-template-rows:minmax(0,1fr) auto !important;
       }
-      .wms-edge-preview:hover{
-        opacity:.98 !important;
-      }
-      .wms-edge-preview.left:hover{
-        transform:translateY(-50%) translateX(8px) scale(.9) !important;
-      }
-      .wms-edge-preview.right:hover{
-        transform:translateY(-50%) translateX(-8px) scale(.9) !important;
-      }
-      .wms-edge-preview-media{
-        overflow:hidden !important;
-        background:transparent !important;
-      }
-      .wms-edge-preview-media img{
-        width:100% !important;
-        height:100% !important;
-        object-fit:cover !important;
-        object-position:center center !important;
-        display:block !important;
-      }
-      .wms-edge-preview-info{
-        padding:12px 13px 14px !important;
+      .wms-side-preview-media{overflow:hidden !important; background:transparent !important;}
+      .wms-side-preview-media img{width:100% !important; height:100% !important; object-fit:cover !important; display:block !important;}
+      .wms-side-preview-info{
+        padding:10px 12px 12px !important;
         display:grid !important;
-        gap:4px !important;
-        background:linear-gradient(180deg, rgba(8,18,30,.14), rgba(8,18,30,.96)) !important;
+        gap:3px !important;
+        background:linear-gradient(180deg, rgba(8,18,30,.1), rgba(8,18,30,.94)) !important;
       }
-      .wms-edge-preview-kicker{
-        font-size:10px !important;
-        text-transform:uppercase !important;
-        letter-spacing:.06em !important;
-        color:rgba(233,255,245,.68) !important;
-        font-weight:800 !important;
+      .wms-side-preview-kicker{
+        font-size:10px !important; text-transform:uppercase !important; letter-spacing:.06em !important;
+        color:rgba(233,255,245,.66) !important; font-weight:800 !important;
       }
-      .wms-edge-preview-name{
-        font-size:13px !important;
-        font-weight:800 !important;
-        color:#fff !important;
-        line-height:1.16 !important;
-        display:-webkit-box !important;
-        -webkit-line-clamp:2 !important;
-        -webkit-box-orient:vertical !important;
-        overflow:hidden !important;
+      .wms-side-preview-name{
+        font-size:12px !important; font-weight:800 !important; color:#fff !important; line-height:1.15 !important;
+        display:-webkit-box !important; -webkit-line-clamp:2 !important; -webkit-box-orient:vertical !important; overflow:hidden !important;
       }
-      .wms-edge-preview-sku{
-        font-size:11px !important;
-        color:rgba(233,255,245,.72) !important;
-        white-space:nowrap !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
+      .wms-side-preview-sku{
+        font-size:10px !important; color:rgba(233,255,245,.72) !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
       }
       @media (max-width: 760px){
-        .wms-edge-preview{ display:none !important; }
-        body.search-card-modal-open #activeProductCard.search-card-expanded{
-          width:min(94vw, 720px) !important;
-          max-width:94vw !important;
-          grid-template-columns:1fr !important;
-        }
+        .wms-side-preview{ display:none !important; visibility:hidden !important; }
       }
     `;
     document.head.appendChild(style);
 
     function shortName(name){
-      const t = String(name || '').trim();
-      return t.length > 28 ? t.slice(0, 28).trim() + '…' : (t || 'Sin nombre');
+      const t = String(name||'').trim();
+      return t.length>28 ? t.slice(0,28).trim()+'…' : (t || 'Sin nombre');
     }
-    function baseList(){
-      if(Array.isArray(appState?.filtered) && appState.filtered.length) return appState.filtered.slice();
-      if(Array.isArray(appState?.products)) return appState.products.slice();
-      return [];
-    }
-    function groups(){
-      const list = baseList();
+    function getGroups(){
+      const list = (Array.isArray(appState?.filtered) && appState.filtered.length) ? appState.filtered.slice() :
+                   (Array.isArray(appState?.products) ? appState.products.slice() : []);
       const map = new Map();
-      list.forEach((p) => {
-        const key = (typeof norm === 'function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
-        if(!map.has(key)) map.set(key, { key, nombre:p?.nombre || 'Sin nombre', items:[] });
+      list.forEach(p=>{
+        const key = (typeof norm==='function' ? norm(p?.nombre || '') : String(p?.nombre || '').trim().toLowerCase()) || '__sin_nombre__';
+        if(!map.has(key)) map.set(key,{key,nombre:p?.nombre||'Sin nombre',items:[]});
         map.get(key).items.push(p);
       });
-      const arr = Array.from(map.values());
-      arr.sort((a,b) => typeof compareTextLettersFirst === 'function'
-        ? compareTextLettersFirst(a.nombre || '', b.nombre || '')
-        : String(a.nombre||'').localeCompare(String(b.nombre||''), 'es', { sensitivity:'base', numeric:true }));
+      const arr=Array.from(map.values());
+      arr.sort((a,b)=> typeof compareTextLettersFirst==='function'
+        ? compareTextLettersFirst(a.nombre||'',b.nombre||'')
+        : String(a.nombre||'').localeCompare(String(b.nombre||''),'es',{sensitivity:'base',numeric:true}));
       return arr;
     }
-    function representative(group){
+    function rep(group){
       if(!group || !group.items?.length) return null;
-      const items = group.items.slice();
-      if(typeof compareProductsAZ === 'function') items.sort(compareProductsAZ);
+      const items=group.items.slice();
+      if(typeof compareProductsAZ==='function') items.sort(compareProductsAZ);
       return items[0] || group.items[0] || null;
     }
-    function currentIdx(all){
-      const currentName = appState?.selectedProduct?.nombre || '';
-      const key = (typeof norm === 'function' ? norm(currentName) : String(currentName).trim().toLowerCase()) || '__sin_nombre__';
-      const idx = all.findIndex(g => g.key === key);
-      return idx >= 0 ? idx : 0;
+    function currentIdx(groups){
+      const selectedKey=((typeof norm==='function'?norm(appState?.selectedProduct?.nombre||''):String(appState?.selectedProduct?.nombre||'').trim().toLowerCase())||'__sin_nombre__');
+      const idx=groups.findIndex(g=>g.key===selectedKey);
+      return idx>=0?idx:0;
     }
-    function ensureEdge(side){
-      let el = document.getElementById('wmsEdgePreview-' + side);
+    function ensure(side){
+      let el=document.getElementById('wmsSidePreview-'+side);
       if(el) return el;
-      el = document.createElement('div');
-      el.id = 'wmsEdgePreview-' + side;
-      el.className = 'wms-edge-preview ' + side;
-      el.innerHTML = `
-        <div class="wms-edge-preview-media"><img alt="Preview producto"></div>
-        <div class="wms-edge-preview-info">
-          <div class="wms-edge-preview-kicker">${side === 'left' ? 'Anterior' : 'Siguiente'}</div>
-          <div class="wms-edge-preview-name">—</div>
-          <div class="wms-edge-preview-sku">SKU —</div>
-        </div>
-      `;
+      el=document.createElement('div');
+      el.id='wmsSidePreview-'+side;
+      el.className='wms-side-preview '+side;
+      el.innerHTML=`<div class="wms-side-preview-media"><img alt="Preview producto"></div>
+        <div class="wms-side-preview-info">
+          <div class="wms-side-preview-kicker">${side==='left'?'Anterior':'Siguiente'}</div>
+          <div class="wms-side-preview-name">—</div>
+          <div class="wms-side-preview-sku">SKU —</div>
+        </div>`;
       document.body.appendChild(el);
       return el;
     }
-    function hideEdges(){
-      ['left','right'].forEach(side=>{
-        const el=document.getElementById('wmsEdgePreview-'+side);
-        if(el){ el.classList.remove('visible'); el.style.display='none'; }
-      });
-    }
-    function renderEdge(el, product, side){
+    function renderSide(el, product, side){
       if(!el) return;
       if(!product){
         el.classList.remove('visible');
-        el.style.display='none';
         return;
       }
-      const img = el.querySelector('img');
-      const name = el.querySelector('.wms-edge-preview-name');
-      const sku = el.querySelector('.wms-edge-preview-sku');
-      const urls = typeof getProductImageUrls === 'function' ? getProductImageUrls(product) : [];
+      const img=el.querySelector('img');
+      const name=el.querySelector('.wms-side-preview-name');
+      const sku=el.querySelector('.wms-side-preview-sku');
+      const urls=typeof getProductImageUrls==='function' ? getProductImageUrls(product) : [];
       if(img){
         if(Array.isArray(urls) && urls[0]){
-          img.src = urls[0];
-          img.style.display = '';
+          img.src=urls[0];
+          img.style.display='';
         } else {
-          img.removeAttribute('src');
-          img.style.display = 'none';
+          img.removeAttribute('src'); img.style.display='none';
         }
       }
-      if(name) name.textContent = shortName(product.nombre);
-      if(sku) sku.textContent = `SKU ${product.sku || '—'}`;
+      if(name) name.textContent=shortName(product.nombre);
+      if(sku) sku.textContent=`SKU ${product.sku||'—'}`;
       el.classList.add('visible');
-      el.style.display = '';
-      el.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if(typeof selectProduct === 'function'){
-          selectProduct(product);
-          setTimeout(refreshEdges, 40);
-        }
+      el.onclick=(e)=>{
+        e.preventDefault(); e.stopPropagation();
+        if(typeof selectProduct==='function'){ selectProduct(product); setTimeout(refresh,40); }
       };
     }
-    function positionEdges(){
-      const main = document.getElementById('activeProductCard');
-      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 760){ hideEdges(); return; }
-      const rect = main.getBoundingClientRect();
-      const left = ensureEdge('left');
-      const right = ensureEdge('right');
-      const overlap = Math.min(110, Math.max(60, rect.width * 0.12));
-      left.style.top = (rect.top + rect.height/2) + 'px';
-      right.style.top = (rect.top + rect.height/2) + 'px';
-      left.style.left = (rect.left - left.offsetWidth + overlap) + 'px';
-      right.style.left = (rect.right - overlap) + 'px';
+    function hide(){ ['left','right'].forEach(side=>{ const el=document.getElementById('wmsSidePreview-'+side); if(el) el.classList.remove('visible');}); }
+    function position(){
+      const main=document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth<=760){ hide(); return; }
+      const rect=main.getBoundingClientRect();
+      const left=ensure('left'), right=ensure('right');
+      // overlap behind main card like visible-edge
+      const overlap=Math.round(Math.min(72, rect.width*0.10));
+      left.style.top=(rect.top + rect.height/2)+'px';
+      right.style.top=(rect.top + rect.height/2)+'px';
+      left.style.left=(rect.left - left.offsetWidth + overlap)+'px';
+      right.style.left=(rect.right - overlap)+'px';
     }
-    function refreshEdges(){
-      const main = document.getElementById('activeProductCard');
-      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 760){ hideEdges(); return; }
-      const all = groups();
-      if(all.length <= 1){ hideEdges(); return; }
-      const idx = currentIdx(all);
-      renderEdge(ensureEdge('left'), representative(all[(idx - 1 + all.length) % all.length]), 'left');
-      renderEdge(ensureEdge('right'), representative(all[(idx + 1) % all.length]), 'right');
-      setTimeout(positionEdges, 20);
+    function refresh(){
+      const main=document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth<=760){ hide(); return; }
+      const groups=getGroups();
+      if(groups.length<=1){ hide(); return; }
+      const idx=currentIdx(groups);
+      renderSide(ensure('left'), rep(groups[(idx-1+groups.length)%groups.length]), 'left');
+      renderSide(ensure('right'), rep(groups[(idx+1)%groups.length]), 'right');
+      setTimeout(position, 30);
     }
-
-    const _open = typeof openActiveProductCard === 'function' ? openActiveProductCard : null;
-    if(_open){
-      openActiveProductCard = function(){
-        _open();
-        setTimeout(refreshEdges, 40);
-      };
+    const oldOpen=typeof openActiveProductCard==='function' ? openActiveProductCard : null;
+    if(oldOpen){
+      openActiveProductCard=function(){ oldOpen(); setTimeout(refresh,40); };
     }
-    const _close = typeof closeActiveProductCard === 'function' ? closeActiveProductCard : null;
-    if(_close){
-      closeActiveProductCard = function(){
-        _close();
-        hideEdges();
-      };
+    const oldClose=typeof closeActiveProductCard==='function' ? closeActiveProductCard : null;
+    if(oldClose){
+      closeActiveProductCard=function(){ oldClose(); hide(); };
     }
-    const _update = typeof updateActiveProductCard === 'function' ? updateActiveProductCard : null;
-    if(_update){
-      updateActiveProductCard = function(p){
-        _update(p);
-        setTimeout(refreshEdges, 40);
-      };
+    const oldUpdate=typeof updateActiveProductCard==='function' ? updateActiveProductCard : null;
+    if(oldUpdate){
+      updateActiveProductCard=function(p){ oldUpdate(p); setTimeout(refresh,40); };
     }
-    document.addEventListener('keydown', function(e){
-      const main = document.getElementById('activeProductCard');
+    window.addEventListener('resize', ()=>setTimeout(refresh,40));
+    document.addEventListener('keydown', (e)=>{
+      const main=document.getElementById('activeProductCard');
       if(!main || !main.classList.contains('search-card-expanded')) return;
-      const all = groups();
-      if(all.length <= 1) return;
-      const idx = currentIdx(all);
-      if(e.key === 'ArrowLeft'){
-        e.preventDefault();
-        const target = representative(all[(idx - 1 + all.length) % all.length]);
-        if(target && typeof selectProduct === 'function'){ selectProduct(target); setTimeout(refreshEdges, 40); }
-      } else if(e.key === 'ArrowRight'){
-        e.preventDefault();
-        const target = representative(all[(idx + 1) % all.length]);
-        if(target && typeof selectProduct === 'function'){ selectProduct(target); setTimeout(refreshEdges, 40); }
-      }
+      const groups=getGroups(); if(groups.length<=1) return;
+      const idx=currentIdx(groups);
+      if(e.key==='ArrowLeft'){ e.preventDefault(); const target=rep(groups[(idx-1+groups.length)%groups.length]); if(target && typeof selectProduct==='function'){ selectProduct(target); setTimeout(refresh,40);} }
+      if(e.key==='ArrowRight'){ e.preventDefault(); const target=rep(groups[(idx+1)%groups.length]); if(target && typeof selectProduct==='function'){ selectProduct(target); setTimeout(refresh,40);} }
     });
-    window.addEventListener('resize', function(){ setTimeout(refreshEdges, 40); });
   })();
 
 
