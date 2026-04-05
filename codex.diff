@@ -1,0 +1,408 @@
+diff --git a/public/index.html b/public/index.html
+index 357f34ab6fb5d2eccd01285508a8c9d9a83ac7f0..ab8c2f2b31a5ba75b98f01a3f617dd84e52a518f 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -164,50 +164,64 @@
+     .search-card.is-clickable{cursor:zoom-in;transition:transform .28s ease, box-shadow .28s ease, border-color .28s ease}
+     .search-card.is-clickable:hover{border-color:rgba(138,255,203,.24);box-shadow:0 14px 34px rgba(0,0,0,.22)}
+     .search-card-overlay{position:fixed;inset:0;background:rgba(3,8,15,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .24s ease;z-index:1100}
+     .search-card-overlay.active{opacity:1;pointer-events:auto}
+     .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:22px;z-index:1101;border-color:rgba(138,255,203,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(138,255,203,.08) inset;cursor:default;grid-template-columns:minmax(300px,34%) minmax(0,1fr);align-items:stretch}
+     .search-card.search-card-expanded .product-photo{min-height:56vh;max-height:none;height:100%;display:flex;align-items:center;justify-content:center;padding:10px;background:transparent}
+     .search-card.search-card-expanded .search-card-title{font-size:26px}
+     .search-card.search-card-expanded .search-card-sku{font-size:13px}
+     .search-card.search-card-expanded .search-card-meta{gap:12px}
+     .search-card.search-card-expanded .search-meta-block{padding:16px 18px}
+     .search-card.search-card-expanded .variant-strip .chip{transform:scale(1.02)}
+     .search-card-expand-hint{position:absolute;right:14px;bottom:12px;font-size:11px;font-weight:700;color:rgba(236,255,246,.72);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(5,14,24,.58);pointer-events:none;z-index:3}
+     .search-card-expand-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.76);color:var(--text);font-size:18px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
+     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
+     body.search-card-modal-open{overflow:hidden}
+     @media (max-width:760px){
+       .search-card.search-card-expanded{width:min(94vw,720px);max-width:94vw;height:min(84vh,760px);max-height:84vh;padding:14px;transform:translate(-50%,-50%) scale(1);grid-template-columns:1fr}
+       .search-card.search-card-expanded .product-photo{min-height:38vh;max-height:none}
+       .search-card.search-card-expanded .search-card-title{font-size:21px}
+       .search-card-expand-hint{display:none}
+     }
+ 
+     .product-photo{border-radius:18px;border:1px solid rgba(255,255,255,.08);background:transparent;min-height:320px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;isolation:isolate}
+     .product-photo img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center center;display:block;transition:opacity .28s ease;background:transparent}
+     .product-photo.empty::after{content:"Sin imagen";font-weight:700;color:var(--muted);font-size:13px;position:absolute;inset:0;display:grid;place-items:center;z-index:2}
++    .photo-slider-nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(4,12,20,.72);color:var(--text);font-size:20px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
++    .photo-slider-nav:hover{background:rgba(9,24,39,.9)}
++    .photo-slider-nav.prev{left:10px}
++    .photo-slider-nav.next{right:10px}
++    .photo-slider-dots{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:none;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.6);z-index:4}
++    .photo-slider-dot{width:8px;height:8px;border-radius:999px;border:none;background:rgba(255,255,255,.35);padding:0;cursor:pointer}
++    .photo-slider-dot.active{background:rgba(138,255,203,.92)}
++    .search-card.search-card-expanded .photo-slider-nav,.search-card.search-card-expanded .photo-slider-dots{display:flex}
++    @media (max-width:760px){
++      .photo-slider-nav{width:34px;height:34px;font-size:18px}
++      .photo-slider-nav.prev{left:8px}
++      .photo-slider-nav.next{right:8px}
++      .photo-slider-dots{bottom:8px}
++    }
+     .search-card-body{display:grid;gap:12px;min-width:0}
+     .search-card-title-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+     .search-card-title{font-size:18px;font-weight:800;line-height:1.1;color:var(--text)}
+     .search-card-sku{font-size:12px;color:var(--muted);margin-top:4px}
+     .search-card-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+     .search-meta-block{padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:grid;gap:6px;min-width:0}
+     .search-meta-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+     .search-meta-value{font-size:14px;font-weight:800;color:var(--text);word-break:break-word}
+     .search-meta-value.store{color:#ffe27a}
+     .variant-groups{display:grid;gap:10px}
+     .variant-group{display:grid;gap:6px}
+     .variant-group-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800}
+     .variant-strip{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+     .variant-chip{display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:8px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);font-weight:800;font-size:12px;color:var(--text);cursor:pointer;transition:.16s ease}
+     .variant-chip:hover,.variant-chip.active{transform:translateY(-1px);box-shadow:0 0 0 1px rgba(64,138,113,.22) inset;background:rgba(64,138,113,.16);border-color:rgba(176,228,204,.22)}
+     .variant-chip.variant-color{color:#0f241c;border-color:rgba(15,36,28,.12)}
+     .variant-chip.variant-color.active{box-shadow:0 0 0 2px rgba(255,255,255,.72), 0 0 0 3px rgba(64,138,113,.32)}
+     .variant-chip.muted{opacity:.78}
+     .variant-chip.tone-1{background:rgba(110,214,168,.18);color:#c9ffe2}
+     .variant-chip.tone-2{background:rgba(255,216,77,.16);color:#ffe27a}
+     .variant-chip.tone-3{background:rgba(88,179,255,.16);color:#cbe7ff}
+     .variant-chip.tone-4{background:rgba(123,156,255,.16);color:#d7e1ff}
+     .variant-chip.tone-5{background:rgba(255,131,131,.16);color:#ffd0d0}
+     .variant-chip.tone-6{background:rgba(190,149,255,.16);color:#ecd9ff}
+     .result-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@@ -1133,50 +1147,53 @@ body.theme-light .seg-btn,
+     <section class="panel search-panel">
+       <div id="searchBranchHost" class="search-branch-host"></div>
+       <div class="panel-header">
+         <div>
+           <h2>Búsqueda de producto</h2>
+           <div class="muted tiny">Barra de búsqueda + lector QR / código de barras</div>
+         </div>
+         <div class="search-header-actions">
+           <span class="chip" id="countProductsChip"><span id="countProducts">0</span> productos</span>
+           <button class="seg-btn" id="toggleGroupProducts">Agrupar familias</button>
+         </div>
+       </div>
+       <div class="search-top">
+         <div class="search-shell">
+           <div class="search-input-wrap">
+             <div class="searchbar">
+               <input id="searchInput" placeholder="Buscar por SKU, nombre, ubicación o rack..." />
+               <button class="icon-btn" id="btnSearch" title="Buscar">⌕</button>
+               <button class="action-btn primary" id="btnScanCode">Escanear QR / barras</button>
+             </div>
+           </div>
+           <div class="search-card is-clickable" id="activeProductCard" role="button" tabindex="0" aria-label="Expandir tarjeta del producto">
+             <div class="search-card-expand-close" id="activeProductCardClose" aria-label="Cerrar detalle expandido">✕</div>
+             <div class="product-photo empty" id="activeProductImageWrap">
+               <img id="activeProductImage" alt="Imagen del producto" style="display:none" />
++              <button type="button" class="photo-slider-nav prev" id="activeImagePrev" aria-label="Imagen anterior">‹</button>
++              <button type="button" class="photo-slider-nav next" id="activeImageNext" aria-label="Imagen siguiente">›</button>
++              <div class="photo-slider-dots" id="activeImageDots" aria-label="Selector de imagen"></div>
+             </div>
+             <div class="search-card-body">
+               <div class="search-card-title-row">
+                 <div>
+                   <div class="search-card-title" id="activeProductName">—</div>
+                   <div class="search-card-sku" id="activeProductSku">SKU —</div>
+                 </div>
+               </div>
+               <div class="search-card-meta">
+                 <div class="search-meta-block">
+                   <span class="search-meta-label">Ubicación</span>
+                   <span class="search-meta-value" id="activeLocation">—</span>
+                 </div>
+                 <div class="search-meta-block">
+                   <span class="search-meta-label">Ubicación en almacén</span>
+                   <span class="search-meta-value store" id="activeStoreLocation">—</span>
+                 </div>
+               </div>
+               <div>
+                 <div class="muted tiny" style="margin-bottom:8px" id="activeProductMeta">Selecciona un producto para enfocarlo rápido.</div>
+                 <div class="variant-groups">
+                   <div class="variant-group">
+                     <div class="variant-group-label">Tallas</div>
+                     <div class="variant-strip" id="activeSizeStrip"></div>
+                   </div>
+@@ -1281,54 +1298,58 @@ function escapeHtml(str){
+ <script>
+ (() => {
+   const $ = (s,el=document)=>el.querySelector(s);
+   const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
+   const appRoot = $('#appRoot');
+   const toggleSidebar = $('#toggleSidebar');
+   const menuItems = $$('.menu-item');
+   const searchInput = $('#searchInput');
+   const btnSearch = $('#btnSearch');
+   const btnScanCode = $('#btnScanCode');
+   const scannerModal = $('#scannerModal');
+   const btnCloseScanner = $('#btnCloseScanner');
+   const btnStopScanner = $('#btnStopScanner');
+   const scannerHint = $('#scannerHint');
+   const productList = $('#productList');
+   const countProducts = $('#countProducts');
+   const searchBranchHost = $('#searchBranchHost');
+   const productSummary = $('#productSummary');
+   const activeProductName = $('#activeProductName');
+   const activeProductSku = $('#activeProductSku');
+   const activeProductMeta = $('#activeProductMeta');
+   const activeLocation = $('#activeLocation');
+   const activeStoreLocation = $('#activeStoreLocation');
+   const activeProductImageWrap = $('#activeProductImageWrap');
+   const activeProductImage = $('#activeProductImage');
++  const activeImagePrev = $('#activeImagePrev');
++  const activeImageNext = $('#activeImageNext');
++  const activeImageDots = $('#activeImageDots');
+   const activeSizeStrip = $('#activeSizeStrip');
+   const activeColorStrip = $('#activeColorStrip');
+   let activeImageCycleTimer = null;
+   let activeImageCycleUrls = [];
++  let activeImageCycleIndex = 0;
+   const sheetStatusChip = $('#sheetStatusChip');
+   const authModal = $('#authModal');
+   const btnAuthAction = $('#btnAuthAction');
+   const btnAuthClose = $('#btnAuthClose');
+   const btnDoLogin = $('#btnDoLogin');
+   const loginUsername = $('#loginUsername');
+   const loginPassword = $('#loginPassword');
+   const authMode = $('#authMode');
+   const authCompanyWrap = $('#authCompanyWrap');
+   const authCompanyCodeWrap = $('#authCompanyCodeWrap');
+   const authCompanyName = $('#authCompanyName');
+   const authCompanyCode = $('#authCompanyCode');
+   const authRole = $('#authRole');
+   const btnToggleAuthMode = $('#btnToggleAuthMode');
+   const authStatus = $('#authStatus');
+   const contentTitle = $('#contentTitle');
+   const contentSubtitle = $('#contentSubtitle');
+   const contentTags = $('#contentTags');
+   const contentWrap = $('#contentWrap');
+   const contentPanel = $('.content-panel');
+   const detailPanel = $('.detail-panel');
+   const contentStatus = $('#contentStatus');
+   const contentFootRight = $('#contentFootRight');
+   const detailTitle = $('#detailTitle');
+   const detailSubtitle = $('#detailSubtitle');
+@@ -2358,72 +2379,108 @@ function escapeHtml(str){
+       btn.textContent = item.label;
+       btn.title = item.label;
+       if(type === 'color') btn.style.cssText = getColorChipStyle(item.label);
+       btn.addEventListener('click', () => clickFactory(item));
+       target.appendChild(btn);
+     });
+   }
+ 
+   function getProductImageUrls(product){
+     if(!product) return [];
+     const raw = [product.imagen, product.image, product.imagen2, product.image2, product.foto2, product.img2].filter(Boolean).map(v => String(v).trim());
+     const split = [];
+     raw.forEach(value => {
+       if(/[|\n,;]/.test(value)) split.push(...value.split(/[|\n,;]+/));
+       else split.push(value);
+     });
+     const out = [];
+     const seen = new Set();
+     split.map(v => String(v || '').trim()).filter(Boolean).forEach(url => { if(!seen.has(url)){ seen.add(url); out.push(url); } });
+     return out;
+   }
+ 
+   function stopActiveProductImageCycle(){
+     if(activeImageCycleTimer){ clearInterval(activeImageCycleTimer); activeImageCycleTimer = null; }
+     activeImageCycleUrls = [];
++    activeImageCycleIndex = 0;
+   }
+ 
+-  function startActiveProductImageCycle(urls){
+-    stopActiveProductImageCycle();
+-    activeImageCycleUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
+-    if(!activeProductImageWrap || !activeProductImage) return;
+-    if(!activeImageCycleUrls.length){
++  function syncActiveImageSliderUi(){
++    if(!activeProductImageWrap || !activeProductImage || !activeImageDots) return;
++    const hasImages = activeImageCycleUrls.length > 0;
++    const hasMultiple = activeImageCycleUrls.length > 1;
++    if(!hasImages){
+       activeProductImage.removeAttribute('src');
+       activeProductImage.style.display = 'none';
+       activeProductImageWrap.classList.add('empty');
++      activeImageDots.innerHTML = '';
+       return;
+     }
+-    let index = 0;
+-    const apply = () => {
+-      const nextUrl = activeImageCycleUrls[index % activeImageCycleUrls.length];
+-      activeProductImage.src = nextUrl;
+-      activeProductImage.style.display = 'block';
+-      activeProductImageWrap.classList.remove('empty');
+-      index += 1;
+-    };
+-    apply();
+-    if(activeImageCycleUrls.length > 1) activeImageCycleTimer = setInterval(apply, 1800);
++    const safeIndex = ((activeImageCycleIndex % activeImageCycleUrls.length) + activeImageCycleUrls.length) % activeImageCycleUrls.length;
++    const nextUrl = activeImageCycleUrls[safeIndex];
++    activeProductImage.src = nextUrl;
++    activeProductImage.style.display = 'block';
++    activeProductImageWrap.classList.remove('empty');
++    activeImageDots.innerHTML = '';
++    if(hasMultiple){
++      activeImageCycleUrls.forEach((_, idx) => {
++        const dot = document.createElement('button');
++        dot.type = 'button';
++        dot.className = 'photo-slider-dot' + (idx === safeIndex ? ' active' : '');
++        dot.setAttribute('aria-label', `Ir a imagen ${idx + 1}`);
++        dot.addEventListener('click', () => goToActiveProductImage(idx, true));
++        activeImageDots.appendChild(dot);
++      });
++    }
++  }
++
++  function goToActiveProductImage(nextIndex, stopAuto=false){
++    if(!activeImageCycleUrls.length) return;
++    if(stopAuto && activeImageCycleTimer){ clearInterval(activeImageCycleTimer); activeImageCycleTimer = null; }
++    activeImageCycleIndex = nextIndex;
++    syncActiveImageSliderUi();
++  }
++
++  function ensureActiveImageCycleRunning(){
++    const card = document.getElementById('activeProductCard');
++    const isExpanded = !!(card && card.classList.contains('search-card-expanded'));
++    if(!isExpanded || activeImageCycleUrls.length <= 1){
++      if(activeImageCycleTimer){ clearInterval(activeImageCycleTimer); activeImageCycleTimer = null; }
++      return;
++    }
++    if(activeImageCycleTimer) return;
++    activeImageCycleTimer = setInterval(() => {
++      goToActiveProductImage(activeImageCycleIndex + 1);
++    }, 2200);
++  }
++
++  function startActiveProductImageCycle(urls){
++    stopActiveProductImageCycle();
++    activeImageCycleUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
++    activeImageCycleIndex = 0;
++    syncActiveImageSliderUi();
++    ensureActiveImageCycleRunning();
+   }
+ 
+   function renderActiveVariantStrip(product){
+     const groups = buildVariantGroups(product);
+     renderVariantStrip(activeSizeStrip, groups.sizes, 'Sin tallas relacionadas', (item) => {
+       const currentColor = getProductColorValue(product);
+       const siblings = appState.products.filter(p => norm(p.nombre) === norm(product?.nombre));
+       const exact = siblings.find(p => normalizeVariantValue(getProductSizeValue(p)) === normalizeVariantValue(item.label) && normalizeVariantValue(getProductColorValue(p)) === normalizeVariantValue(currentColor));
+       selectProduct(exact || item.product);
+     }, 'size');
+     renderVariantStrip(activeColorStrip, groups.colors, 'Sin colores relacionados', (item) => {
+       const currentSize = getProductSizeValue(product);
+       const siblings = appState.products.filter(p => norm(p.nombre) === norm(product?.nombre));
+       const exact = siblings.find(p => normalizeVariantValue(getProductColorValue(p)) === normalizeVariantValue(item.label) && normalizeVariantValue(getProductSizeValue(p)) === normalizeVariantValue(currentSize));
+       selectProduct(exact || item.product);
+     }, 'color');
+   }
+ 
+   function updateActiveProductCard(p){
+     if(!activeProductName) return;
+     const hasProduct = !!p;
+     activeProductName.textContent = hasProduct ? (p.nombre || 'Sin nombre') : '—';
+     if(activeProductSku) activeProductSku.textContent = hasProduct ? `SKU ${p.sku || '—'}` : 'SKU —';
+     const sizeText = hasProduct ? getProductSizeValue(p) : '';
+     const colorText = hasProduct ? getProductColorValue(p) : '';
+@@ -2555,83 +2612,101 @@ function escapeHtml(str){
+     const modeInfo = forceIndividual
+       ? ' • vista por unidad automática para variantes del mismo producto'
+       : (groupedMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
+     productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + modeInfo;
+   }
+ 
+ 
+   let activeExpandedSearchCard = null;
+   function syncActiveProductCardHint(){
+     const card = document.getElementById('activeProductCard');
+     const hint = card ? card.querySelector('.search-card-expand-hint') : null;
+     if(!hint || !card) return;
+     const hasProduct = !!(appState && appState.selectedProduct && (appState.selectedProduct.nombre || appState.selectedProduct.sku));
+     hint.style.display = hasProduct ? '' : 'none';
+   }
+   function openActiveProductCard(){
+     const card = document.getElementById('activeProductCard');
+     const overlay = document.getElementById('searchCardOverlay');
+     if(!card || !overlay) return;
+     if(card.classList.contains('search-card-expanded')) return;
+     activeExpandedSearchCard = card;
+     card.classList.add('search-card-expanded');
+     overlay.classList.add('active');
+     overlay.setAttribute('aria-hidden','false');
+     document.body.classList.add('search-card-modal-open');
++    ensureActiveImageCycleRunning();
+   }
+   function closeActiveProductCard(){
+     const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
+     const overlay = document.getElementById('searchCardOverlay');
+     if(card) card.classList.remove('search-card-expanded');
+     if(overlay){
+       overlay.classList.remove('active');
+       overlay.setAttribute('aria-hidden','true');
+     }
+     document.body.classList.remove('search-card-modal-open');
+     activeExpandedSearchCard = null;
++    ensureActiveImageCycleRunning();
+   }
+   function bindActiveProductCardExpansion(){
+     const card = document.getElementById('activeProductCard');
+     const overlay = document.getElementById('searchCardOverlay');
+     const closeBtn = document.getElementById('activeProductCardClose');
+     if(!card || card.dataset.expandBound === '1') return;
+     card.dataset.expandBound = '1';
+     card.addEventListener('click', (e) => {
+       if(e.target && e.target.closest('#activeProductCardClose')) return;
+       if(card.classList.contains('search-card-expanded')) return;
+       openActiveProductCard();
+     });
+     card.addEventListener('keydown', (e) => {
+       if(e.key === 'Enter' || e.key === ' '){
+         e.preventDefault();
+         if(card.classList.contains('search-card-expanded')) closeActiveProductCard();
+         else openActiveProductCard();
+       }
++      if(card.classList.contains('search-card-expanded') && e.key === 'ArrowLeft'){ e.preventDefault(); goToActiveProductImage(activeImageCycleIndex - 1, true); }
++      if(card.classList.contains('search-card-expanded') && e.key === 'ArrowRight'){ e.preventDefault(); goToActiveProductImage(activeImageCycleIndex + 1, true); }
+       if(e.key === 'Escape') closeActiveProductCard();
+     });
+     if(overlay && overlay.dataset.boundCardExpand !== '1'){ overlay.addEventListener('click', closeActiveProductCard); overlay.dataset.boundCardExpand = '1'; }
+     if(closeBtn && closeBtn.dataset.boundCardExpand !== '1'){ closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); }); closeBtn.dataset.boundCardExpand = '1'; }
++    if(activeImagePrev && activeImagePrev.dataset.boundSlider !== '1'){
++      activeImagePrev.addEventListener('click', (e) => {
++        e.stopPropagation();
++        goToActiveProductImage(activeImageCycleIndex - 1, true);
++      });
++      activeImagePrev.dataset.boundSlider = '1';
++    }
++    if(activeImageNext && activeImageNext.dataset.boundSlider !== '1'){
++      activeImageNext.addEventListener('click', (e) => {
++        e.stopPropagation();
++        goToActiveProductImage(activeImageCycleIndex + 1, true);
++      });
++      activeImageNext.dataset.boundSlider = '1';
++    }
+     if(document.body.dataset.boundCardExpandEsc !== '1'){ document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); }); document.body.dataset.boundCardExpandEsc = '1'; }
+     syncActiveProductCardHint();
+   }
+ 
+   function filterProducts(){
+     const rawQ = String(searchInput.value || '');
+     const q = norm(rawQ);
+     if(!q){
+       appState.filtered = appState.products.slice();
+       clearSearchHighlights();
+       updateActiveProductCard(appState.selectedProduct || null);
+       renderProducts(appState.filtered);
+       if(appState.screen === 'dashboard') renderDashboard();
+       else if(['products','viewer'].includes(appState.screen)) renderMapView();
+       else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+       return;
+     }
+     const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
+     const compactQuery = q.replace(/\s+/g, ' ').trim();
+     const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
+       const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
+       const phraseInFamily = familyText.includes(compactQuery);
+       const phraseInNameVariant = nameVariant.includes(compactQuery);
+       const phraseInFull = haystack.includes(compactQuery);
+       let score = 0;
