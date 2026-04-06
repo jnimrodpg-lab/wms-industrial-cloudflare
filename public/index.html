@@ -643,6 +643,32 @@
   .toast.success{border-color:rgba(17,194,141,.4);background:linear-gradient(180deg,rgba(17,194,141,.18),rgba(12,23,40,.98))}
   .toast.warn{border-color:rgba(245,166,35,.4);background:linear-gradient(180deg,rgba(245,166,35,.16),rgba(12,23,40,.98))}
   .toast.error{border-color:rgba(227,94,94,.44);background:linear-gradient(180deg,rgba(227,94,94,.18),rgba(12,23,40,.98))}
+  .search-card-placeholder{visibility:hidden;pointer-events:none}
+  .search-card.search-card-expanded{position:fixed !important;inset:auto !important;top:50% !important;left:50% !important;z-index:30001 !important;isolation:isolate}
+  .search-card-overlay{z-index:30000 !important}
+  .toast-stack{right:20px;bottom:20px;gap:12px;max-width:min(420px,calc(100vw - 28px))}
+  .toast{position:relative;padding:14px 16px 14px 48px;border-radius:18px;border:1px solid rgba(106,135,168,.34);background:linear-gradient(180deg,rgba(18,33,52,.98),rgba(10,19,31,.98));box-shadow:0 18px 46px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.04);color:#eef6ff;font-size:13px;line-height:1.45;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+  .toast::before{content:'';position:absolute;left:16px;top:15px;width:18px;height:18px;border-radius:999px;box-shadow:0 0 0 4px rgba(255,255,255,.05) inset}
+  .toast.success{border-color:rgba(32,203,148,.34);background:linear-gradient(180deg,rgba(18,73,59,.94),rgba(10,22,28,.98))}
+  .toast.success::before{background:radial-gradient(circle at 35% 35%,#9ff7cf,#22c78f 62%,#15996b 100%)}
+  .toast.warn{border-color:rgba(255,187,71,.34);background:linear-gradient(180deg,rgba(88,57,17,.94),rgba(20,20,24,.98))}
+  .toast.warn::before{background:radial-gradient(circle at 35% 35%,#ffe7a8,#ffbd45 62%,#d08b16 100%)}
+  .toast.error{border-color:rgba(238,112,112,.38);background:linear-gradient(180deg,rgba(92,28,33,.94),rgba(22,16,22,.98))}
+  .toast.error::before{background:radial-gradient(circle at 35% 35%,#ffc3c3,#ef6f6f 62%,#bf4545 100%)}
+  .app-modal{border-radius:24px;border:1px solid rgba(106,135,168,.28);background:linear-gradient(180deg,rgba(18,33,52,.98),rgba(10,18,29,.98));box-shadow:0 28px 90px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.05)}
+  .app-modal-head{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0))}
+  .app-modal-head b{font-size:17px;letter-spacing:.01em}
+  .app-modal-body{padding:20px;gap:14px;color:#e4eef9;line-height:1.55}
+  .app-modal-actions{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.02))}
+  .dash-alert-item{position:relative;padding:14px 14px 14px 16px;border-radius:16px;border:1px solid rgba(92,127,111,.28);background:linear-gradient(180deg,rgba(29,52,47,.96),rgba(18,30,29,.98));display:grid;gap:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
+  .dash-alert-item::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:4px;border-radius:999px;background:rgba(170,210,191,.45)}
+  .dash-alert-item.good{border-color:rgba(17,194,141,.34);background:linear-gradient(180deg,rgba(14,71,56,.94),rgba(12,28,24,.98))}
+  .dash-alert-item.good::before{background:#1bc48f}
+  .dash-alert-item.warn{border-color:rgba(245,166,35,.34);background:linear-gradient(180deg,rgba(82,57,18,.94),rgba(28,23,17,.98))}
+  .dash-alert-item.warn::before{background:#f5a623}
+  .dash-alert-item.down{border-color:rgba(227,94,94,.34);background:linear-gradient(180deg,rgba(89,28,33,.94),rgba(28,17,18,.98))}
+  .dash-alert-item.down::before{background:#e35e5e}
+
   .sheet-toolbar-utility{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-left:auto;justify-content:flex-end}
   .sheet-branch-submeta{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03);font-size:12px;color:#cfe0f3;margin-top:12px}
   .sheet-helper-text{margin-top:4px;max-width:720px;line-height:1.45}
@@ -2673,6 +2699,9 @@ function escapeHtml(str){
 
 
   let activeExpandedSearchCard = null;
+  let activeExpandedSearchCardPlaceholder = null;
+  let activeExpandedSearchCardParent = null;
+  let activeExpandedSearchCardNextSibling = null;
   function syncActiveProductCardHint(){
     const card = document.getElementById('activeProductCard');
     const hint = card ? card.querySelector('.search-card-expand-hint') : null;
@@ -2686,6 +2715,16 @@ function escapeHtml(str){
     if(!card || !overlay) return;
     if(card.classList.contains('search-card-expanded')) return;
     activeExpandedSearchCard = card;
+    activeExpandedSearchCardParent = card.parentNode;
+    activeExpandedSearchCardNextSibling = card.nextSibling;
+    activeExpandedSearchCardPlaceholder = document.createElement('div');
+    activeExpandedSearchCardPlaceholder.className = 'search-card-placeholder';
+    activeExpandedSearchCardPlaceholder.style.height = card.offsetHeight + 'px';
+    activeExpandedSearchCardPlaceholder.style.borderRadius = '24px';
+    if(activeExpandedSearchCardParent){
+      activeExpandedSearchCardParent.insertBefore(activeExpandedSearchCardPlaceholder, activeExpandedSearchCardNextSibling);
+    }
+    document.body.appendChild(card);
     card.classList.add('search-card-expanded');
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden','false');
@@ -2694,13 +2733,28 @@ function escapeHtml(str){
   function closeActiveProductCard(){
     const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
     const overlay = document.getElementById('searchCardOverlay');
-    if(card) card.classList.remove('search-card-expanded');
+    if(card){
+      card.classList.remove('search-card-expanded');
+      if(activeExpandedSearchCardParent){
+        if(activeExpandedSearchCardPlaceholder && activeExpandedSearchCardPlaceholder.parentNode === activeExpandedSearchCardParent){
+          activeExpandedSearchCardParent.insertBefore(card, activeExpandedSearchCardPlaceholder);
+          activeExpandedSearchCardPlaceholder.remove();
+        }else if(activeExpandedSearchCardNextSibling && activeExpandedSearchCardNextSibling.parentNode === activeExpandedSearchCardParent){
+          activeExpandedSearchCardParent.insertBefore(card, activeExpandedSearchCardNextSibling);
+        }else{
+          activeExpandedSearchCardParent.appendChild(card);
+        }
+      }
+    }
     if(overlay){
       overlay.classList.remove('active');
       overlay.setAttribute('aria-hidden','true');
     }
     document.body.classList.remove('search-card-modal-open');
     activeExpandedSearchCard = null;
+    activeExpandedSearchCardPlaceholder = null;
+    activeExpandedSearchCardParent = null;
+    activeExpandedSearchCardNextSibling = null;
   }
   function bindActiveProductCardExpansion(){
     const card = document.getElementById('activeProductCard');
