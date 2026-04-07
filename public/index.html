@@ -182,7 +182,34 @@
     .search-card-expand-hint{position:absolute;right:14px;bottom:12px;font-size:11px;font-weight:700;color:rgba(236,255,246,.72);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(5,14,24,.58);pointer-events:none;z-index:3}
     .search-card-expand-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.76);color:var(--text);font-size:18px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
+    .search-card-side-nav{position:fixed;top:50%;transform:translateY(-50%) scale(.92);width:min(19vw,280px);height:min(72vh,760px);padding:18px;border-radius:28px;background:linear-gradient(180deg,rgba(12,24,38,.9),rgba(7,16,28,.94));border:1px solid rgba(155,235,199,.12);box-shadow:0 24px 56px rgba(0,0,0,.36);backdrop-filter:blur(12px);display:none;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;overflow:hidden;cursor:pointer;z-index:30000;opacity:.72;transition:transform .22s ease,opacity .22s ease,box-shadow .22s ease}
+    .search-card-side-nav.visible{display:grid}
+    .search-card-side-nav.left{left:calc(50% - min(37.5vw,590px) + 22px)}
+    .search-card-side-nav.right{right:calc(50% - min(37.5vw,590px) + 22px)}
+    .search-card-side-nav:hover{opacity:.9;box-shadow:0 28px 62px rgba(0,0,0,.42)}
+    .search-card-side-nav.left:hover{transform:translateY(-50%) scale(.94) translateX(4px)}
+    .search-card-side-nav.right:hover{transform:translateY(-50%) scale(.94) translateX(-4px)}
+    .search-card-side-nav::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0) 34%,rgba(0,0,0,.1))}
+    .search-card-side-nav .side-nav-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(225,247,234,.72)}
+    .search-card-side-nav .side-nav-media{border-radius:20px;overflow:hidden;background:rgba(255,255,255,.02);min-height:0}
+    .search-card-side-nav .side-nav-media img{width:100%;height:100%;display:block;object-fit:cover;object-position:center;background:transparent}
+    .search-card-side-nav .side-nav-body{display:grid;gap:8px;align-content:start}
+    .search-card-side-nav .side-nav-title{font-size:18px;font-weight:800;line-height:1.12;color:#fff;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .search-card-side-nav .side-nav-sku{font-size:12px;color:rgba(225,247,234,.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .search-card-side-nav .side-nav-mini{display:grid;grid-template-columns:1fr;gap:8px}
+    .search-card-side-nav .side-nav-pill{padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06)}
+    .search-card-side-nav .side-nav-label{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:rgba(225,247,234,.58);margin-bottom:5px}
+    .search-card-side-nav .side-nav-value{display:block;font-size:13px;font-weight:800;color:#eefcf4;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .search-card-side-nav .side-nav-hint{font-size:12px;font-weight:700;color:rgba(225,247,234,.62)}
     body.search-card-modal-open{overflow:hidden}
+    @media (max-width:1180px){
+      .search-card-side-nav{width:min(16vw,220px);height:min(64vh,640px);padding:14px}
+      .search-card-side-nav .side-nav-title{font-size:15px}
+      .search-card-side-nav .side-nav-pill{padding:8px 10px}
+    }
+    @media (max-width:980px){
+      .search-card-side-nav{display:none !important}
+    }
     @media (max-width:760px){
       .search-card.search-card-expanded{width:min(94vw,720px);max-width:94vw;height:min(84vh,760px);max-height:84vh;padding:14px;transform:translate(-50%,-50%) scale(1);grid-template-columns:1fr}
       .search-card.search-card-expanded .product-photo{min-height:38vh;max-height:none}
@@ -2563,6 +2590,7 @@ function escapeHtml(str){
       startActiveProductImageCycle(getProductImageUrls(p));
     }
     renderActiveVariantStrip(p);
+    if(document.body.classList.contains('search-card-modal-open')) setTimeout(updateExpandedSideCards, 20);
   }
 
   function applyProductSelectionEffects(product){
@@ -2692,6 +2720,128 @@ function escapeHtml(str){
   let activeExpandedSearchCardPlaceholder = null;
   let activeExpandedSearchCardParent = null;
   let activeExpandedSearchCardNextSibling = null;
+  let activeExpandedSideCardsBound = false;
+
+  function getProductIdentityKey(p){
+    return [p?.sku || '', p?.nombre || '', p?.variante || '', p?.ubicacion || '', p?.almacen || ''].join('¦');
+  }
+  function getExpandedCarouselBaseList(){
+    const source = Array.isArray(appState?.filtered) && appState.filtered.length ? appState.filtered.slice() : (Array.isArray(appState?.products) ? appState.products.slice() : []);
+    return source.sort(compareProductsAZ);
+  }
+  function getExpandedCarouselItems(){
+    const list = getExpandedCarouselBaseList();
+    const forceIndividual = shouldForceIndividualView(list);
+    const groupedMode = !!appState?.ui?.productGroupMode && !forceIndividual;
+    if(!groupedMode) return list;
+    const groups = new Map();
+    list.forEach((p) => {
+      const key = norm(p?.nombre || '') || '__sin_nombre__';
+      if(!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    return Array.from(groups.values()).map(items => items[0]).filter(Boolean);
+  }
+  function getExpandedCarouselIndex(items){
+    if(!Array.isArray(items) || !items.length) return -1;
+    const selected = appState?.selectedProduct;
+    const selectedKey = getProductIdentityKey(selected);
+    let idx = items.findIndex((p) => getProductIdentityKey(p) === selectedKey);
+    if(idx >= 0) return idx;
+    idx = items.findIndex((p) => (p?.sku || '') === (selected?.sku || '') && (p?.variante || '') === (selected?.variante || ''));
+    if(idx >= 0) return idx;
+    idx = items.findIndex((p) => norm(p?.nombre || '') === norm(selected?.nombre || ''));
+    return idx >= 0 ? idx : 0;
+  }
+  function ensureExpandedSideCard(side){
+    let el = document.getElementById('expandedSideCard-' + side);
+    if(el) return el;
+    el = document.createElement('button');
+    el.type = 'button';
+    el.id = 'expandedSideCard-' + side;
+    el.className = 'search-card-side-nav ' + side;
+    el.setAttribute('aria-label', side === 'left' ? 'Producto anterior' : 'Producto siguiente');
+    el.innerHTML = `
+      <div class="side-nav-kicker">${side === 'left' ? 'Anterior' : 'Siguiente'}</div>
+      <div class="side-nav-media"><img alt="Vista previa del producto" /></div>
+      <div class="side-nav-body">
+        <div class="side-nav-title">—</div>
+        <div class="side-nav-sku">SKU —</div>
+        <div class="side-nav-mini">
+          <div class="side-nav-pill"><span class="side-nav-label">Ubicación</span><span class="side-nav-value">—</span></div>
+          <div class="side-nav-pill"><span class="side-nav-label">Almacén</span><span class="side-nav-value">—</span></div>
+        </div>
+      </div>
+      <div class="side-nav-hint">Haz clic para cambiar de producto</div>
+    `;
+    document.body.appendChild(el);
+    return el;
+  }
+  function fillExpandedSideCard(el, product, side){
+    if(!el) return;
+    if(!product){
+      el.classList.remove('visible');
+      el.onclick = null;
+      return;
+    }
+    const urls = getProductImageUrls(product);
+    const img = el.querySelector('img');
+    const values = el.querySelectorAll('.side-nav-value');
+    el.querySelector('.side-nav-kicker').textContent = side === 'left' ? 'Anterior' : 'Siguiente';
+    el.querySelector('.side-nav-title').textContent = product.nombre || 'Sin nombre';
+    el.querySelector('.side-nav-sku').textContent = `SKU ${product.sku || '—'}`;
+    if(values[0]) values[0].textContent = product.ubicacion || '—';
+    if(values[1]) values[1].textContent = product.almacen || '—';
+    if(img){
+      if(urls && urls[0]){ img.src = urls[0]; img.style.display = ''; }
+      else { img.removeAttribute('src'); img.style.display = 'none'; }
+    }
+    el.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectProduct(product);
+      updateExpandedSideCards();
+    };
+    el.classList.add('visible');
+  }
+  function hideExpandedSideCards(){
+    ['left','right'].forEach(side => {
+      const el = document.getElementById('expandedSideCard-' + side);
+      if(el) el.classList.remove('visible');
+    });
+  }
+  function updateExpandedSideCards(){
+    const main = document.getElementById('activeProductCard');
+    if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 980){ hideExpandedSideCards(); return; }
+    const items = getExpandedCarouselItems();
+    if(items.length <= 1){ hideExpandedSideCards(); return; }
+    const idx = getExpandedCarouselIndex(items);
+    const prev = items[(idx - 1 + items.length) % items.length];
+    const next = items[(idx + 1) % items.length];
+    fillExpandedSideCard(ensureExpandedSideCard('left'), prev, 'left');
+    fillExpandedSideCard(ensureExpandedSideCard('right'), next, 'right');
+  }
+  function bindExpandedSideCardKeys(){
+    if(activeExpandedSideCardsBound) return;
+    activeExpandedSideCardsBound = true;
+    document.addEventListener('keydown', (e) => {
+      const main = document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded')) return;
+      const items = getExpandedCarouselItems();
+      if(items.length <= 1) return;
+      const idx = getExpandedCarouselIndex(items);
+      if(e.key === 'ArrowLeft'){
+        e.preventDefault();
+        selectProduct(items[(idx - 1 + items.length) % items.length]);
+        updateExpandedSideCards();
+      }else if(e.key === 'ArrowRight'){
+        e.preventDefault();
+        selectProduct(items[(idx + 1) % items.length]);
+        updateExpandedSideCards();
+      }
+    });
+    window.addEventListener('resize', () => setTimeout(updateExpandedSideCards, 40));
+  }
   function syncActiveProductCardHint(){
     const card = document.getElementById('activeProductCard');
     const hint = card ? card.querySelector('.search-card-expand-hint') : null;
@@ -2719,6 +2869,8 @@ function escapeHtml(str){
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden','false');
     document.body.classList.add('search-card-modal-open');
+    bindExpandedSideCardKeys();
+    setTimeout(updateExpandedSideCards, 40);
   }
   function closeActiveProductCard(){
     const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
@@ -2741,6 +2893,7 @@ function escapeHtml(str){
       overlay.setAttribute('aria-hidden','true');
     }
     document.body.classList.remove('search-card-modal-open');
+    hideExpandedSideCards();
     activeExpandedSearchCard = null;
     activeExpandedSearchCardPlaceholder = null;
     activeExpandedSearchCardParent = null;
