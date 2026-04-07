@@ -176,14 +176,14 @@
     .search-card.search-card-expanded .product-photo{min-height:58vh;max-height:none;height:100%;display:flex;align-items:stretch;justify-content:stretch;padding:0;background:transparent;border-radius:24px;overflow:hidden}
     .search-card.search-card-expanded .search-card-title{font-size:26px}
     .search-card.search-card-expanded .search-card-sku{font-size:13px}
-    .search-card.search-card-expanded .product-photo img{width:100%;height:100%;max-width:none;max-height:none;object-fit:cover;object-position:center center;display:block;border-radius:inherit}
+    .search-card.search-card-expanded .product-photo img{width:120%;height:100%;max-width:none;max-height:none;object-fit:cover;object-position:center center;display:block;border-radius:inherit;margin-left:-10%}
     .search-card.search-card-expanded .search-card-meta{gap:12px}
     .search-card.search-card-expanded .search-meta-block{padding:16px 18px}
     .search-card.search-card-expanded .variant-strip .chip{transform:scale(1.02)}
     .search-card-expand-hint{position:absolute;right:14px;bottom:12px;font-size:11px;font-weight:700;color:rgba(236,255,246,.72);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(5,14,24,.58);pointer-events:none;z-index:3}
     .search-card-expand-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.76);color:var(--text);font-size:18px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
-    .search-card-side-nav{position:fixed;top:50%;width:min(17vw,248px);height:min(68vh,720px);padding:18px;border-radius:28px;background:linear-gradient(180deg,rgba(12,24,38,.9),rgba(7,16,28,.94));border:1px solid rgba(155,235,199,.12);box-shadow:0 24px 56px rgba(0,0,0,.36);backdrop-filter:blur(12px);display:none;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;overflow:hidden;cursor:pointer;z-index:30000;opacity:.78;transition:transform .22s ease,opacity .22s ease,box-shadow .22s ease}
+    .search-card-side-nav{position:fixed;top:50%;width:min(18.7vw,273px);height:min(68vh,720px);padding:18px;border-radius:28px;background:linear-gradient(180deg,rgba(12,24,38,.9),rgba(7,16,28,.94));border:1px solid rgba(155,235,199,.12);box-shadow:0 24px 56px rgba(0,0,0,.36);backdrop-filter:blur(12px);display:none;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;overflow:hidden;cursor:pointer;z-index:30000;opacity:.78;transition:transform .22s ease,opacity .22s ease,box-shadow .22s ease}
     .search-card-side-nav.visible{display:grid}
     .search-card-side-nav.left{left:calc(50% - min(37.5vw,590px) - min(14vw,220px));transform:translateY(-50%) translateX(-20px) scale(.88)}
     .search-card-side-nav.right{right:calc(50% - min(37.5vw,590px) - min(14vw,220px));transform:translateY(-50%) translateX(20px) scale(.88)}
@@ -193,7 +193,7 @@
     .search-card-side-nav::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0) 34%,rgba(0,0,0,.1))}
     .search-card-side-nav .side-nav-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(225,247,234,.72)}
     .search-card-side-nav .side-nav-media{border-radius:20px;overflow:hidden;background:rgba(255,255,255,.02);min-height:0}
-    .search-card-side-nav .side-nav-media img{width:100%;height:100%;display:block;object-fit:cover;object-position:center;background:transparent}
+    .search-card-side-nav .side-nav-media img{width:110%;height:100%;display:block;object-fit:cover;object-position:center;background:transparent;margin-left:-5%}
     .search-card-side-nav .side-nav-body{display:grid;gap:8px;align-content:start}
     .search-card-side-nav .side-nav-title{font-size:18px;font-weight:800;line-height:1.12;color:#fff;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
     .search-card-side-nav .side-nav-sku{font-size:12px;color:rgba(225,247,234,.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -204,7 +204,7 @@
     .search-card-side-nav .side-nav-hint{font-size:12px;font-weight:700;color:rgba(225,247,234,.62)}
     body.search-card-modal-open{overflow:hidden}
     @media (max-width:1180px){
-      .search-card-side-nav{width:min(15vw,212px);height:min(62vh,620px);padding:14px}
+      .search-card-side-nav{width:min(16.5vw,233px);height:min(62vh,620px);padding:14px}
       .search-card-side-nav .side-nav-title{font-size:15px}
       .search-card-side-nav .side-nav-pill{padding:8px 10px}
     }
