@@ -9437,10 +9437,13 @@ console.info('*** REHYDRATION FIX ACTIVE ***');
     style.textContent = `
       /* stronger crop/zoom for images with black margins */
       body.search-card-modal-open #activeProductCard.search-card-expanded .product-photo img{
-        object-fit:cover !important;
+        width:auto !important;
+        height:100% !important;
+        max-width:none !important;
+        object-fit:contain !important;
         object-position:center center !important;
-        transform:scale(1.22) !important;
-        transform-origin:center center !important;
+        transform:none !important;
+        margin:0 auto !important;
       }
 
       /* allow previews even with DevTools docking */
