@@ -230,44 +230,53 @@
     .search-results-wrap{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;overflow:auto;scrollbar-gutter:stable}
 
     /* 
-      PRODUCTOS: carrusel de cards (sin tocar JS)
+      PRODUCTOS: carrusel de cards visible en varias columnas
       - Mantiene el DOM actual: .product-row con 5 <div>
-      - Solo cambia presentación: de tabla a tarjetas horizontales
+      - Solo cambia presentación: de tabla a tarjetas horizontales premium
     */
-    .search-results-wrap{overflow:hidden}
+    .search-results-wrap{overflow:hidden;display:grid;min-height:0}
     .product-head{display:none}
     .product-list{
-      display:flex;
-      gap:12px;
-      padding:12px 12px 14px;
-      overflow:auto;
-      scroll-snap-type:x mandatory;
+      display:grid;
+      grid-auto-flow:column;
+      grid-auto-columns:minmax(300px, 340px);
+      gap:14px;
+      padding:14px 14px 16px;
+      overflow-x:auto;
+      overflow-y:hidden;
+      scroll-snap-type:x proximity;
       overscroll-behavior-x:contain;
       -webkit-overflow-scrolling:touch;
+      min-height:0;
+      max-height:none;
+      align-content:start;
     }
     .product-list::-webkit-scrollbar{height:10px}
     .product-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:999px}
     .product-row{
-      flex:0 0 320px;
+      min-width:0;
       scroll-snap-align:start;
       border:1px solid rgba(255,255,255,.08);
-      border-radius:20px;
+      border-radius:22px;
       padding:14px;
       background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.015));
       box-shadow:0 14px 30px rgba(0,0,0,.18);
       display:grid;
       grid-template-columns:1fr;
       gap:10px;
+      height:max-content;
     }
     .product-row > div{
       white-space:normal !important;
       overflow:visible !important;
       display:grid;
       gap:4px;
-      padding:8px 10px;
+      padding:10px 12px;
       border-radius:14px;
       border:1px solid rgba(255,255,255,.06);
       background:rgba(255,255,255,.02);
+      min-height:64px;
+      align-content:start;
     }
     .product-row > div::before{
       display:block;
@@ -293,10 +302,8 @@
       box-shadow:0 18px 44px rgba(0,0,0,.26);
     }
     @media (max-width:760px){
-      .product-row{flex-basis:86vw}
+      .product-list{grid-auto-columns:minmax(84vw,84vw)}
     }
-
-    .product-list{overflow:visible;min-height:0;max-height:none}
     .product-row{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.045);color:var(--muted);font-size:13px;cursor:pointer;transition:.16s ease}
     .product-head > div,.product-row > div{min-width:0;overflow:hidden}
     .product-row > div:nth-child(1){word-break:break-word;line-height:1.2}
@@ -644,7 +651,7 @@
   .toast.warn{border-color:rgba(245,166,35,.4);background:linear-gradient(180deg,rgba(245,166,35,.16),rgba(12,23,40,.98))}
   .toast.error{border-color:rgba(227,94,94,.44);background:linear-gradient(180deg,rgba(227,94,94,.18),rgba(12,23,40,.98))}
   .search-card-placeholder{visibility:hidden;pointer-events:none}
-  .search-card.search-card-expanded{position:fixed !important;inset:auto !important;top:50% !important;left:50% !important;z-index:30001 !important;isolation:isolate}
+  .search-card.search-card-expanded{position:fixed !important;inset:auto !important;top:50% !important;left:50% !important;z-index:30001 !important;isolation:isolate !important;will-change:transform;contain:layout style paint}
   .search-card-overlay{z-index:30000 !important}
   .toast-stack{right:20px;bottom:20px;gap:12px;max-width:min(420px,calc(100vw - 28px))}
   .toast{position:relative;padding:14px 16px 14px 48px;border-radius:18px;border:1px solid rgba(106,135,168,.34);background:linear-gradient(180deg,rgba(18,33,52,.98),rgba(10,19,31,.98));box-shadow:0 18px 46px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.04);color:#eef6ff;font-size:13px;line-height:1.45;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
@@ -655,11 +662,12 @@
   .toast.warn::before{background:radial-gradient(circle at 35% 35%,#ffe7a8,#ffbd45 62%,#d08b16 100%)}
   .toast.error{border-color:rgba(238,112,112,.38);background:linear-gradient(180deg,rgba(92,28,33,.94),rgba(22,16,22,.98))}
   .toast.error::before{background:radial-gradient(circle at 35% 35%,#ffc3c3,#ef6f6f 62%,#bf4545 100%)}
-  .app-modal{border-radius:24px;border:1px solid rgba(106,135,168,.28);background:linear-gradient(180deg,rgba(18,33,52,.98),rgba(10,18,29,.98));box-shadow:0 28px 90px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.05)}
-  .app-modal-head{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0))}
-  .app-modal-head b{font-size:17px;letter-spacing:.01em}
-  .app-modal-body{padding:20px;gap:14px;color:#e4eef9;line-height:1.55}
-  .app-modal-actions{padding:16px 20px;border-top:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.02))}
+  .app-modal{border-radius:26px;border:1px solid rgba(106,135,168,.24);background:radial-gradient(circle at top right,rgba(91,185,140,.16),transparent 22%),linear-gradient(180deg,rgba(18,33,52,.99),rgba(10,18,29,.985));box-shadow:0 28px 90px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05)}
+  .app-modal-head{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,0))}
+  .app-modal-head b{font-size:20px;letter-spacing:.01em}
+  .app-modal-body{padding:22px;gap:14px;color:#e4eef9;line-height:1.6;font-size:15px}
+  .app-modal-body > div{padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025)}
+  .app-modal-actions{padding:18px 20px;border-top:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,0),rgba(255,255,255,.02))}
   .dash-alert-item{position:relative;padding:14px 14px 14px 16px;border-radius:16px;border:1px solid rgba(92,127,111,.28);background:linear-gradient(180deg,rgba(29,52,47,.96),rgba(18,30,29,.98));display:grid;gap:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}
   .dash-alert-item::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:4px;border-radius:999px;background:rgba(170,210,191,.45)}
   .dash-alert-item.good{border-color:rgba(17,194,141,.34);background:linear-gradient(180deg,rgba(14,71,56,.94),rgba(12,28,24,.98))}
@@ -679,13 +687,28 @@
   .auth-pill:hover{transform:translateY(-1px);border-color:#4b78a8}
   .auth-modal{position:fixed;inset:0;background:rgba(4,10,18,.72);display:none;align-items:center;justify-content:center;z-index:15000;padding:20px}
   .auth-modal.show{display:flex}
-  .auth-card{width:min(440px,100%);background:linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:22px;box-shadow:0 24px 64px rgba(0,0,0,.45);padding:22px}
-  .auth-card h3{margin:0 0 8px;font-size:24px}
-  .auth-card p{margin:0 0 18px;color:#b9c6d4;font-size:13px;line-height:1.45}
+  .auth-card{width:min(720px,100%);background:radial-gradient(circle at top right,rgba(91,185,140,.16),transparent 28%),linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:28px;box-shadow:0 28px 72px rgba(0,0,0,.48);padding:24px}
+  .auth-card h3{margin:0 0 8px;font-size:30px;line-height:1.02}
+  .auth-card p{margin:0;color:#b9c6d4;font-size:13px;line-height:1.55}
+  .auth-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+  .auth-badge{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#e8f6ef;font-size:12px;font-weight:800;white-space:nowrap}
+  .auth-segment{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px}
+  .auth-segment-btn{height:46px;border-radius:14px;border:1px solid transparent;background:transparent;color:#cfe0f3;font-weight:800;cursor:pointer;transition:.18s ease}
+  .auth-segment-btn.active{background:linear-gradient(180deg,rgba(91,185,140,.24),rgba(91,185,140,.12));color:#f3fff9;border-color:rgba(91,185,140,.26);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .auth-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  .auth-role-card{display:grid;gap:4px;text-align:left;padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));color:#eaf4ff;cursor:pointer;transition:.18s ease}
+  .auth-role-card strong{font-size:16px}
+  .auth-role-card small{font-size:12px;color:#b9c6d4;line-height:1.45}
+  .auth-role-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ed6bd}
+  .auth-role-card.active{border-color:rgba(91,185,140,.34);background:linear-gradient(180deg,rgba(20,74,58,.56),rgba(10,23,28,.94));box-shadow:0 0 0 1px rgba(91,185,140,.16) inset,0 12px 24px rgba(0,0,0,.16)}
   .auth-grid{display:grid;gap:12px}
-  .auth-grid input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-grid-modern{grid-template-columns:1fr 1fr}
+  .auth-grid input,.auth-grid select{width:100%;padding:13px 14px;border-radius:14px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-hidden-native{display:none !important}
   .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
-  .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
+  .auth-actions-modern .btn.primary{min-width:170px}
+  .auth-status{min-height:20px;color:#ffb4b4;font-size:12px;margin-top:8px;padding-left:2px}
+  @media (max-width:760px){.auth-card{padding:18px;border-radius:22px}.auth-card h3{font-size:24px}.auth-hero,.auth-role-grid,.auth-grid-modern{grid-template-columns:1fr;display:grid}.auth-badge{justify-self:start}}
   .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
@@ -1397,21 +1420,45 @@ function escapeHtml(str){
 </script>
 
   <div class="auth-modal show" id="authModal">
-    <div class="auth-card">
-      <h3 id="authTitle">Iniciar sesión</h3>
-      <p id="authSubtitle">Usa tu usuario y contraseña para administrar guardados y cambios persistentes.</p>
-      <div class="auth-grid">
-        <div class="grid"><label>Modo</label><select id="authMode"><option value="login">Iniciar sesión</option><option value="register">Crear cuenta</option></select></div>
-        <div class="grid"><label>Rol</label><select id="authRole"><option value="admin">Administrador</option><option value="viewer">Visualizador</option></select></div>
-        <div class="grid"><label>Usuario</label><input id="loginUsername" autocomplete="username" placeholder="admin"></div>
+    <div class="auth-card auth-card-modern">
+      <div class="auth-hero">
+        <div>
+          <h3 id="authTitle">Iniciar sesión</h3>
+          <p id="authSubtitle">Accede a la gestión de empresa o entra como visualizador con una interfaz más clara y moderna.</p>
+        </div>
+        <div class="auth-badge">WMS Cloud</div>
+      </div>
+
+      <div class="auth-segment" role="tablist" aria-label="Modo de acceso">
+        <button class="auth-segment-btn active" id="authModeLoginBtn" type="button" data-mode="login">Entrar</button>
+        <button class="auth-segment-btn" id="authModeRegisterBtn" type="button" data-mode="register">Crear cuenta</button>
+      </div>
+
+      <div class="auth-role-grid" role="tablist" aria-label="Tipo de acceso">
+        <button class="auth-role-card active" id="authRoleAdminCard" type="button" data-role="admin">
+          <span class="auth-role-kicker">Administrador</span>
+          <strong>Control total</strong>
+          <small>Edita empresa, layouts, racks y vinculaciones.</small>
+        </button>
+        <button class="auth-role-card" id="authRoleViewerCard" type="button" data-role="viewer">
+          <span class="auth-role-kicker">Viewer</span>
+          <strong>Solo visualización</strong>
+          <small>Consulta productos, ubicaciones y mapa sin editar.</small>
+        </button>
+      </div>
+
+      <div class="auth-grid auth-grid-modern">
+        <div class="grid auth-hidden-native"><label>Modo</label><select id="authMode"><option value="login">Iniciar sesión</option><option value="register">Crear cuenta</option></select></div>
+        <div class="grid auth-hidden-native"><label>Rol</label><select id="authRole"><option value="admin">Administrador</option><option value="viewer">Visualizador</option></select></div>
+        <div class="grid"><label>Usuario</label><input id="loginUsername" autocomplete="username" placeholder="admin o usuario"></div>
         <div class="grid"><label>Contraseña</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••"></div>
         <div class="grid" id="authCompanyWrap"><label>Empresa</label><input id="authCompanyName" placeholder="Mi empresa"></div>
         <div class="grid" id="authCompanyCodeWrap" style="display:none"><label>Código empresa</label><input id="authCompanyCode" placeholder="WMS-ABC123"></div>
       </div>
       <div class="auth-status" id="authStatus"></div>
-      <div class="auth-actions">
-        <button class="btn secondary" id="btnContinueViewer" type="button">Continuar como visualizador</button>
-        <button class="btn secondary" id="btnToggleAuthMode" type="button">Crear cuenta</button>
+      <div class="auth-actions auth-actions-modern">
+        <button class="btn secondary" id="btnContinueViewer" type="button">Entrar solo a visualizar</button>
+        <button class="btn secondary" id="btnToggleAuthMode" type="button">Cambiar modo</button>
         <button class="btn secondary" id="btnAuthClose" type="button">Cerrar</button>
         <button class="btn primary" id="btnDoLogin" type="button">Ingresar</button>
       </div>
@@ -1587,6 +1634,20 @@ function escapeHtml(str){
 
   if(appModalClose) appModalClose.onclick = ()=> closeAppModal(false);
   if(appModalBackdrop) appModalBackdrop.addEventListener('click', e=>{ if(e.target === appModalBackdrop) closeAppModal(false); });
+
+  const __nativeAlert = window.alert ? window.alert.bind(window) : null;
+  let alertQueue = Promise.resolve();
+  let lastAlertMessage = '';
+  let lastAlertAt = 0;
+  window.alert = function(message='Aviso'){
+    const msg = String(message || '').trim() || 'Aviso';
+    const now = Date.now();
+    if(msg === lastAlertMessage && (now - lastAlertAt) < 900) return Promise.resolve(true);
+    lastAlertMessage = msg;
+    lastAlertAt = now;
+    alertQueue = alertQueue.then(()=> openAppModal({ title:'Aviso', message:msg, actions:[{label:'Aceptar', value:true, cls:'primary'}] })).catch(()=>true);
+    return alertQueue;
+  };
 
   function branchLabel(branch, index){ return String(branch?.name || `Sucursal ${Number(index)+1}`); }
 
@@ -4108,13 +4169,28 @@ function escapeHtml(str){
   .auth-pill:hover{transform:translateY(-1px);border-color:#4b78a8}
   .auth-modal{position:fixed;inset:0;background:rgba(4,10,18,.72);display:none;align-items:center;justify-content:center;z-index:15000;padding:20px}
   .auth-modal.show{display:flex}
-  .auth-card{width:min(440px,100%);background:linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:22px;box-shadow:0 24px 64px rgba(0,0,0,.45);padding:22px}
-  .auth-card h3{margin:0 0 8px;font-size:24px}
-  .auth-card p{margin:0 0 18px;color:#b9c6d4;font-size:13px;line-height:1.45}
+  .auth-card{width:min(720px,100%);background:radial-gradient(circle at top right,rgba(91,185,140,.16),transparent 28%),linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:28px;box-shadow:0 28px 72px rgba(0,0,0,.48);padding:24px}
+  .auth-card h3{margin:0 0 8px;font-size:30px;line-height:1.02}
+  .auth-card p{margin:0;color:#b9c6d4;font-size:13px;line-height:1.55}
+  .auth-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+  .auth-badge{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#e8f6ef;font-size:12px;font-weight:800;white-space:nowrap}
+  .auth-segment{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px}
+  .auth-segment-btn{height:46px;border-radius:14px;border:1px solid transparent;background:transparent;color:#cfe0f3;font-weight:800;cursor:pointer;transition:.18s ease}
+  .auth-segment-btn.active{background:linear-gradient(180deg,rgba(91,185,140,.24),rgba(91,185,140,.12));color:#f3fff9;border-color:rgba(91,185,140,.26);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .auth-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  .auth-role-card{display:grid;gap:4px;text-align:left;padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));color:#eaf4ff;cursor:pointer;transition:.18s ease}
+  .auth-role-card strong{font-size:16px}
+  .auth-role-card small{font-size:12px;color:#b9c6d4;line-height:1.45}
+  .auth-role-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ed6bd}
+  .auth-role-card.active{border-color:rgba(91,185,140,.34);background:linear-gradient(180deg,rgba(20,74,58,.56),rgba(10,23,28,.94));box-shadow:0 0 0 1px rgba(91,185,140,.16) inset,0 12px 24px rgba(0,0,0,.16)}
   .auth-grid{display:grid;gap:12px}
-  .auth-grid input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-grid-modern{grid-template-columns:1fr 1fr}
+  .auth-grid input,.auth-grid select{width:100%;padding:13px 14px;border-radius:14px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-hidden-native{display:none !important}
   .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
-  .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
+  .auth-actions-modern .btn.primary{min-width:170px}
+  .auth-status{min-height:20px;color:#ffb4b4;font-size:12px;margin-top:8px;padding-left:2px}
+  @media (max-width:760px){.auth-card{padding:18px;border-radius:22px}.auth-card h3{font-size:24px}.auth-hero,.auth-role-grid,.auth-grid-modern{grid-template-columns:1fr;display:grid}.auth-badge{justify-self:start}}
   .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
@@ -9027,9 +9103,23 @@ function zoomLayout(factor, center){
     const title = document.getElementById('authTitle');
     const subtitle = document.getElementById('authSubtitle');
     if(title) title.textContent = mode === 'register' ? 'Crear cuenta' : 'Iniciar sesión';
-    if(subtitle) subtitle.textContent = mode === 'register' ? 'Crea una cuenta administradora o visualizadora. Cada empresa guarda sus propios cambios.' : 'Usa tu usuario y contraseña para administrar guardados y cambios persistentes.';
+    if(subtitle) subtitle.textContent = mode === 'register'
+      ? (role === 'viewer' ? 'Crea un acceso viewer separado del administrador usando el código de empresa.' : 'Crea una cuenta administradora para gestionar sucursales, racks y layouts persistentes.')
+      : (role === 'viewer' ? 'Ingresa como viewer para consultar productos y ubicaciones sin editar.' : 'Ingresa como administrador para gestionar cambios y guardados persistentes.');
     if(btnDoLogin) btnDoLogin.textContent = mode === 'register' ? 'Crear e ingresar' : 'Ingresar';
     if(btnToggleAuthMode) btnToggleAuthMode.textContent = mode === 'register' ? 'Ya tengo cuenta' : 'Crear cuenta';
+    document.querySelectorAll('.auth-segment-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    document.querySelectorAll('.auth-role-card').forEach(btn => btn.classList.toggle('active', btn.dataset.role === role));
+  }
+
+  function setAuthMode(mode){
+    if(authMode) authMode.value = mode === 'register' ? 'register' : 'login';
+    syncAuthModeUi();
+  }
+
+  function setAuthRole(role){
+    if(authRole) authRole.value = role === 'viewer' ? 'viewer' : 'admin';
+    syncAuthModeUi();
   }
 
   function openAuthModal(message=''){
@@ -9038,7 +9128,7 @@ function zoomLayout(factor, center){
     authModal.style.display = 'flex';
     document.body.classList.add('auth-open');
     if(authStatus) authStatus.textContent = message || '';
-    if(loginUsername && !loginUsername.value) loginUsername.value = 'admin';
+    if(loginUsername && !loginUsername.value) loginUsername.value = authRole?.value === 'viewer' ? '' : 'admin';
     if(loginPassword) loginPassword.value = '';
     if(authMode && !authMode.value) authMode.value = 'login';
     if(authRole && !authRole.value) authRole.value = 'admin';
@@ -9247,12 +9337,12 @@ function zoomLayout(factor, center){
   });
   renderCurrentScreen();
       closeAuthModal();
-      alert(mode === 'register' ? `Cuenta creada correctamente. Código de empresa: ${appState.auth.companyCode || '-'}` : 'Sesión iniciada correctamente.');
+      showToast(mode === 'register' ? `Cuenta creada. Código: ${appState.auth.companyCode || '-'}` : 'Sesión iniciada correctamente.', 'success', 2600);
       return true;
     }catch(err){
       const msg = err.message || 'Error al iniciar sesión';
       if(authStatus) authStatus.textContent = msg;
-      try { alert(msg); } catch(_err) {}
+      showToast(msg, 'error', 3400);
       return false;
     }
   }
@@ -9392,7 +9482,9 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; btnDoLogin.addEventListener('click', doLogin); }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
   if(authRole) authRole.addEventListener('change', syncAuthModeUi);
-  if(btnToggleAuthMode){ const __toggleAuthMode = () => { if(authMode){ authMode.value = authMode.value === 'register' ? 'login' : 'register'; syncAuthModeUi(); } }; btnToggleAuthMode.onclick = __toggleAuthMode; btnToggleAuthMode.addEventListener('click', __toggleAuthMode); }
+  document.querySelectorAll('.auth-segment-btn').forEach(btn => btn.addEventListener('click', ()=> setAuthMode(btn.dataset.mode || 'login')));
+  document.querySelectorAll('.auth-role-card').forEach(btn => btn.addEventListener('click', ()=> setAuthRole(btn.dataset.role || 'admin')));
+  if(btnToggleAuthMode){ const __toggleAuthMode = () => setAuthMode((authMode?.value || 'login') === 'register' ? 'login' : 'register'); btnToggleAuthMode.onclick = __toggleAuthMode; btnToggleAuthMode.addEventListener('click', __toggleAuthMode); }
   if(authModal) authModal.addEventListener('click', (e) => { if(e.target === authModal) closeAuthModal(); });
   if(btnContinueViewer){ btnContinueViewer.onclick = continueAsViewer; btnContinueViewer.addEventListener('click', continueAsViewer); }
   if(loginPassword) loginPassword.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
