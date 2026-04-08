@@ -4205,19 +4205,19 @@ function escapeHtml(str){
     const connectedSheets = cfg.branches.reduce((a,b)=>a + (b?.sheetConnected ? 1 : 0), 0);
     const totalImportedProducts = cfg.branches.reduce((a,b)=>a + Number(b?.lastSheetCount || 0), 0);
     const activeBranchName = cfg.branches?.[cfg.activeBranch]?.name || '—';
-    contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = 'Administrador'; setTags([]);
-    detailTitle.textContent='Sucursales'; detailSubtitle.textContent='Agregar, editar, ordenar y eliminar';
+    contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = ''; setTags([]);
+    detailTitle.textContent='Sucursales'; detailSubtitle.textContent='';
     if(window.appRoot && !window.compactViewport){
       appRoot.style.gridTemplateColumns = appRoot.classList.contains('sidebar-collapsed')
         ? 'var(--sidebar-w-collapsed) minmax(0,1fr) minmax(0,1fr)'
         : 'var(--sidebar-w) minmax(0,1fr) minmax(0,1fr)';
     }
-    detailWrap.innerHTML = `<div class="branches-panel branches-panel-side"><div class="branches-toolbar"><div><b>Sucursales</b><div class="tiny muted">Gestión lateral rápida</div></div><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll branches-scroll-side" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>`;
-    detailStatus.textContent='Empresa'; detailChip.textContent='sucursales';
+    detailWrap.innerHTML = `<div class="branches-panel branches-panel-side"><div class="branches-toolbar"><b>Sucursales</b><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll branches-scroll-side" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>`;
+    detailStatus.textContent=''; detailChip.textContent='';
     contentWrap.innerHTML = `
       <div class="form-wrap admin-company-screen">
         <style>
-          .admin-company-screen{display:flex;flex-direction:column;height:100%;min-height:0;padding-right:4px}.company-head{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;padding:10px 4px 16px;align-items:end}.company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}.branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;height:100%;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}.branches-panel-side{min-height:100%}.branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}.branches-scroll{overflow:auto;flex:1;min-height:0;padding:14px;display:flex;flex-direction:column;gap:12px}.branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}.branch-card.collapsed .branch-body{display:none}.branch-head{display:grid;grid-template-columns:24px 1fr 120px 44px 44px 44px;gap:10px;align-items:center}.branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}.branch-body{margin-top:12px;padding-top:12px;border-top:1px solid rgba(64,138,113,.15);display:grid;gap:10px}.ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}.tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}.tiny-btn.danger{background:#7d4747;color:#ffe5e5}.save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
+          .admin-company-screen{display:flex;flex-direction:column;height:100%;min-height:0;padding-right:4px}.company-head{display:grid;grid-template-columns:minmax(0,1fr) 200px;gap:14px;padding:8px 4px 12px;align-items:end}.company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 14px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}.branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;height:100%;border:1px solid rgba(64,138,113,.18);background:var(--panel-3);border-radius:18px;overflow:hidden}.branches-panel-side{min-height:100%}.branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(64,138,113,.12);background:var(--panel-2)}.branches-scroll{overflow:auto;flex:1;min-height:0;padding:12px;display:flex;flex-direction:column;gap:10px}.branch-card{border:1px solid rgba(64,138,113,.18);background:var(--panel-2);border-radius:16px;padding:10px}.branch-card.collapsed .branch-body{display:none}.branch-head{display:grid;grid-template-columns:24px 1fr 92px 40px 40px 40px;gap:8px;align-items:center}.branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.18);color:var(--text);border-radius:12px;padding:9px 11px;width:100%}.branch-body{margin-top:10px;padding-top:10px;border-top:1px solid rgba(64,138,113,.12);display:grid;gap:8px}.ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}.tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}.tiny-btn.danger{background:#7d4747;color:#ffe5e5}.save-stick{position:sticky;bottom:0;padding:12px 0 4px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.04) 24%, rgba(53,60,59,.10))}
         
   .sheet-branch-list{display:grid;gap:14px;height:100%;align-content:start;}
   .sheet-branch-card{background:linear-gradient(180deg,#1f3a32,#183129);border:1px solid #3f6d60;border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.18);}
@@ -4409,47 +4409,43 @@ function escapeHtml(str){
   body.theme-light .branch-card{background:#e8f5ef;border-color:rgba(64,138,113,.18)}
   body.theme-light .branch-head input,body.theme-light .branch-body input,body.theme-light .branch-body select{background:#ffffff;border-color:rgba(64,138,113,.18)}
   body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(237,247,242,.9) 24%, rgba(237,247,242,1))}
-  @media (max-width:1100px){.company-head{grid-template-columns:1fr}.company-insights{grid-template-columns:repeat(6,minmax(0,1fr))}.company-card.hero{grid-column:span 6}.company-card.stats{grid-column:span 3}.company-card{grid-column:span 3;min-height:220px}.branches-scroll-side{height:auto}}
-  @media (max-width:760px){.company-insights{grid-template-columns:1fr}.company-card,.company-card.hero,.company-card.stats{grid-column:1/-1}.company-hero-title{font-size:24px}.branches-toolbar{gap:10px;flex-wrap:wrap}.branches-scroll-side{height:auto;min-height:360px}}
+  .company-insights.compact-clean{display:grid;grid-template-columns:1.25fr .85fr .85fr;gap:14px}.compact-card{min-height:0;padding:16px 18px}.compact-card .company-caption,.compact-card .company-hero-text{display:none}.compact-card .company-chip-row{margin-top:10px}.compact-card .company-mini-grid{margin-top:10px}.company-hero-title{margin-bottom:0}.company-mini-row b{opacity:.92}.branch-body .tiny.muted{font-size:11px;opacity:.78}@media (max-width:1100px){.company-head{grid-template-columns:1fr}.company-insights,.company-insights.compact-clean{grid-template-columns:repeat(6,minmax(0,1fr))}.company-card.hero{grid-column:span 6}.company-card.stats{grid-column:span 3}.company-card{grid-column:span 3;min-height:220px}.branches-scroll-side{height:auto}}
+  @media (max-width:760px){.company-insights,.company-insights.compact-clean{grid-template-columns:1fr}.company-card,.company-card.hero,.company-card.stats{grid-column:1/-1}.company-hero-title{font-size:24px}.branches-toolbar{gap:10px;flex-wrap:wrap}.branches-scroll-side{height:auto;min-height:360px}}
   </style>
         <div class="company-head">
           <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
           <div class="grid"><label>Logo</label><div><input type="file" id="companyLogoInput" accept="image/*" style="display:none"><button class="company-logo-btn" id="companyLogoBtn">⤴ Subir logo</button></div></div>
         </div>
-        <div class="company-insights">
-          <section class="company-card hero">
-            <span class="company-kicker">Información de empresa</span>
+        <div class="company-insights compact-clean">
+          <section class="company-card hero compact-card">
+            <span class="company-kicker">Empresa</span>
             <h3 class="company-hero-title">${escapeHtml(cfg.company || 'Tu empresa')}</h3>
-            <p class="company-hero-text">Vista general de la empresa para validar identidad, estado de configuración y el entorno activo antes de guardar cambios.</p>
             <div class="company-mini-grid compact">
-              <div class="company-mini-row"><b>Código de empresa</b><span>${escapeHtml(appState.auth?.companyCode || 'Pendiente de sesión')}</span></div>
-              <div class="company-mini-row"><b>Usuario</b><span>${escapeHtml(appState.auth?.user || 'Administrador')}</span></div>
-              <div class="company-mini-row"><b>Estado visual</b><span>${document.body.classList.contains('theme-light') ? 'Modo día' : 'Modo oscuro'}</span></div>
+              <div class="company-mini-row"><b>Código</b><span>${escapeHtml(appState.auth?.companyCode || '—')}</span></div>
+              <div class="company-mini-row"><b>Usuario</b><span>${escapeHtml(appState.auth?.user || 'admin')}</span></div>
             </div>
           </section>
-          <section class="company-card stats">
+          <section class="company-card stats compact-card">
             <span class="company-kicker">Operación</span>
             <div class="company-metric">${totalImportedProducts}</div>
-            <div class="company-caption">Productos importados registrados entre todas las sucursales y listos para consulta.</div>
             <div class="company-chip-row">
-              <span class="company-soft-chip">${connectedSheets} sheets conectados</span>
+              <span class="company-soft-chip">${connectedSheets} sheets</span>
+              <span class="company-soft-chip">${summaryWarehouses} almacenes</span>
             </div>
           </section>
-          <section class="company-card stats">
+          <section class="company-card stats compact-card">
             <span class="company-kicker">Sucursales</span>
             <div class="company-metric">${summaryBranches}</div>
-            <div class="company-caption">Total de sucursales activas dentro de la configuración actual.</div>
             <div class="company-chip-row">
-              <span class="company-soft-chip">${summaryWarehouses} almacenes</span>
               <span class="company-soft-chip">Activa: ${escapeHtml(activeBranchName)}</span>
             </div>
           </section>
         </div>
-        <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar Configuración</button></div>
+        <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar</button></div>
       </div>`;
     bindAdminScreenEvents();
   }
-  function renderBranchCard(branch,index){ return `<div class="branch-card${index!==appState.admin.activeBranch?' collapsed':''}" data-branch-card="${index}"><div class="branch-head"><button class="tiny-btn" data-action="toggle-branch" data-index="${index}">${index===appState.admin.activeBranch?'−':'+'}</button><input data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name)}"><input type="color" data-field="branch-color" data-index="${index}" value="${escapeHtml(branch.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}" title="Color identificador" class="company-color-circle"><button class="tiny-btn" data-action="move-up" data-index="${index}">↑</button><button class="tiny-btn" data-action="move-down" data-index="${index}">↓</button><button class="tiny-btn danger" data-action="delete-branch" data-index="${index}">🗑</button></div><div class="branch-body"><div><label class="tiny muted">Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div><div class="grid"><label class="tiny muted">Almacenes</label><div style="display:grid;gap:8px">${(branch.warehouses||[]).map((w,wi)=>`<div class="ware-row"><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(w)}"><button class="tiny-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}">🗑</button></div>`).join('')}</div></div><button class="tiny-btn" data-action="add-warehouse" data-index="${index}">＋ Almacén</button></div></div>`; }
+  function renderBranchCard(branch,index){ return `<div class="branch-card${index!==appState.admin.activeBranch?' collapsed':''}" data-branch-card="${index}"><div class="branch-head"><button class="tiny-btn" data-action="toggle-branch" data-index="${index}">${index===appState.admin.activeBranch?'−':'+'}</button><input data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name)}"><input type="color" data-field="branch-color" data-index="${index}" value="${escapeHtml(branch.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}" title="Color identificador" class="company-color-circle"><button class="tiny-btn" data-action="move-up" data-index="${index}">↑</button><button class="tiny-btn" data-action="move-down" data-index="${index}">↓</button><button class="tiny-btn danger" data-action="delete-branch" data-index="${index}">🗑</button></div><div class="branch-body"><div><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div><div class="grid"><div style="display:grid;gap:8px">${(branch.warehouses||[]).map((w,wi)=>`<div class="ware-row"><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(w)}"><button class="tiny-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}">🗑</button></div>`).join('')}</div></div><button class="tiny-btn" data-action="add-warehouse" data-index="${index}">＋ Almacén</button></div></div>`; }
   function bindAdminScreenEvents(){
     $('#companyNameInput').addEventListener('input', e=>appState.admin.company=e.target.value); $('#companyLogoBtn').onclick=()=>$('#companyLogoInput').click();
     $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
