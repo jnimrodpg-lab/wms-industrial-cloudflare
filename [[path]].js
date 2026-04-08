@@ -1123,6 +1123,47 @@ async function getBranchById(db, id) {
   return normalizeBranch(row);
 }
 
+
+async function bsaleRequest(config, path, params = {}) {
+  const baseUrl = String(config?.apiBaseUrl || 'https://api.bsale.io').replace(/\/$/, '');
+  const url = new URL(baseUrl + path);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') url.searchParams.set(key, String(value));
+  });
+  const res = await fetch(url.toString(), {
+    headers: {
+      'access_token': String(config?.accessToken || ''),
+      'Content-Type': 'application/json'
+    }
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) {
+    const detail = data?.error || data?.message || data?.raw || `Bsale ${res.status}`;
+    throw new Error(typeof detail === 'string' ? detail : `Bsale ${res.status}`);
+  }
+  return data;
+}
+
+async function fetchBsaleOffices(config) {
+  const data = await bsaleRequest(config, '/v1/offices.json', { limit: 50, state: 0 });
+  return Array.isArray(data?.items)
+    ? data.items.map(item => ({ id: item.id, name: item.name || `Oficina ${item.id}`, address: item.address || '', city: item.city || '' }))
+    : [];
+}
+
+async function fetchBsaleStock(config, { officeId, variantId, code, barcode } = {}) {
+  const params = { officeid: officeId || undefined, expand: '[variant,office]' };
+  if (variantId) params.variantid = variantId;
+  else if (code) params.code = code;
+  else if (barcode) params.barcode = barcode;
+  else throw new Error('Envía un identificador de producto para consultar stock.');
+  const data = await bsaleRequest(config, '/v1/stocks.json', params);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items[0] || null;
+}
+
 async function getOwnedBranch(db, companyId, id) {
   const row = await first(
     db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ?').bind(id, companyId)
