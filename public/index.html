@@ -4206,9 +4206,9 @@ function escapeHtml(str){
     const totalImportedProducts = cfg.branches.reduce((a,b)=>a + Number(b?.lastSheetCount || 0), 0);
     const activeBranchName = cfg.branches?.[cfg.activeBranch]?.name || '—';
     contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = 'Administrador'; setTags([]);
-    detailTitle.textContent='Resumen'; detailSubtitle.textContent='Configuración general';
-    detailWrap.innerHTML = `<div class="kv"><div class="kv-row"><b>Sucursales</b><span>${summaryBranches}</span></div><div class="kv-row"><b>Total almacenes</b><span>${summaryWarehouses}</span></div><div class="kv-row"><b>Sheets conectados</b><span>${connectedSheets}</span></div><div class="kv-row"><b>Productos importados</b><span>${totalImportedProducts}</span></div><div class="kv-row"><b>Sucursal activa</b><span>${escapeHtml(activeBranchName)}</span></div></div>`;
-    detailStatus.textContent='Empresa'; detailChip.textContent='config';
+    detailTitle.textContent='Sucursales'; detailSubtitle.textContent='Agregar, editar, ordenar y eliminar';
+    detailWrap.innerHTML = `<div class="branches-panel branches-panel-side"><div class="branches-toolbar"><div><b>Sucursales</b><div class="tiny muted">Gestión lateral rápida</div></div><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll branches-scroll-side" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>`;
+    detailStatus.textContent='Empresa'; detailChip.textContent='sucursales';
     contentWrap.innerHTML = `
       <div class="form-wrap admin-company-screen">
         <style>
@@ -4362,99 +4362,50 @@ function escapeHtml(str){
     .product-head,.product-row{min-width:820px !important}
   }
 
-  /* ==== pastel proposal / company info panel ==== */
+
+  /* ==== company summary / original palette ==== */
   .admin-company-screen{gap:16px}
   .company-head{grid-template-columns:minmax(0,1.15fr) minmax(240px,.7fr);align-items:end}
   .company-insights{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
-  .company-card{grid-column:span 4;position:relative;overflow:hidden;padding:18px;border-radius:22px;border:1px solid rgba(255,255,255,.09);background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));box-shadow:0 18px 40px rgba(7,20,18,.16)}
-  .company-card::before{content:'';position:absolute;inset:auto -18% 48% auto;width:140px;height:140px;border-radius:999px;background:radial-gradient(circle, rgba(255,255,255,.22), rgba(255,255,255,0) 68%);pointer-events:none}
-  .company-card.hero{grid-column:span 5;background:linear-gradient(135deg, rgba(255,214,230,.22), rgba(201,239,226,.12) 46%, rgba(196,231,255,.12));border-color:rgba(255,222,234,.24)}
+  .company-card{grid-column:span 4;position:relative;overflow:hidden;padding:18px;border-radius:22px;border:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg,var(--panel-2),var(--panel));box-shadow:0 18px 40px rgba(7,20,18,.14)}
+  .company-card::before{content:'';position:absolute;inset:auto -18% 48% auto;width:140px;height:140px;border-radius:999px;background:radial-gradient(circle, rgba(176,228,204,.12), rgba(176,228,204,0) 70%);pointer-events:none}
+  .company-card.hero{grid-column:span 6;background:linear-gradient(135deg,rgba(64,138,113,.14),rgba(40,90,72,.08) 52%,rgba(25,48,87,.10));}
   .company-card.stats{grid-column:span 3}
   .company-card h3,.company-card h4{margin:0;color:var(--text)}
-  .company-kicker{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.06);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .company-kicker{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;border:1px solid rgba(64,138,113,.16);background:rgba(64,138,113,.10);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
   .company-hero-title{margin-top:12px;font-size:30px;line-height:1.02;letter-spacing:-.03em}
   .company-hero-text{margin-top:8px;color:var(--muted);font-size:13px;line-height:1.55;max-width:62ch}
   .company-chip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-  .company-soft-chip{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:700;color:var(--text)}
+  .company-soft-chip{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;background:rgba(64,138,113,.10);border:1px solid rgba(64,138,113,.16);font-size:12px;font-weight:700;color:var(--text)}
   .company-metric{font-size:34px;font-weight:800;line-height:1;margin-top:12px;color:var(--text)}
   .company-caption{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.45}
   .company-mini-grid{display:grid;gap:10px;margin-top:12px}
-  .company-mini-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06)}
+  .company-mini-grid.compact{max-width:720px}
+  .company-mini-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;background:rgba(64,138,113,.08);border:1px solid rgba(64,138,113,.14)}
   .company-mini-row b{font-size:13px;color:var(--text)}
   .company-mini-row span{font-size:12px;color:var(--muted);text-align:right}
-  .company-status-dot{width:10px;height:10px;border-radius:999px;background:linear-gradient(180deg,#f8c8d8,#f4a0bf);box-shadow:0 0 0 4px rgba(248,200,216,.14)}
-  .branches-panel{background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));border-color:rgba(255,255,255,.08);box-shadow:0 20px 48px rgba(7,20,18,.16)}
-  .branches-toolbar{background:linear-gradient(180deg, rgba(251,208,221,.16), rgba(198,233,221,.08));border-bottom:1px solid rgba(255,255,255,.08)}
-  .branch-card{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));border-color:rgba(255,255,255,.08)}
-  .branch-head input,.branch-body input,.branch-body select{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08)}
-  .company-logo-btn,.tiny-btn:not(.danger),.btn.primary{background:linear-gradient(135deg, #e9a9bf, #c6e7db 58%, #b9def7);color:#14312b;border:1px solid rgba(255,255,255,.2);box-shadow:0 12px 24px rgba(0,0,0,.10)}
-  .btn.secondary,.icon-btn.secondary,.action-btn.secondary{background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));border-color:rgba(255,255,255,.09)}
-  .tiny-btn.danger{background:linear-gradient(135deg,#f3aab7,#e7969f);color:#45222a}
-  .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(18,27,31,.06) 28%, rgba(18,27,31,.20))}
-  body.theme-light{
-      --bg:#fff9fb;
-      --bg-2:#f7fbff;
-      --panel:#fffdfd;
-      --panel-2:#fff7fa;
-      --panel-3:#f9fcff;
-      --line:rgba(205,176,188,.34);
-      --line-2:rgba(171,198,207,.42);
-      --text:#33414b;
-      --muted:#73828b;
-      --accent:#dca0b6;
-      --accent-soft:rgba(220,160,182,.16);
-      --gold:#eabf93;
-      --green:#a9d8c4;
-      --danger:#d78597;
-      --shadow:0 22px 42px rgba(191,165,176,.18);
-    }
-  body.theme-light{background:radial-gradient(circle at top left, rgba(255,220,232,.72), transparent 26%),radial-gradient(circle at 82% 10%, rgba(204,234,252,.62), transparent 20%),radial-gradient(circle at bottom right, rgba(223,244,233,.78), transparent 26%),linear-gradient(180deg,#fffafc,#f8fbff 54%,#fefefe)}
-  body.theme-light .panel{background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,250,252,.93));border-color:rgba(217,191,201,.34);box-shadow:0 18px 40px rgba(196,170,180,.14)}
-  body.theme-light .panel-header{border-bottom:1px solid rgba(217,191,201,.26);background:linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,245,249,.92))}
-  body.theme-light .sidebar,body.theme-light .sidebar-body{background:linear-gradient(180deg, #fffdfd, #f8fbff)}
-  body.theme-light .menu-item{color:#55636c}
-  body.theme-light .menu-item:hover,body.theme-light .menu-item.active{background:linear-gradient(90deg, rgba(233,169,191,.14), rgba(198,231,219,.26));color:#2e3c44;outline:1px solid rgba(217,191,201,.26);box-shadow:inset 3px 0 0 var(--accent)}
-  body.theme-light input, body.theme-light select, body.theme-light textarea{background:#ffffff;color:var(--text);border-color:rgba(217,191,201,.24)}
-  body.theme-light .chip, body.theme-light .menu-title, body.theme-light .kv-row, body.theme-light .collapse-btn{background:linear-gradient(180deg, #fff7fa, #f6fbff);border-color:rgba(217,191,201,.24);color:var(--text)}
-  body.theme-light .product-row, body.theme-light .rack-card, body.theme-light .product-group{background:linear-gradient(180deg,#fff8fb,#f8fcff)}
-  body.theme-light .company-card{background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(252,246,249,.96));border-color:rgba(217,191,201,.24);box-shadow:0 18px 40px rgba(196,170,180,.12)}
-  body.theme-light .company-card.hero{background:linear-gradient(135deg, rgba(255,232,239,.96), rgba(239,250,245,.96) 52%, rgba(237,246,255,.96));}
-  body.theme-light .branches-panel{background:linear-gradient(180deg,#fffefe,#f9fcff);border-color:rgba(217,191,201,.22)}
-  body.theme-light .branches-toolbar{background:linear-gradient(180deg, rgba(255,239,245,.96), rgba(244,250,247,.96))}
-  body.theme-light .branch-card{background:linear-gradient(180deg,#fffafc,#f9fcff);border-color:rgba(217,191,201,.22)}
-  body.theme-light .branch-head input,body.theme-light .branch-body input,body.theme-light .branch-body select{background:#ffffff;border-color:rgba(217,191,201,.22)}
-  body.theme-light .company-logo-btn,body.theme-light .tiny-btn:not(.danger),body.theme-light .btn.primary{color:#2d3c45;box-shadow:0 12px 24px rgba(216,171,188,.16)}
-  body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(255,247,250,.94) 26%, rgba(255,247,250,1))}
-  body:not(.theme-light){
-      --bg:#1b1d28;
-      --bg-2:#202232;
-      --panel:#252737;
-      --panel-2:#2c3042;
-      --panel-3:#232737;
-      --line:rgba(255,255,255,.08);
-      --line-2:rgba(255,255,255,.14);
-      --text:#f3eff7;
-      --muted:#c8bdd0;
-      --accent:#f0b5c8;
-      --accent-soft:rgba(240,181,200,.16);
-      --gold:#f2c6a0;
-      --green:#b8dfd2;
-      --danger:#eba6b3;
-      --shadow:0 22px 44px rgba(8,8,14,.28);
-    }
-  body:not(.theme-light){background:radial-gradient(circle at top left, rgba(240,181,200,.14), transparent 24%),radial-gradient(circle at 84% 12%, rgba(177,221,244,.12), transparent 20%),radial-gradient(circle at bottom right, rgba(184,223,210,.12), transparent 24%),linear-gradient(180deg,#191b26,#1f2230 54%,#212636)}
-  body:not(.theme-light) .panel{background:linear-gradient(180deg, rgba(42,45,63,.94), rgba(33,36,52,.96));border-color:rgba(255,255,255,.08);box-shadow:0 18px 40px rgba(6,8,13,.24)}
-  body:not(.theme-light) .panel-header{background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));border-bottom:1px solid rgba(255,255,255,.08)}
-  body:not(.theme-light) .sidebar,body:not(.theme-light) .sidebar-body{background:linear-gradient(180deg, rgba(40,43,60,.98), rgba(28,31,45,.98))}
-  body:not(.theme-light) .menu-item{color:#eadff0}
-  body:not(.theme-light) .menu-item:hover,body:not(.theme-light) .menu-item.active{background:linear-gradient(90deg, rgba(240,181,200,.16), rgba(184,223,210,.14));color:#fff;outline:1px solid rgba(255,255,255,.07);box-shadow:inset 3px 0 0 var(--accent)}
-  body:not(.theme-light) input, body:not(.theme-light) select, body:not(.theme-light) textarea{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08);color:var(--text)}
-  body:not(.theme-light) .chip, body:not(.theme-light) .menu-title, body:not(.theme-light) .kv-row, body:not(.theme-light) .collapse-btn{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));border-color:rgba(255,255,255,.08)}
-  body:not(.theme-light) .product-row, body:not(.theme-light) .rack-card, body:not(.theme-light) .product-group{background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03))}
-  body:not(.theme-light) .company-card{background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.04));border-color:rgba(255,255,255,.08)}
-  body:not(.theme-light) .company-card.hero{background:linear-gradient(135deg, rgba(240,181,200,.18), rgba(184,223,210,.12) 54%, rgba(177,221,244,.12))}
-  @media (max-width:1100px){.company-head{grid-template-columns:1fr}.company-insights{grid-template-columns:repeat(6,minmax(0,1fr))}.company-card.hero{grid-column:span 6}.company-card.stats{grid-column:span 3}.company-card{grid-column:span 3}}
-  @media (max-width:760px){.company-insights{grid-template-columns:1fr}.company-card,.company-card.hero,.company-card.stats{grid-column:1/-1}.company-hero-title{font-size:24px}.branches-toolbar{gap:10px;flex-wrap:wrap}}
+  .company-status-dot{width:10px;height:10px;border-radius:999px;background:#B0E4CC;box-shadow:0 0 0 4px rgba(176,228,204,.14)}
+  .branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden;box-shadow:0 18px 40px rgba(7,20,18,.12)}
+  .branches-panel-side{height:100%;min-height:0}
+  .branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}
+  .branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}
+  .branches-scroll-side{max-height:none;height:calc(100vh - 240px);min-height:420px}
+  .branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}
+  .branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}
+  .company-logo-btn,.tiny-btn:not(.danger),.btn.primary{background:linear-gradient(135deg,#408A71,#285A48);color:#fff;border:1px solid rgba(176,228,204,.18);box-shadow:0 12px 24px rgba(0,0,0,.12)}
+  .btn.secondary,.icon-btn.secondary,.action-btn.secondary{background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04));border-color:rgba(64,138,113,.18)}
+  .tiny-btn.danger{background:linear-gradient(135deg,#8a4d4d,#703d3d);color:#ffe9e9}
+  .save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
+  body.theme-light .company-card{background:linear-gradient(180deg,#f5faf7,#eef7f1);border-color:rgba(64,138,113,.16)}
+  body.theme-light .company-card.hero{background:linear-gradient(135deg,rgba(176,228,204,.34),rgba(237,247,242,.92) 55%,rgba(227,239,247,.75))}
+  body.theme-light .company-kicker, body.theme-light .company-soft-chip, body.theme-light .company-mini-row{background:rgba(64,138,113,.08);border-color:rgba(64,138,113,.14)}
+  body.theme-light .branches-panel{background:#edf7f2;border-color:rgba(64,138,113,.18)}
+  body.theme-light .branches-toolbar{background:linear-gradient(180deg, rgba(64,138,113,.12), rgba(64,138,113,.05))}
+  body.theme-light .branch-card{background:#e8f5ef;border-color:rgba(64,138,113,.18)}
+  body.theme-light .branch-head input,body.theme-light .branch-body input,body.theme-light .branch-body select{background:#ffffff;border-color:rgba(64,138,113,.18)}
+  body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(237,247,242,.9) 24%, rgba(237,247,242,1))}
+  @media (max-width:1100px){.company-head{grid-template-columns:1fr}.company-insights{grid-template-columns:repeat(6,minmax(0,1fr))}.company-card.hero{grid-column:span 6}.company-card.stats{grid-column:span 3}.company-card{grid-column:span 3}.branches-scroll-side{height:calc(100vh - 320px)}}
+  @media (max-width:760px){.company-insights{grid-template-columns:1fr}.company-card,.company-card.hero,.company-card.stats{grid-column:1/-1}.company-hero-title{font-size:24px}.branches-toolbar{gap:10px;flex-wrap:wrap}.branches-scroll-side{height:auto;min-height:360px}}
   </style>
         <div class="company-head">
           <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
@@ -4462,35 +4413,33 @@ function escapeHtml(str){
         </div>
         <div class="company-insights">
           <section class="company-card hero">
-            <span class="company-kicker">Identidad visual pastel</span>
-            <h3 class="company-hero-title">${escapeHtml(cfg.company || 'Tu empresa')}</h3>
-            <p class="company-hero-text">Panel pensado para que la configuración se sienta más limpia, amable y legible tanto en modo día como en modo oscuro. Mismo motor, mejor traje.</p>
-            <div class="company-chip-row">
-              <span class="company-soft-chip"><span class="company-status-dot"></span> ${summaryBranches} sucursales</span>
-              <span class="company-soft-chip">${summaryWarehouses} almacenes</span>
-              <span class="company-soft-chip">${connectedSheets} sheets conectados</span>
-            </div>
-          </section>
-          <section class="company-card stats">
-            <span class="company-kicker">Operación</span>
-            <div class="company-metric">${totalImportedProducts}</div>
-            <div class="company-caption">Productos importados registrados entre todas las sucursales.</div>
-          </section>
-          <section class="company-card stats">
-            <span class="company-kicker">Sucursal activa</span>
-            <div class="company-metric" style="font-size:24px">${escapeHtml(activeBranchName)}</div>
-            <div class="company-caption">Útil para validar rápido dónde estás editando antes de guardar cambios.</div>
-          </section>
-          <section class="company-card">
             <span class="company-kicker">Información de empresa</span>
-            <div class="company-mini-grid">
+            <h3 class="company-hero-title">${escapeHtml(cfg.company || 'Tu empresa')}</h3>
+            <p class="company-hero-text">Vista general de la empresa para validar identidad, estado de configuración y el entorno activo antes de guardar cambios.</p>
+            <div class="company-mini-grid compact">
               <div class="company-mini-row"><b>Código de empresa</b><span>${escapeHtml(appState.auth?.companyCode || 'Pendiente de sesión')}</span></div>
               <div class="company-mini-row"><b>Usuario</b><span>${escapeHtml(appState.auth?.user || 'Administrador')}</span></div>
               <div class="company-mini-row"><b>Estado visual</b><span>${document.body.classList.contains('theme-light') ? 'Modo día' : 'Modo oscuro'}</span></div>
             </div>
           </section>
+          <section class="company-card stats">
+            <span class="company-kicker">Operación</span>
+            <div class="company-metric">${totalImportedProducts}</div>
+            <div class="company-caption">Productos importados registrados entre todas las sucursales y listos para consulta.</div>
+            <div class="company-chip-row">
+              <span class="company-soft-chip">${connectedSheets} sheets conectados</span>
+            </div>
+          </section>
+          <section class="company-card stats">
+            <span class="company-kicker">Sucursales</span>
+            <div class="company-metric">${summaryBranches}</div>
+            <div class="company-caption">Total de sucursales activas dentro de la configuración actual.</div>
+            <div class="company-chip-row">
+              <span class="company-soft-chip">${summaryWarehouses} almacenes</span>
+              <span class="company-soft-chip">Activa: ${escapeHtml(activeBranchName)}</span>
+            </div>
+          </section>
         </div>
-        <div class="branches-panel"><div class="branches-toolbar"><div><b>Sucursales</b></div><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>
         <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar Configuración</button></div>
       </div>`;
     bindAdminScreenEvents();
@@ -4501,11 +4450,11 @@ function escapeHtml(str){
     $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
     $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#ffd84d'),warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
     $('#saveCompanyBtn').onclick=async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); alert('Configuración guardada.'); renderAdminScreen(); };
-    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });
-    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value);
-    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; renderAdminScreen(); } } );
+    document.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
+    document.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
+    document.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });
+    document.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value);
+    document.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; renderAdminScreen(); } } );
     applyBrand();
   }
   async function httpJson(url, opts={}){ const finalOpts = { credentials:'include', ...opts }; if(opts.headers) finalOpts.headers = opts.headers; const res=await fetch(url, finalOpts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
