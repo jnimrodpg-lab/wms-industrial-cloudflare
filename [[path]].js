@@ -202,7 +202,11 @@ export async function onRequest(context) {
         const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
         const officeId = mappings[String(branch.id)] || '';
         if (!officeId) return withJson({ ok:true, stock:null, unmapped:true, build: BUILD_MARK });
-        const stock = await fetchBsaleStock(config, { officeId, variantId: url.searchParams.get('variantId') || url.searchParams.get('variantid') || '', code: url.searchParams.get('code') || '', barcode: url.searchParams.get('barcode') || '' });
+        const variantId = String(url.searchParams.get('variantId') || url.searchParams.get('variantid') || '').trim();
+        const barcode = String(url.searchParams.get('barcode') || '').trim();
+        const code = String(url.searchParams.get('code') || '').trim();
+        if (!variantId && !barcode && !code) return withJson({ ok:true, stock:null, missingIdentifier:true, officeId, build: BUILD_MARK });
+        const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
         return withJson({ ok:true, stock, officeId, build: BUILD_MARK });
       } catch (err) {
         return withJson({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.', build: BUILD_MARK }, 400);

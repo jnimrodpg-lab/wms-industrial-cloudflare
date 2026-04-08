@@ -1061,7 +1061,11 @@ app.get('/api/bsale/stock', requireAuth, async (req, res) => {
     if (!branch) return res.status(404).json({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.' });
     const officeId = getBsaleOfficeMappings(companyId)[String(branch.id)] || '';
     if (!officeId) return res.json({ ok:true, stock:null, unmapped:true });
-    const stock = await fetchBsaleStock(config, { officeId, variantId: req.query.variantId || req.query.variantid || '', code: req.query.code || '', barcode: req.query.barcode || '' });
+    const variantId = String(req.query.variantId || req.query.variantid || '').trim();
+    const barcode = String(req.query.barcode || '').trim();
+    const code = String(req.query.code || '').trim();
+    if (!variantId && !barcode && !code) return res.json({ ok:true, stock:null, missingIdentifier:true, officeId });
+    const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
     res.json({ ok:true, stock, officeId });
   } catch (err) {
     res.status(400).json({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.' });
