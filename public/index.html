@@ -4405,11 +4405,11 @@ function escapeHtml(str){
       host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    if(!appState.stock.selectedFamilyKey || !families.some(item => item.key === appState.stock.selectedFamilyKey)) appState.stock.selectedFamilyKey = families[0].key;
+    if(appState.stock.selectedFamilyKey && !families.some(item => item.key === appState.stock.selectedFamilyKey)) appState.stock.selectedFamilyKey = '';
     const rows = families.map((family) => {
       return `<tr class="${appState.stock.selectedFamilyKey === family.key ? 'active' : ''}" data-stock-family="${escapeHtml(family.key)}"><td class="stock-list-name">${escapeHtml(family.nombre)}</td></tr>`;
     }).join('');
-    host.innerHTML = `<table class="stock-table stock-table-list-only"><thead><tr><th>Producto</th></tr></thead><tbody>${rows}</tbody></table>`;
+    host.innerHTML = `<div class="stock-list-scroll"><table class="stock-table stock-table-list-only"><thead><tr><th>Producto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
     host.querySelectorAll('[data-stock-family]').forEach((row) => {
       row.onclick = async () => {
         appState.stock.selectedFamilyKey = row.getAttribute('data-stock-family') || '';
@@ -4426,25 +4426,22 @@ function escapeHtml(str){
     const foot = document.getElementById('detailStatus');
     const chip = document.getElementById('detailChip');
     if(title) title.textContent = 'Detalle de stock';
-    if(subtitle) subtitle.textContent = 'Selecciona un producto para ver su imagen y la matriz color × talla.';
+    if(subtitle) subtitle.textContent = 'Haz clic en un producto para ver su card y la tabla color × talla.';
     if(!family){
-      detailWrap.innerHTML = '<div class="stock-empty">Selecciona un producto de la lista para ver la matriz de stock.</div>';
+      detailWrap.innerHTML = '<div class="stock-empty">Selecciona un producto de la lista para ver su card de stock.</div>';
       if(foot) foot.textContent = 'Sin selección.';
       if(chip) chip.textContent = '—';
       return;
     }
+    const branchName = escapeHtml((getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—');
     if(loading || !data){
-      const sample = family.sample || family.items?.[0] || {};
-      const imgs = getProductImageUrls(sample);
-      detailWrap.innerHTML = `<div class="stock-card-lite"><div class="stock-photo ${imgs.length ? '' : 'empty'}">${imgs.length ? `<img src="${escapeHtml(imgs[0])}" alt="Imagen del producto">` : 'Sin imagen'}</div><div class="stock-mini-head"><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Cargando matriz de stock…</div></div></div>`;
+      detailWrap.innerHTML = `<div class="stock-card-panel"><div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">Cargando</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>—</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>—</strong></div></div><div class="stock-matrix-wrap"><div class="stock-empty">Cargando tabla de stock…</div></div></div>`;
       if(foot) foot.textContent = 'Consultando Bsale…';
       if(chip) chip.textContent = family.nombre || '—';
       return;
     }
     const sizes = Array.isArray(data.sizes) ? data.sizes : [];
     const colors = Array.isArray(data.colors) ? data.colors : [];
-    const sample = family.sample || family.items?.[0] || {};
-    const imgs = getProductImageUrls(sample);
     const matrixHead = ['<th>Color</th>', ...sizes.map((size) => `<th>${escapeHtml(size)}</th>`)].join('');
     const matrixBody = colors.map((color) => {
       const cells = sizes.map((size) => {
@@ -4453,8 +4450,8 @@ function escapeHtml(str){
         return `<td><div class="stock-matrix-val">${val}</div></td>`;
       }).join('');
       return `<tr><th>${escapeHtml(color)}</th>${cells}</tr>`;
-    }).join('') || '<tr><td colspan="99" class="muted tiny">Sin matriz disponible.</td></tr>';
-    detailWrap.innerHTML = `<div class="stock-card-lite"><div class="stock-photo ${imgs.length ? '' : 'empty'}">${imgs.length ? `<img src="${escapeHtml(imgs[0])}" alt="Imagen del producto">` : 'Sin imagen'}</div><div class="stock-mini-head"><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${escapeHtml((getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—')} · Variantes: ${family.items.length}</div></div><div class="stock-matrix-wrap"><table class="stock-matrix-table stock-matrix-compact"><thead><tr>${matrixHead}</tr></thead><tbody>${matrixBody}</tbody></table></div></div>`;
+    }).join('') || `<tr><td colspan="${Math.max(2, sizes.length + 1)}" class="muted tiny">Sin matriz disponible.</td></tr>`;
+    detailWrap.innerHTML = `<div class="stock-card-panel"><div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>${colors.length}</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>${sizes.length}</strong></div></div><div class="stock-matrix-wrap"><table class="stock-matrix-table stock-matrix-compact"><thead><tr>${matrixHead}</tr></thead><tbody>${matrixBody}</tbody></table></div></div>`;
     if(foot) foot.textContent = `${family.items.length} variantes analizadas en ${(getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—'}.`;
     if(chip) chip.textContent = `${colors.length} colores × ${sizes.length} tallas`;
   }
@@ -4463,9 +4460,9 @@ function escapeHtml(str){
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
     contentTitle.textContent = 'Stock por producto';
-    contentSubtitle.textContent = 'Lista ligera de productos. El detalle solo se carga al abrir un producto.';
+    contentSubtitle.textContent = 'Lista simple y scroleable. El card de detalle solo aparece al hacer clic.';
     const families = getStockScreenFamilies();
-    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast"><div class="stock-toolbar stock-toolbar-fast"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="muted tiny">Vista rápida: lista de nombres a la izquierda y card con matriz color × talla a la derecha.</div></div><div class="stock-table-wrap" id="stockTableWrap"></div></div>`;
+    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast"><div class="stock-toolbar stock-toolbar-fast"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="muted tiny">Lista de nombres a la izquierda. Card de detalle a la derecha con colores en vertical y tallas en horizontal.</div></div><div class="stock-table-wrap stock-table-wrap-list" id="stockTableWrap"></div></div>`;
     detailPanel.style.display = '';
     renderStockTable();
     const currentFamily = families.find((item) => item.key === appState.stock.selectedFamilyKey) || null;
@@ -4742,7 +4739,9 @@ function escapeHtml(str){
 
   .stock-screen{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%}
   .stock-toolbar{display:grid;grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr);gap:12px;align-items:end}
-  .stock-table-wrap{min-height:0;height:100%;border:1px solid var(--line);border-radius:18px;overflow:auto;background:rgba(255,255,255,.02)}
+  .stock-table-wrap{min-height:0;height:100%;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.02)}
+  .stock-table-wrap-list{display:flex;flex-direction:column}
+  .stock-list-scroll{height:100%;overflow:auto}
   .stock-table{width:100%;border-collapse:separate;border-spacing:0}
   .stock-table thead th{position:sticky;top:0;z-index:1;background:rgba(6,20,23,.96);backdrop-filter:blur(8px);text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .stock-table tbody td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle}
@@ -4760,8 +4759,15 @@ function escapeHtml(str){
   .stock-kpi{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);font-weight:700;font-size:12px}
   .stock-detail{display:grid;gap:14px;height:100%}
   .stock-detail-simple{grid-template-rows:auto auto minmax(0,1fr) minmax(0,1fr)}
-  .stock-photo{min-height:220px;border-radius:20px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));display:flex;align-items:center;justify-content:center;overflow:hidden}
-  .stock-photo img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-card-panel{display:grid;gap:14px;padding:16px;border:1px solid rgba(255,255,255,.10);border-radius:20px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02))}
+  .stock-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+  .stock-card-head .title{font-size:24px;font-weight:800;line-height:1.1}
+  .stock-card-head .sku{margin-top:6px;color:var(--muted);font-size:13px}
+  .stock-card-badge{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(108,229,154,.22);background:rgba(108,229,154,.08);font-weight:700;font-size:12px;white-space:nowrap}
+  .stock-card-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .stock-meta-item{display:grid;gap:4px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
+  .stock-meta-item span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stock-meta-item strong{font-size:18px}
   .stock-photo.empty{color:var(--muted);font-weight:800}
   .stock-meta-card{display:grid;gap:12px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.03)}
   .stock-meta-head{display:grid;gap:4px}.stock-meta-head .title{font-size:28px;font-weight:900;line-height:1.02}.stock-meta-head .sku{font-size:12px;color:var(--muted);font-weight:700}
