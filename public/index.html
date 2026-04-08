@@ -1228,6 +1228,7 @@ body.theme-light .seg-btn,
             <div class="menu-item active" data-screen="sheet" data-admin-only="1">🔗 <span>Vincular Sheet</span></div>
             <div class="menu-item" data-screen="layout" data-admin-only="1">🗺 <span>Edición de Layout</span></div>
             <div class="menu-item" data-screen="racks" data-admin-only="1">🧱 <span>Edición de Rack</span></div>
+            <div class="menu-item" data-screen="stock" data-admin-only="1">📦 <span>Stock</span></div>
           </div>
         </div>
         <div class="menu-section">
@@ -1542,6 +1543,7 @@ function escapeHtml(str){
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
+    stock: { branchIndex:0, query:'', selectedFamilyKey:'', selectedSize:'', selectedColor:'', familyMatrixCache:{}, loading:false },
     ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
@@ -2407,6 +2409,7 @@ function escapeHtml(str){
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
+      else if(screen === 'stock') renderStockScreen();
       else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
@@ -4260,6 +4263,218 @@ function escapeHtml(str){
     drawZoneEdgeDimensions(layer, zone);
   }
 
+
+  function getStockBranchOptions(){ return Array.isArray(appState.admin?.branches) ? appState.admin.branches : []; }
+  function getStockBranchIndex(){
+    const branches = getStockBranchOptions();
+    if(!branches.length) return 0;
+    const idx = Number.isFinite(Number(appState.stock?.branchIndex)) ? Number(appState.stock.branchIndex) : getPersistedPreferredBranchIndex();
+    return branches[idx] ? idx : 0;
+  }
+  function readBranchProductsSnapshot(branchIndex){
+    const idx = Number(branchIndex || 0);
+    if(Number(appState.activeBranchIndex) === idx && Array.isArray(appState.products) && appState.products.length) return appState.products.slice();
+    const branch = getStockBranchOptions()[idx] || {};
+    if(Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length) return branch.sheetPreviewProducts.slice();
+    try{
+      const raw = localStorage.getItem(getBranchStorageKey(idx)) || localStorage.getItem(`wms_products_branch_${idx}`);
+      if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr)) return arr; }
+    }catch(_err){}
+    return [];
+  }
+  function buildStockFamilies(products){
+    const groups = new Map();
+    (Array.isArray(products) ? products : []).forEach((p) => {
+      const key = norm(p?.nombre || '') || '__sin_nombre__';
+      if(!groups.has(key)) groups.set(key, { key, nombre:p?.nombre || 'Sin nombre', items:[], sample:p });
+      groups.get(key).items.push(p);
+    });
+    return Array.from(groups.values()).sort((a,b) => compareTextLettersFirst(a?.nombre || '', b?.nombre || ''));
+  }
+  function getStockScreenFamilies(){
+    const idx = getStockBranchIndex();
+    const products = readBranchProductsSnapshot(idx);
+    const q = norm(appState.stock?.query || '');
+    const families = buildStockFamilies(products);
+    if(!q) return families;
+    return families.filter((family) => family.items.some((item) => getProductSearchText(item).includes(q)) || norm(family.nombre).includes(q));
+  }
+  function getStockCacheKey(branchId, product){
+    return [String(branchId || ''), String(product?.sku || ''), String(product?.barras || ''), String(product?.variante || ''), String(product?.nombre || '')].join('¦');
+  }
+  async function fetchStockEntryForProduct(product, branchIndex){
+    const branches = getStockBranchOptions();
+    const branch = branches[Number(branchIndex) || 0];
+    const branchId = Number(branch?.id || 0);
+    if(!branchId || !product) return { quantity:null, quantityAvailable:null, quantityReserved:null };
+    const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
+    const key = getStockCacheKey(branchId, product);
+    if(cache[key]) return cache[key];
+    const params = new URLSearchParams();
+    params.set('branchId', String(branchId));
+    if(product.variantId || product.variantid) params.set('variantId', String(product.variantId || product.variantid));
+    if(product.sku) params.set('code', String(product.sku));
+    if(product.barras) params.set('barcode', String(product.barras));
+    try{
+      const data = await httpJson(`/api/bsale/stock?${params.toString()}`);
+      const stock = data?.stock || null;
+      const entry = stock ? {
+        quantity: Number(stock.quantity || 0),
+        quantityAvailable: Number(stock.quantityAvailable || 0),
+        quantityReserved: Number(stock.quantityReserved || 0)
+      } : { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:!!data?.disabled, unmapped:!!data?.unmapped };
+      cache[key] = entry;
+      return entry;
+    }catch(_err){
+      const entry = { quantity:null, quantityAvailable:null, quantityReserved:null, error:true };
+      cache[key] = entry;
+      return entry;
+    }
+  }
+  function buildEmptyStockCell(){ return { quantity:0, quantityAvailable:0, quantityReserved:0, count:0 }; }
+  async function buildFamilyStockMatrix(family, branchIndex){
+    const matrix = {};
+    const sizes = new Set();
+    const colors = new Set();
+    let totals = { quantity:0, quantityAvailable:0, quantityReserved:0, known:false };
+    for(const item of (family?.items || [])){
+      const size = getProductSizeValue(item) || '—';
+      const color = getProductColorValue(item) || 'Sin color';
+      sizes.add(size); colors.add(color);
+      const stock = await fetchStockEntryForProduct(item, branchIndex);
+      if(!matrix[size]) matrix[size] = {};
+      if(!matrix[size][color]) matrix[size][color] = buildEmptyStockCell();
+      const cell = matrix[size][color];
+      cell.count += 1;
+      if(stock && Number.isFinite(stock.quantity)){
+        cell.quantity += Number(stock.quantity || 0);
+        cell.quantityAvailable += Number(stock.quantityAvailable || 0);
+        cell.quantityReserved += Number(stock.quantityReserved || 0);
+        totals.quantity += Number(stock.quantity || 0);
+        totals.quantityAvailable += Number(stock.quantityAvailable || 0);
+        totals.quantityReserved += Number(stock.quantityReserved || 0);
+        totals.known = true;
+      }
+    }
+    const orderedSizes = Array.from(sizes).sort((a,b) => getLogicalSizeRank(a) - getLogicalSizeRank(b) || compareTextLettersFirst(a,b));
+    const orderedColors = Array.from(colors).sort(compareTextLettersFirst);
+    return { matrix, sizes:orderedSizes, colors:orderedColors, totals };
+  }
+  async function ensureSelectedFamilyMatrix(){
+    const families = getStockScreenFamilies();
+    const family = families.find((item) => item.key === appState.stock?.selectedFamilyKey) || families[0] || null;
+    if(!family) return null;
+    appState.stock.selectedFamilyKey = family.key;
+    const branchIndex = getStockBranchIndex();
+    const cacheKey = `${branchIndex}::${family.key}`;
+    const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
+    if(!cache[cacheKey] || !cache[cacheKey].matrix){
+      appState.stock.loading = true;
+      renderStockDetailPanel(family, null, true);
+      cache[cacheKey] = await buildFamilyStockMatrix(family, branchIndex);
+      appState.stock.loading = false;
+    }
+    return { family, data: cache[cacheKey] };
+  }
+  function getRepresentativeProductForFamily(family, selectedSize, selectedColor){
+    const items = Array.isArray(family?.items) ? family.items : [];
+    const exact = items.find((item) => normalizeVariantValue(getProductSizeValue(item)) === normalizeVariantValue(selectedSize) && normalizeVariantValue(getProductColorValue(item)) === normalizeVariantValue(selectedColor));
+    if(exact) return exact;
+    const sizeMatch = items.find((item) => normalizeVariantValue(getProductSizeValue(item)) === normalizeVariantValue(selectedSize));
+    return sizeMatch || items[0] || null;
+  }
+  function renderStockTable(){
+    const host = document.getElementById('stockTableWrap');
+    if(!host) return;
+    const families = getStockScreenFamilies();
+    if(!families.length){
+      host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
+      return;
+    }
+    if(!appState.stock.selectedFamilyKey || !families.some(item => item.key === appState.stock.selectedFamilyKey)) appState.stock.selectedFamilyKey = families[0].key;
+    const branchIndex = getStockBranchIndex();
+    const rows = families.map((family) => {
+      const sample = family.sample || family.items[0] || {};
+      const cacheKey = `${branchIndex}::${family.key}`;
+      const cached = appState.stock.familyMatrixCache?.[cacheKey] || null;
+      const total = cached?.totals?.known ? Number(cached.totals.quantity || 0) : null;
+      const available = cached?.totals?.known ? Number(cached.totals.quantityAvailable || 0) : null;
+      const sizes = Array.from(new Set((family.items || []).map(getProductSizeValue).filter(Boolean)));
+      const colors = Array.from(new Set((family.items || []).map(getProductColorValue).filter(Boolean)));
+      return `<tr class="${appState.stock.selectedFamilyKey === family.key ? 'active' : ''}" data-stock-family="${escapeHtml(family.key)}"><td><b>${escapeHtml(sample.sku || '—')}</b></td><td>${escapeHtml(family.nombre)}</td><td><span class="stock-kpi">${family.items.length} variantes</span></td><td>${sizes.length ? sizes.map(s=>`<span class="stock-kpi">${escapeHtml(s)}</span>`).join(' ') : '<span class="muted tiny">—</span>'}</td><td>${colors.length ? colors.length : 0}</td><td><b>${total == null ? '—' : total}</b></td><td><b>${available == null ? '—' : available}</b></td></tr>`;
+    }).join('');
+    host.innerHTML = `<table class="stock-table"><thead><tr><th>SKU</th><th>Modelo</th><th>Variantes</th><th>Tallas</th><th>Colores</th><th>Stock</th><th>Disponible</th></tr></thead><tbody>${rows}</tbody></table>`;
+    host.querySelectorAll('[data-stock-family]').forEach((row) => {
+      row.onclick = async () => {
+        appState.stock.selectedFamilyKey = row.getAttribute('data-stock-family') || '';
+        renderStockTable();
+        const payload = await ensureSelectedFamilyMatrix();
+        if(payload) renderStockDetailPanel(payload.family, payload.data, false);
+      };
+    });
+  }
+  function renderStockDetailPanel(family, data, loading=false){
+    const title = document.getElementById('detailTitle');
+    const subtitle = document.getElementById('detailSubtitle');
+    const foot = document.getElementById('detailStatus');
+    const chip = document.getElementById('detailChip');
+    if(title) title.textContent = 'Detalle de stock';
+    if(subtitle) subtitle.textContent = 'Imagen del producto y stock por color según la talla seleccionada.';
+    if(!family){
+      detailWrap.innerHTML = '<div class="stock-empty">Selecciona un modelo para consultar stock por talla y color.</div>';
+      if(foot) foot.textContent = 'Sin selección.';
+      if(chip) chip.textContent = '—';
+      return;
+    }
+    if(loading || !data){
+      detailWrap.innerHTML = '<div class="stock-empty">Consultando stock por talla y color…</div>';
+      if(foot) foot.textContent = 'Consultando Bsale…';
+      if(chip) chip.textContent = family.nombre || '—';
+      return;
+    }
+    const sizes = Array.isArray(data.sizes) ? data.sizes : [];
+    if(!appState.stock.selectedSize || !sizes.includes(appState.stock.selectedSize)) appState.stock.selectedSize = sizes[0] || '';
+    const activeSize = appState.stock.selectedSize || sizes[0] || '';
+    const colorsMap = data.matrix?.[activeSize] || {};
+    const colorNames = Object.keys(colorsMap).sort(compareTextLettersFirst);
+    const representative = getRepresentativeProductForFamily(family, activeSize, appState.stock.selectedColor);
+    const imgs = getProductImageUrls(representative);
+    const rows = colorNames.map((color) => {
+      const cell = colorsMap[color] || buildEmptyStockCell();
+      const style = getColorChipStyle(color);
+      const dotBg = (style.match(/background:([^;]+)/) || [])[1] || 'rgba(255,255,255,.18)';
+      const dotBorder = (style.match(/border-color:([^;]+)/) || [])[1] || 'rgba(255,255,255,.22)';
+      return `<div class="stock-color-row"><div class="stock-color-chip"><span class="stock-color-dot" style="background:${dotBg};border-color:${dotBorder}"></span><span class="stock-color-name">${escapeHtml(color)}</span></div><div class="stock-num"><span>Stock</span><b>${Number.isFinite(cell.quantity) ? cell.quantity : '—'}</b></div><div class="stock-num"><span>Disp.</span><b>${Number.isFinite(cell.quantityAvailable) ? cell.quantityAvailable : '—'}</b></div><div class="stock-num"><span>Reserv.</span><b>${Number.isFinite(cell.quantityReserved) ? cell.quantityReserved : '—'}</b></div></div>`;
+    }).join('') || '<div class="stock-empty">No hay colores detectados para la talla seleccionada.</div>';
+    detailWrap.innerHTML = `<div class="stock-detail"><div class="stock-hero"><div class="stock-photo ${imgs.length ? '' : 'empty'}">${imgs.length ? `<img src="${escapeHtml(imgs[0])}" alt="Imagen del producto">` : 'Sin imagen'}</div><div class="stock-meta-card"><div class="stock-meta-head"><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">SKU base ${escapeHtml((family.sample || {}).sku || '—')}</div></div><div class="stock-meta-inline"><span class="chip">Sucursal: ${escapeHtml((getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—')}</span><span class="chip">Stock total: ${data?.totals?.known ? Number(data.totals.quantity || 0) : '—'}</span><span class="chip">Disponible: ${data?.totals?.known ? Number(data.totals.quantityAvailable || 0) : '—'}</span></div><div><div class="muted tiny" style="margin-bottom:8px">Selecciona talla</div><div class="stock-size-strip" id="stockSizeStrip"></div></div></div></div><div class="muted tiny">Stock por colores para la talla seleccionada.</div><div class="stock-color-list" id="stockColorList">${rows}</div></div>`;
+    const sizeHost = document.getElementById('stockSizeStrip');
+    if(sizeHost){
+      sizeHost.innerHTML = sizes.map((size) => `<button type="button" class="stock-size-chip ${size === activeSize ? 'active' : ''}" data-stock-size="${escapeHtml(size)}">${escapeHtml(size)}</button>`).join('');
+      sizeHost.querySelectorAll('[data-stock-size]').forEach((btn) => btn.onclick = () => { appState.stock.selectedSize = btn.getAttribute('data-stock-size') || ''; renderStockDetailPanel(family, data, false); });
+    }
+    if(foot) foot.textContent = `${family.items.length} variantes analizadas en ${(getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—'}.`;
+    if(chip) chip.textContent = `${sizes.length} tallas`;
+  }
+  async function renderStockScreen(){
+    const branches = getStockBranchOptions();
+    const currentIndex = getStockBranchIndex();
+    appState.stock.branchIndex = currentIndex;
+    contentTitle.textContent = 'Stock por sucursal';
+    contentSubtitle.textContent = 'Consulta familias, cambia la sucursal desde el panel y revisa el stock por talla y color.';
+    const families = getStockScreenFamilies();
+    contentWrap.innerHTML = `<div class="stock-screen"><div class="stock-toolbar"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar modelo</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por SKU, nombre, color o talla"></div><div class="muted tiny">Solo se muestra la tabla en este panel. El lateral derecho concentra imagen del producto y stock por color para la talla elegida.</div></div><div class="stock-table-wrap" id="stockTableWrap"></div></div>`;
+    detailPanel.style.display = '';
+    renderStockTable();
+    const payload = await ensureSelectedFamilyMatrix();
+    renderStockDetailPanel(payload?.family || null, payload?.data || null, false);
+    const branchSel = document.getElementById('stockBranchSelect');
+    const qInput = document.getElementById('stockSearchInput');
+    if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value || 0); appState.stock.selectedFamilyKey = ''; appState.stock.selectedSize = ''; renderStockScreen(); };
+    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); appState.stock.selectedFamilyKey = ''; renderStockTable(); const payload = await ensureSelectedFamilyMatrix(); renderStockDetailPanel(payload?.family || null, payload?.data || null, false); };
+    contentStatus.textContent = `${families.length.toLocaleString('es-PE')} familias detectadas.`;
+    contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes`;
+  }
+
   function defaultBsaleConfig(){ return { enabled:false, country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', officeMappings:{} }; }
   function normalizeBsaleConfig(cfg){ const src = (cfg && typeof cfg === 'object') ? cfg : {}; return { enabled:!!src.enabled, country:String(src.country || 'PE').toUpperCase(), apiBaseUrl:String(src.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io', accessToken:String(src.accessToken || '').trim(), officeMappings: src.officeMappings && typeof src.officeMappings === 'object' ? { ...src.officeMappings } : {} }; }
   function normalizeAdminState(admin){ const raw = admin && typeof admin === 'object' ? clone(admin) : {}; raw.bsale = normalizeBsaleConfig(raw.bsale); return raw; }
@@ -4521,6 +4736,34 @@ function escapeHtml(str){
   .bsale-status{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.bsale-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);font-size:12px;font-weight:700}.bsale-badge.ok{border-color:rgba(91,185,140,.34);background:rgba(91,185,140,.12);color:#dff8eb}.bsale-badge.warn{border-color:rgba(245,166,35,.34);background:rgba(245,166,35,.12);color:#ffe7b0}
   .bsale-office-map{display:grid;gap:10px;max-height:320px;overflow:auto;padding-right:4px}.bsale-office-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:10px;align-items:center;padding:10px 12px;border-radius:14px;border:1px solid rgba(64,138,113,.16);background:rgba(255,255,255,.02)}.bsale-office-meta{display:grid;gap:4px;min-width:0}.bsale-office-name{font-weight:700}.bsale-office-sub{font-size:12px;color:var(--muted)}
   .bsale-stock-strip{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.bsale-stock-pill{display:grid;gap:2px;min-width:94px;padding:9px 10px;border-radius:12px;border:1px solid rgba(91,185,140,.18);background:linear-gradient(180deg,rgba(91,185,140,.10),rgba(91,185,140,.03))}.bsale-stock-pill .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.bsale-stock-pill .value{font-weight:800;font-size:16px;color:var(--text)}
+
+  .stock-screen{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%}
+  .stock-toolbar{display:grid;grid-template-columns:minmax(220px,280px) minmax(180px,240px) minmax(0,1fr);gap:12px;align-items:end}
+  .stock-table-wrap{min-height:0;height:100%;border:1px solid var(--line);border-radius:18px;overflow:auto;background:rgba(255,255,255,.02)}
+  .stock-table{width:100%;border-collapse:separate;border-spacing:0}
+  .stock-table thead th{position:sticky;top:0;z-index:1;background:rgba(6,20,23,.96);backdrop-filter:blur(8px);text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .stock-table tbody td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle}
+  .stock-table tbody tr{cursor:pointer;transition:background .18s ease, box-shadow .18s ease}
+  .stock-table tbody tr:hover{background:rgba(255,255,255,.03)}
+  .stock-table tbody tr.active{background:linear-gradient(90deg, rgba(56,168,118,.18), rgba(56,168,118,.05)); box-shadow:inset 3px 0 0 rgba(108,229,154,.9)}
+  .stock-kpi{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);font-weight:700;font-size:12px}
+  .stock-detail{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px;height:100%}
+  .stock-hero{display:grid;grid-template-columns:minmax(210px,260px) minmax(0,1fr);gap:16px;align-items:stretch}
+  .stock-photo{min-height:240px;border-radius:20px;border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .stock-photo img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-photo.empty{color:var(--muted);font-weight:800}
+  .stock-meta-card{display:grid;gap:12px;padding:14px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.03)}
+  .stock-meta-head{display:grid;gap:4px}.stock-meta-head .title{font-size:28px;font-weight:900;line-height:1.02}.stock-meta-head .sku{font-size:12px;color:var(--muted);font-weight:700}
+  .stock-meta-inline{display:flex;gap:10px;flex-wrap:wrap}.stock-meta-inline .chip{font-size:12px}
+  .stock-size-strip{display:flex;gap:8px;flex-wrap:wrap}
+  .stock-size-chip{padding:9px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);font-weight:800;cursor:pointer}
+  .stock-size-chip.active{border-color:rgba(108,229,154,.65);background:rgba(108,229,154,.14)}
+  .stock-color-list{display:grid;gap:10px;min-height:0;overflow:auto;padding-right:4px}
+  .stock-color-row{display:grid;grid-template-columns:minmax(0,1fr) 84px 84px 84px;gap:10px;align-items:center;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
+  .stock-color-chip{display:inline-flex;align-items:center;gap:10px;min-width:0}.stock-color-dot{width:16px;height:16px;border-radius:999px;border:1px solid rgba(255,255,255,.22);flex:0 0 auto}.stock-color-name{font-weight:800}
+  .stock-num{display:grid;gap:2px;justify-items:end}.stock-num span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.stock-num b{font-size:18px}
+  .stock-empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);border:1px dashed rgba(255,255,255,.12);border-radius:18px;padding:16px;text-align:center}
+  @media (max-width: 1280px){.stock-hero{grid-template-columns:1fr}.stock-toolbar{grid-template-columns:1fr}.stock-color-row{grid-template-columns:minmax(0,1fr) repeat(3,72px)}}
   @media (max-width: 1080px){ .bsale-grid{grid-template-columns:1fr} .bsale-office-row{grid-template-columns:1fr} }
   </style>
         <div class="company-head">
