@@ -1226,8 +1226,8 @@ async function handleSheetProbe(url) {
   const gid = await resolveSheetGid(id, sheet);
   try {
     const jsonUrl = gid
-      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
-      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+      ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
+      : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
 
     const r = await fetch(jsonUrl);
     if (r.ok) {
@@ -1271,8 +1271,8 @@ async function handleSheetRows(url) {
 
 async function getSheetRowsPayloadFromCsv(id, sheet, gid, limit = 200, headerOnly = false) {
   const tryUrls = [];
-  if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
-  tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
+  if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
+  tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
 
   let rows = [];
   let source = gid ? 'csv-gid' : 'csv-sheet';
@@ -1332,8 +1332,8 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
 
   try {
     const jsonUrl = gid
-      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
-      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+      ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
+      : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
 
     const r = await fetch(jsonUrl);
     if (r.ok) {
@@ -1397,6 +1397,54 @@ function parseGoogleVizJson(text) {
   if (!m) return null;
   return safeJsonParse(m[1], null);
 }
+
+function excelColToIndex(col) {
+  const src = String(col || '').trim().toUpperCase();
+  if (!src || !/^[A-Z]+$/.test(src)) return -1;
+  let index = 0;
+  for (let i = 0; i < src.length; i++) {
+    index = (index * 26) + (src.charCodeAt(i) - 64);
+  }
+  return index - 1;
+}
+
+function indexToExcelCol(index) {
+  let n = Number(index);
+  if (!Number.isInteger(n) || n < 0) return 'A';
+  n += 1;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
+const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
+
+function buildGoogleSheetQueryUrl({ id, gid = '', sheet = '', out = 'json', headers = null, range = DEFAULT_SHEET_FETCH_RANGE }) {
+  const params = new URLSearchParams();
+  params.set('tqx', `out:${out}`);
+  if (headers !== null && headers !== undefined) params.set('headers', String(headers));
+  if (range) params.set('range', range);
+  if (gid) params.set('gid', String(gid));
+  else if (sheet) params.set('sheet', String(sheet));
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
+}
+
+function buildGoogleSheetCsvUrl({ id, gid = '', sheet = '', range = DEFAULT_SHEET_FETCH_RANGE }) {
+  if (gid) {
+    const params = new URLSearchParams();
+    params.set('format', 'csv');
+    params.set('gid', String(gid));
+    if (range) params.set('range', range);
+    return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
+  }
+  return buildGoogleSheetQueryUrl({ id, sheet, out: 'csv', range });
+}
+
 
 function parseCsv(text) {
   const rows = [];

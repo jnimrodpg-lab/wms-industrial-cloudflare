@@ -193,6 +193,48 @@
     return match ? match[1] : value;
   }
 
+
+  function excelColToIndex(col){
+    const src = String(col || '').trim().toUpperCase();
+    if(!src || !/^[A-Z]+$/.test(src)) return -1;
+    let index = 0;
+    for(let i=0;i<src.length;i++) index = (index * 26) + (src.charCodeAt(i) - 64);
+    return index - 1;
+  }
+  function indexToExcelCol(index){
+    let n = Number(index);
+    if(!Number.isInteger(n) || n < 0) return 'A';
+    n += 1;
+    let out = '';
+    while(n > 0){
+      const rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  }
+  const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
+  const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
+  function buildGoogleSheetQueryUrl({ id, gid='', sheet='', out='json', headers=null, range=DEFAULT_SHEET_FETCH_RANGE }){
+    const params = new URLSearchParams();
+    params.set('tqx', `out:${out}`);
+    if(headers !== null && headers !== undefined) params.set('headers', String(headers));
+    if(range) params.set('range', range);
+    if(gid) params.set('gid', String(gid));
+    else if(sheet) params.set('sheet', String(sheet));
+    return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
+  }
+  function buildGoogleSheetCsvUrl({ id, gid='', sheet='', range=DEFAULT_SHEET_FETCH_RANGE }){
+    if(gid){
+      const params = new URLSearchParams();
+      params.set('format', 'csv');
+      params.set('gid', String(gid));
+      if(range) params.set('range', range);
+      return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
+    }
+    return buildGoogleSheetQueryUrl({ id, sheet, out:'csv', range });
+  }
+
   function parseSheetUrl(url){
     const t = String(url||'').trim();
     const m = t.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -1401,7 +1443,7 @@
     sheetStatusChip.textContent = 'Cargando sheet...';
     contentStatus.textContent = 'Intentando leer Google Sheet...';
     try {
-      const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheetName)}`;
+      const endpoint = buildGoogleSheetQueryUrl({ id, sheet: sheetName, out: 'json', headers: 0 });
       const text = await fetch(endpoint).then(r => r.text());
       const json = JSON.parse(text.substring(47).slice(0, -2));
       const rows = json.table.rows || [];

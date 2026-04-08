@@ -423,7 +423,7 @@
     .rack-front-arrow{fill:#ff8b3d;stroke:#fff1;stroke-width:1;pointer-events:none}
     .vertex-hit{fill:rgba(0,0,0,0);cursor:pointer}
     .vertex{fill:#f7fbff;stroke:#1d9bff;stroke-width:2.4;cursor:pointer;filter:drop-shadow(0 1px 4px rgba(0,0,0,.45))}
-    .vertex.selected{fill:#fff2b8;stroke:#ff9b00;stroke-width:5.6;filter:drop-shadow(0 0 8px rgba(255,155,0,.55)) drop-shadow(0 2px 6px rgba(0,0,0,.42))}
+    .vertex.selected{fill:#fff6cc;stroke:#ffbf00;stroke-width:3.2}
     .ortho-grid line{stroke:rgba(147,183,220,.14);stroke-width:1}
     .ortho-label{fill:#f3fff9;font-size:12px;font-weight:800;paint-order:stroke;stroke:rgba(9,20,19,.72);stroke-width:3px;stroke-linejoin:round}
     .edge-highlight{stroke:#ffd84d;stroke-width:3;fill:none;stroke-dasharray:8 5}
@@ -531,7 +531,7 @@
     .ortho-dim{stroke:rgba(255,153,41,.96);stroke-width:2;stroke-dasharray:6 4}
     .ortho-dim-text{fill:#ffb13a;font-size:11px;font-weight:900;font-family:var(--mono);paint-order:stroke;stroke:rgba(10,16,24,.82);stroke-width:3px;stroke-linejoin:round}
     .edge-hit{stroke:rgba(255,255,255,0);fill:rgba(0,0,0,0);stroke-width:18;cursor:move}
-    .edge-guide{stroke:rgba(255,163,46,.98);stroke-width:8;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 8px rgba(255,163,46,.38));vector-effect:non-scaling-stroke}
+    .edge-guide{stroke:rgba(255,173,77,.96);stroke-width:3.4;stroke-dasharray:8 5}
     .edge-handle{fill:#0d1d32;stroke:#ffb84d;stroke-width:2.4;cursor:ew-resize;filter:drop-shadow(0 1px 4px rgba(0,0,0,.45))}
     .edge-handle.active{fill:#ffd27d;stroke:#fff2c4}
     .layout-section-wrap{margin-top:12px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015));overflow:hidden}
@@ -856,7 +856,7 @@
     body.theme-light .btn.secondary, body.theme-light .icon-btn.secondary, body.theme-light .action-btn.secondary, body.theme-light .ortho-dim{stroke:rgba(180,92,0,.96)}
     body.theme-light .ortho-dim-text{fill:#8a4300;stroke:rgba(255,255,255,.92);stroke-width:3.4px}
     body.theme-light .vertex{fill:#ffffff;stroke:#0a84ff}
-    body.theme-light .vertex.selected{fill:#ffe9a3;stroke:#b96f00;stroke-width:5.6;filter:drop-shadow(0 0 8px rgba(185,111,0,.28)) drop-shadow(0 2px 6px rgba(0,0,0,.18))}
+    body.theme-light .vertex.selected{fill:#fff6c7;stroke:#cc8a00}
     body.theme-light .edge-handle{fill:#ffffff;stroke:#c16a00}
     body.theme-light .edge-handle.active{fill:#ffd88a;stroke:#a85b00}
 body.theme-light .seg-btn,
@@ -1904,6 +1904,48 @@ function escapeHtml(str){
     const value = String(input || '').trim();
     const match = value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
     return match ? match[1] : value;
+  }
+
+
+  function excelColToIndex(col){
+    const src = String(col || '').trim().toUpperCase();
+    if(!src || !/^[A-Z]+$/.test(src)) return -1;
+    let index = 0;
+    for(let i=0;i<src.length;i++) index = (index * 26) + (src.charCodeAt(i) - 64);
+    return index - 1;
+  }
+  function indexToExcelCol(index){
+    let n = Number(index);
+    if(!Number.isInteger(n) || n < 0) return 'A';
+    n += 1;
+    let out = '';
+    while(n > 0){
+      const rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
+  }
+  const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
+  const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
+  function buildGoogleSheetQueryUrl({ id, gid='', sheet='', out='json', headers=null, range=DEFAULT_SHEET_FETCH_RANGE }){
+    const params = new URLSearchParams();
+    params.set('tqx', `out:${out}`);
+    if(headers !== null && headers !== undefined) params.set('headers', String(headers));
+    if(range) params.set('range', range);
+    if(gid) params.set('gid', String(gid));
+    else if(sheet) params.set('sheet', String(sheet));
+    return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
+  }
+  function buildGoogleSheetCsvUrl({ id, gid='', sheet='', range=DEFAULT_SHEET_FETCH_RANGE }){
+    if(gid){
+      const params = new URLSearchParams();
+      params.set('format', 'csv');
+      params.set('gid', String(gid));
+      if(range) params.set('range', range);
+      return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
+    }
+    return buildGoogleSheetQueryUrl({ id, sheet, out:'csv', range });
   }
 
   function parseSheetUrl(url){
@@ -3339,7 +3381,7 @@ function escapeHtml(str){
     sheetStatusChip.textContent = 'Cargando sheet...';
     contentStatus.textContent = 'Intentando leer Google Sheet...';
     try {
-      const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheetName)}`;
+      const endpoint = buildGoogleSheetQueryUrl({ id, sheet: sheetName, out: 'json', headers: 0 });
       const text = await fetch(endpoint).then(r => r.text());
       const json = JSON.parse(text.substring(47).slice(0, -2));
       const rows = json.table.rows || [];

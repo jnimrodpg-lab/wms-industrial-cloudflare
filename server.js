@@ -596,6 +596,53 @@ function parseGoogleVizJson(text) {
   return JSON.parse(src.slice(start, end + 1));
 }
 
+function excelColToIndex(col) {
+  const src = String(col || '').trim().toUpperCase();
+  if (!src || !/^[A-Z]+$/.test(src)) return -1;
+  let index = 0;
+  for (let i = 0; i < src.length; i++) {
+    index = (index * 26) + (src.charCodeAt(i) - 64);
+  }
+  return index - 1;
+}
+
+function indexToExcelCol(index) {
+  let n = Number(index);
+  if (!Number.isInteger(n) || n < 0) return 'A';
+  n += 1;
+  let out = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
+const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
+
+function buildGoogleSheetQueryUrl({ id, gid = '', sheet = '', out = 'json', headers = null, range = DEFAULT_SHEET_FETCH_RANGE }) {
+  const params = new URLSearchParams();
+  params.set('tqx', `out:${out}`);
+  if (headers !== null && headers !== undefined) params.set('headers', String(headers));
+  if (range) params.set('range', range);
+  if (gid) params.set('gid', String(gid));
+  else if (sheet) params.set('sheet', String(sheet));
+  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
+}
+
+function buildGoogleSheetCsvUrl({ id, gid = '', sheet = '', range = DEFAULT_SHEET_FETCH_RANGE }) {
+  if (gid) {
+    const params = new URLSearchParams();
+    params.set('format', 'csv');
+    params.set('gid', String(gid));
+    if (range) params.set('range', range);
+    return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
+  }
+  return buildGoogleSheetQueryUrl({ id, sheet, out: 'csv', range });
+}
+
 function requireAuth(req, res, next) {
   if (req.session && req.session.isAuthenticated) return next();
   return res.status(401).json({ ok: false, error: 'No autorizado' });
@@ -1081,8 +1128,8 @@ app.get('/api/sheets/probe', async (req, res) => {
     // --- Intento 1: gviz JSON (respeta celdas combinadas y encabezados reales) ---
     try {
       const jsonUrl = gid
-        ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
-        : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+        ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
+        : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
       const r = await fetchWithTimeout(jsonUrl, 9000);
       if (r.ok) {
         const parsed = parseGoogleVizJson(await r.text());
@@ -1101,8 +1148,8 @@ app.get('/api/sheets/probe', async (req, res) => {
 
     // --- Intento 2: CSV como fallback ---
     const tryUrls = [];
-    if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
-    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
+    if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
+    tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
 
     let rows = [];
     for (const csvUrl of tryUrls) {
@@ -1168,8 +1215,8 @@ app.get('/api/sheets/rows', async (req, res) => {
     // filas 1 con valores repetidos que confunden al parser CSV.
     try {
       const jsonUrl = gid
-        ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
-        : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
+        ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
+        : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
       const r = await fetchWithTimeout(jsonUrl, timeout);
       if (r.ok) {
         const parsed = parseGoogleVizJson(await r.text());
@@ -1199,8 +1246,8 @@ app.get('/api/sheets/rows', async (req, res) => {
     // ── INTENTO 2: CSV via export con gid ──
     // ── INTENTO 3: CSV via gviz tq ──
     const tryUrls = [];
-    if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
-    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
+    if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
+    tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
 
     let rows = [];
     let source = gid ? 'csv-gid' : 'csv-sheet';
