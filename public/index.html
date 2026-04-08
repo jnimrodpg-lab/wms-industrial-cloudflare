@@ -54,13 +54,17 @@
     }
     .app{
       height:100vh;
+      min-height:100vh;
       display:grid;
       grid-template-columns:var(--sidebar-w) var(--search-w) 1fr var(--rack-w);
+      grid-template-rows:minmax(0,1fr);
+      align-items:stretch;
       gap:14px;
       padding:14px;
       transition:grid-template-columns .22s ease;
     }
-    .app.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) var(--search-w) 1fr var(--rack-w)}
+    .app > .panel,.app > .sidebar{height:calc(100vh - 28px);align-self:stretch;min-height:0}
+    .app.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) var(--search-w) 1fr var(--rack-w);grid-template-rows:minmax(0,1fr)}
     .app.sheet-swap-layout{grid-template-columns:var(--sidebar-w) minmax(var(--content-sheet-min),var(--sheet-main-fr)) minmax(320px,var(--sheet-search-fr));grid-template-rows:minmax(0,1fr);align-items:stretch;}
     .app.sheet-swap-layout.sidebar-collapsed{grid-template-columns:var(--sidebar-w-collapsed) minmax(var(--content-sheet-min),var(--sheet-main-fr)) minmax(320px,var(--sheet-search-fr));grid-template-rows:minmax(0,1fr);}
     .app.sheet-swap-layout.sheet-expanded{grid-template-columns:var(--sidebar-w) minmax(980px,var(--sheet-main-fr-expanded)) minmax(300px,var(--sheet-search-fr-expanded));grid-template-rows:minmax(0,1fr);}
@@ -4211,6 +4215,8 @@ function escapeHtml(str){
       appRoot.style.gridTemplateColumns = appRoot.classList.contains('sidebar-collapsed')
         ? 'var(--sidebar-w-collapsed) minmax(0,1fr) minmax(0,1fr)'
         : 'var(--sidebar-w) minmax(0,1fr) minmax(0,1fr)';
+      appRoot.style.gridTemplateRows = 'minmax(0,1fr)';
+      appRoot.style.alignItems = 'stretch';
     }
     detailWrap.innerHTML = `<div class="branches-panel branches-panel-side"><div class="branches-toolbar"><b>Sucursales</b><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll branches-scroll-side" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>`;
     detailStatus.textContent=''; detailChip.textContent='';
@@ -4441,7 +4447,7 @@ function escapeHtml(str){
             </div>
           </section>
         </div>
-        <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar</button></div>
+        <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar</button><div class="tiny muted" style="margin-top:8px">Puedes crear otra empresa desde la pantalla de acceso usando <b>Crear cuenta</b>.</div></div>
       </div>`;
     bindAdminScreenEvents();
   }
