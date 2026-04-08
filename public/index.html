@@ -1296,6 +1296,11 @@ body.theme-light .seg-btn,
                   <span class="search-meta-value store" id="activeStoreLocation">—</span>
                 </div>
               </div>
+              <div class="bsale-stock-strip" id="activeBsaleStockStrip" style="display:none">
+                <div class="bsale-stock-pill"><span class="label">Stock</span><span class="value" id="activeBsaleQty">—</span></div>
+                <div class="bsale-stock-pill"><span class="label">Disponible</span><span class="value" id="activeBsaleAvail">—</span></div>
+                <div class="bsale-stock-pill"><span class="label">Reservado</span><span class="value" id="activeBsaleReserved">—</span></div>
+              </div>
               <div>
                 <div class="muted tiny" style="margin-bottom:8px" id="activeProductMeta">Selecciona un producto para enfocarlo rápido.</div>
                 <div class="variant-groups">
@@ -1448,6 +1453,10 @@ function escapeHtml(str){
   const activeProductMeta = $('#activeProductMeta');
   const activeLocation = $('#activeLocation');
   const activeStoreLocation = $('#activeStoreLocation');
+  const activeBsaleStockStrip = $('#activeBsaleStockStrip');
+  const activeBsaleQty = $('#activeBsaleQty');
+  const activeBsaleAvail = $('#activeBsaleAvail');
+  const activeBsaleReserved = $('#activeBsaleReserved');
   const activeProductImageWrap = $('#activeProductImageWrap');
   const activeProductImage = $('#activeProductImage');
   const activeSizeStrip = $('#activeSizeStrip');
@@ -2607,6 +2616,46 @@ function escapeHtml(str){
     if(activeImageCycleUrls.length > 1) activeImageCycleTimer = setInterval(apply, 1800);
   }
 
+
+  async function refreshBsaleStockForProduct(product){
+    if(!activeBsaleStockStrip) return;
+    const cfg = normalizeBsaleConfig(appState.admin?.bsale);
+    if(!product || !cfg.enabled){
+      activeBsaleStockStrip.style.display = 'none';
+      if(activeBsaleQty) activeBsaleQty.textContent = '—';
+      if(activeBsaleAvail) activeBsaleAvail.textContent = '—';
+      if(activeBsaleReserved) activeBsaleReserved.textContent = '—';
+      return;
+    }
+    const branchIdx = getActiveBranchIndex();
+    const branch = (appState.admin?.branches || [])[branchIdx] || {};
+    const params = new URLSearchParams();
+    params.set('branchId', String(branch.id || ''));
+    if(product.sku) params.set('code', String(product.sku));
+    if(product.barras) params.set('barcode', String(product.barras));
+    if(product.variantId || product.variantid) params.set('variantId', String(product.variantId || product.variantid));
+    try{
+      activeBsaleStockStrip.style.display = '';
+      if(activeBsaleQty) activeBsaleQty.textContent = '...';
+      if(activeBsaleAvail) activeBsaleAvail.textContent = '...';
+      if(activeBsaleReserved) activeBsaleReserved.textContent = '...';
+      const data = await httpJson(`/api/bsale/stock?${params.toString()}`);
+      const stock = data?.stock || null;
+      if(!stock){
+        if(activeBsaleQty) activeBsaleQty.textContent = '0';
+        if(activeBsaleAvail) activeBsaleAvail.textContent = '0';
+        if(activeBsaleReserved) activeBsaleReserved.textContent = '0';
+        return;
+      }
+      if(activeBsaleQty) activeBsaleQty.textContent = String(Number(stock.quantity || 0));
+      if(activeBsaleAvail) activeBsaleAvail.textContent = String(Number(stock.quantityAvailable || 0));
+      if(activeBsaleReserved) activeBsaleReserved.textContent = String(Number(stock.quantityReserved || 0));
+    }catch(err){
+      console.warn('Bsale stock', err);
+      activeBsaleStockStrip.style.display = 'none';
+    }
+  }
+
   function renderActiveVariantStrip(product){
     const groups = buildVariantGroups(product);
     renderVariantStrip(activeSizeStrip, groups.sizes, 'Sin tallas relacionadas', (item) => {
@@ -2637,6 +2686,7 @@ function escapeHtml(str){
       startActiveProductImageCycle(getProductImageUrls(p));
     }
     renderActiveVariantStrip(p);
+    refreshBsaleStockForProduct(p);
     if(document.body.classList.contains('search-card-modal-open')) setTimeout(updateExpandedSideCards, 20);
   }
 
@@ -4210,13 +4260,17 @@ function escapeHtml(str){
     drawZoneEdgeDimensions(layer, zone);
   }
 
+  function defaultBsaleConfig(){ return { enabled:false, country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', officeMappings:{} }; }
+  function normalizeBsaleConfig(cfg){ const src = (cfg && typeof cfg === 'object') ? cfg : {}; return { enabled:!!src.enabled, country:String(src.country || 'PE').toUpperCase(), apiBaseUrl:String(src.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io', accessToken:String(src.accessToken || '').trim(), officeMappings: src.officeMappings && typeof src.officeMappings === 'object' ? { ...src.officeMappings } : {} }; }
+  function normalizeAdminState(admin){ const raw = admin && typeof admin === 'object' ? clone(admin) : {}; raw.bsale = normalizeBsaleConfig(raw.bsale); return raw; }
   function loadAdminState(){
     try{ const raw = localStorage.getItem('wms_admin_cfg_v2'); if(raw) return JSON.parse(raw); }catch{}
     const fallbackColor = '#ffd84d';
-    return { company:'WMS Industrial', logo:'', branches:[{name:'Sucursal principal', type:'tienda', color:fallbackColor, warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}], activeBranch:0 };
+    return { company:'WMS Industrial', logo:'', branches:[{name:'Sucursal principal', type:'tienda', color:fallbackColor, warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}], activeBranch:0, bsale: defaultBsaleConfig() };
   }
   function sanitizedAdminState(){
     const admin = clone(appState.admin || {});
+    admin.bsale = normalizeBsaleConfig(admin.bsale);
     admin.branches = (admin.branches || []).map(b => ({
       ...b,
       sheetPreviewProducts: [],
@@ -4459,6 +4513,15 @@ function escapeHtml(str){
   body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(237,247,242,.9) 24%, rgba(237,247,242,1))}
   .company-insights.compact-clean{display:grid;grid-template-columns:1.25fr .85fr .85fr;gap:14px}.compact-card{min-height:0;padding:16px 18px}.compact-card .company-caption,.compact-card .company-hero-text{display:none}.compact-card .company-chip-row{margin-top:10px}.compact-card .company-mini-grid{margin-top:10px}.company-hero-title{margin-bottom:0}.company-mini-row b{opacity:.92}.branch-body .tiny.muted{font-size:11px;opacity:.78}@media (max-width:1100px){.company-head{grid-template-columns:1fr}.company-insights,.company-insights.compact-clean{grid-template-columns:repeat(6,minmax(0,1fr))}.company-card.hero{grid-column:span 6}.company-card.stats{grid-column:span 3}.company-card{grid-column:span 3;min-height:220px}.branches-scroll-side{height:auto}}
   @media (max-width:760px){.company-insights,.company-insights.compact-clean{grid-template-columns:1fr}.company-card,.company-card.hero,.company-card.stats{grid-column:1/-1}.company-hero-title{font-size:24px}.branches-toolbar{gap:10px;flex-wrap:wrap}.branches-scroll-side{height:auto;min-height:360px}}
+
+  .bsale-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:14px;margin-top:14px}
+  .bsale-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:18px;padding:14px;display:grid;gap:12px;min-height:0}
+  .bsale-card h4{margin:0;font-size:15px}
+  .bsale-inline{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.bsale-inline .grid{flex:1;min-width:150px}
+  .bsale-status{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.bsale-badge{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);font-size:12px;font-weight:700}.bsale-badge.ok{border-color:rgba(91,185,140,.34);background:rgba(91,185,140,.12);color:#dff8eb}.bsale-badge.warn{border-color:rgba(245,166,35,.34);background:rgba(245,166,35,.12);color:#ffe7b0}
+  .bsale-office-map{display:grid;gap:10px;max-height:320px;overflow:auto;padding-right:4px}.bsale-office-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:10px;align-items:center;padding:10px 12px;border-radius:14px;border:1px solid rgba(64,138,113,.16);background:rgba(255,255,255,.02)}.bsale-office-meta{display:grid;gap:4px;min-width:0}.bsale-office-name{font-weight:700}.bsale-office-sub{font-size:12px;color:var(--muted)}
+  .bsale-stock-strip{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.bsale-stock-pill{display:grid;gap:2px;min-width:94px;padding:9px 10px;border-radius:12px;border:1px solid rgba(91,185,140,.18);background:linear-gradient(180deg,rgba(91,185,140,.10),rgba(91,185,140,.03))}.bsale-stock-pill .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.bsale-stock-pill .value{font-weight:800;font-size:16px;color:var(--text)}
+  @media (max-width: 1080px){ .bsale-grid{grid-template-columns:1fr} .bsale-office-row{grid-template-columns:1fr} }
   </style>
         <div class="company-head">
           <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
@@ -4490,6 +4553,30 @@ function escapeHtml(str){
           </section>
         </div>
         <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar</button><div class="tiny muted" style="margin-top:8px">Puedes crear otra empresa desde la pantalla de acceso usando <b>Crear cuenta</b>.</div></div>
+
+        <div class="bsale-grid">
+          <section class="bsale-card">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+              <div><div class="tiny muted">Integración externa</div><h4>Bsale</h4></div>
+              <div class="bsale-status"><span class="bsale-badge ${cfg?.bsale?.enabled ? 'ok' : 'warn'}">${cfg?.bsale?.enabled ? 'Conectado' : 'Pendiente'}</span></div>
+            </div>
+            <div class="bsale-inline">
+              <div class="grid"><label>País</label><select id="bsaleCountryInput"><option value="PE" ${String(cfg?.bsale?.country||'PE')==='PE'?'selected':''}>Perú</option><option value="CL" ${String(cfg?.bsale?.country||'')==='CL'?'selected':''}>Chile</option><option value="MX" ${String(cfg?.bsale?.country||'')==='MX'?'selected':''}>México</option></select></div>
+              <div class="grid"><label>Base API</label><input id="bsaleApiBaseInput" value="${escapeHtml(cfg?.bsale?.apiBaseUrl || 'https://api.bsale.io')}" placeholder="https://api.bsale.io"></div>
+            </div>
+            <div class="grid"><label>Access token</label><input id="bsaleTokenInput" type="password" value="${escapeHtml(cfg?.bsale?.accessToken || '')}" placeholder="Token API de Bsale"></div>
+            <div class="save-strip"><button class="btn secondary" id="bsaleTestBtn">Probar conexión</button><button class="btn primary" id="bsaleSaveBtn">Guardar integración</button></div>
+            <div class="tiny muted">Bsale aportará stock real por sucursal. Tu WMS seguirá manejando layout, racks y ubicaciones físicas.</div>
+          </section>
+          <section class="bsale-card">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+              <div><div class="tiny muted">Mapeo</div><h4>Sucursales ↔ oficinas Bsale</h4></div>
+              <button class="btn secondary" id="bsaleLoadOfficesBtn">Cargar oficinas</button>
+            </div>
+            <div class="bsale-office-map" id="bsaleOfficeMap"><div class="tiny muted">Carga las oficinas de Bsale para enlazar cada sucursal local con su office.</div></div>
+            <div class="save-strip"><button class="btn primary" id="bsaleSaveMapBtn">Guardar mapeo</button></div>
+          </section>
+        </div>
       </div>`;
     bindAdminScreenEvents();
   }
@@ -4504,8 +4591,40 @@ function escapeHtml(str){
     document.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });
     document.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value);
     document.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; renderAdminScreen(); } } );
+    bindBsaleAdminScreen();
     applyBrand();
   }
+
+  function collectBsaleFormState(){
+    return normalizeBsaleConfig({ enabled: !!String($('#bsaleTokenInput')?.value || '').trim(), country: $('#bsaleCountryInput')?.value || 'PE', apiBaseUrl: $('#bsaleApiBaseInput')?.value || 'https://api.bsale.io', accessToken: $('#bsaleTokenInput')?.value || '', officeMappings: appState.admin?.bsale?.officeMappings || {} });
+  }
+  function renderBsaleOfficeMappings(offices=[]){
+    const host = $('#bsaleOfficeMap'); if(!host) return;
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const mappings = normalizeBsaleConfig(appState.admin?.bsale).officeMappings || {};
+    if(!offices.length){ host.innerHTML = '<div class="tiny muted">No hay oficinas cargadas aún. Usa <b>Cargar oficinas</b>.</div>'; return; }
+    host.innerHTML = branches.map((branch, idx) => { const key = String(branch.id || idx); const current = String(mappings[key] || ''); return `<div class="bsale-office-row"><div class="bsale-office-meta"><div class="bsale-office-name">${escapeHtml(branch.name || ('Sucursal ' + (idx+1)))}</div><div class="bsale-office-sub">${escapeHtml(branch.type || 'tienda')} • ${escapeHtml((branch.warehouses||[]).join(', ') || 'Sin almacenes')}</div></div><select data-bsale-map="${key}"><option value="">Sin asignar</option>${offices.map(of => `<option value="${escapeHtml(String(of.id))}" ${String(of.id)===current?'selected':''}>${escapeHtml(of.name || ('Oficina ' + of.id))}</option>`).join('')}</select></div>`; }).join('');
+    host.querySelectorAll('[data-bsale-map]').forEach(sel => sel.onchange = (e) => { if(!appState.admin.bsale) appState.admin.bsale = defaultBsaleConfig(); appState.admin.bsale.officeMappings = { ...(appState.admin.bsale.officeMappings || {}), [String(e.target.dataset.bsaleMap || '')]: String(e.target.value || '') }; saveAdminState(); });
+  }
+  async function loadBsaleOffices(){
+    const cfg = collectBsaleFormState();
+    appState.admin.bsale = cfg; saveAdminState();
+    const data = await httpJson('/api/bsale/offices', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(cfg) });
+    appState.admin.bsale.officeMappings = { ...(data.mappings || appState.admin.bsale.officeMappings || {}) };
+    appState.admin.bsaleOffices = Array.isArray(data.offices) ? data.offices : [];
+    saveAdminState();
+    renderBsaleOfficeMappings(appState.admin.bsaleOffices);
+    showToast(`Oficinas Bsale cargadas: ${(appState.admin.bsaleOffices || []).length}.`, 'success');
+  }
+  function bindBsaleAdminScreen(){
+    const testBtn = $('#bsaleTestBtn'); const saveBtn = $('#bsaleSaveBtn'); const loadBtn = $('#bsaleLoadOfficesBtn'); const saveMapBtn = $('#bsaleSaveMapBtn');
+    renderBsaleOfficeMappings(Array.isArray(appState.admin?.bsaleOffices) ? appState.admin.bsaleOffices : []);
+    if(testBtn) testBtn.onclick = async () => { const data = await httpJson('/api/bsale/test', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(collectBsaleFormState()) }); showToast(`Conexión Bsale OK. Oficinas detectadas: ${Number(data.officeCount || 0)}.`, 'success'); };
+    if(saveBtn) saveBtn.onclick = async () => { appState.admin.bsale = collectBsaleFormState(); saveAdminState(); await httpJson('/api/bsale/config', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(appState.admin.bsale) }); await saveRemoteAppState('integración Bsale'); showToast('Integración Bsale guardada.', 'success'); renderAdminScreen(); };
+    if(loadBtn) loadBtn.onclick = loadBsaleOffices;
+    if(saveMapBtn) saveMapBtn.onclick = async () => { await httpJson('/api/bsale/mappings', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ officeMappings: normalizeBsaleConfig(appState.admin?.bsale).officeMappings || {} }) }); await saveRemoteAppState('mapeo Bsale'); showToast('Mapeo de sucursales Bsale guardado.', 'success'); };
+  }
+
   async function httpJson(url, opts={}){ const finalOpts = { credentials:'include', ...opts }; if(opts.headers) finalOpts.headers = opts.headers; const res=await fetch(url, finalOpts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
 
   function coerceRemoteModels(models){
@@ -4560,7 +4679,7 @@ function escapeHtml(str){
   }
   function applyRemoteAppState(state){
     if(!state || typeof state !== 'object') return;
-    if(state.admin && typeof state.admin === 'object') appState.admin = state.admin;
+    if(state.admin && typeof state.admin === 'object') appState.admin = normalizeAdminState(state.admin);
     const models = coerceRemoteModels(state.models);
     if(models) appState.models = models;
     const branchLayouts = normalizeRemoteBranchLayouts(state.branchLayouts);

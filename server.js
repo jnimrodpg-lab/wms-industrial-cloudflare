@@ -207,6 +207,31 @@ function initDb() {
       FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE
     );
 
+
+    CREATE TABLE IF NOT EXISTS bsale_integrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL UNIQUE,
+      country TEXT NOT NULL DEFAULT 'PE',
+      api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io',
+      access_token TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      last_sync_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS bsale_office_map (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL,
+      branch_id INTEGER NOT NULL,
+      bsale_office_id TEXT,
+      bsale_office_name TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(company_id, branch_id),
+      FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE,
+      FOREIGN KEY(branch_id) REFERENCES branches(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS system_meta (
       key TEXT PRIMARY KEY,
       value TEXT,
@@ -236,6 +261,10 @@ function initDb() {
   const adminCols = db.prepare("PRAGMA table_info(admin_config)").all().map(r=>r.name);
   if (!adminCols.includes('company_id')) db.exec("ALTER TABLE admin_config ADD COLUMN company_id INTEGER");
   const appCols = db.prepare("PRAGMA table_info(app_state_blobs)").all().map(r=>r.name);
+  const bsaleCols = db.prepare("PRAGMA table_info(bsale_integrations)").all().map(r=>r.name);
+  if (!bsaleCols.includes('company_id')) db.exec("CREATE TABLE IF NOT EXISTS bsale_integrations (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL UNIQUE, country TEXT NOT NULL DEFAULT 'PE', api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io', access_token TEXT, enabled INTEGER NOT NULL DEFAULT 0, last_sync_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  const bsaleMapCols = db.prepare("PRAGMA table_info(bsale_office_map)").all().map(r=>r.name);
+  if (!bsaleMapCols.includes('branch_id')) db.exec("CREATE TABLE IF NOT EXISTS bsale_office_map (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, branch_id INTEGER NOT NULL, bsale_office_id TEXT, bsale_office_name TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(company_id, branch_id))");
   if (!appCols.includes('company_id')) {
     db.exec("ALTER TABLE app_state_blobs RENAME TO app_state_blobs_legacy");
     db.exec(`CREATE TABLE IF NOT EXISTS app_state_blobs (
@@ -657,6 +686,104 @@ function getOwnedBranch(req, branchId) {
   return db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ? AND active = 1').get(branchId, getSessionCompanyId(req));
 }
 
+function getBsaleConfig(companyId) {
+  const row = db.prepare('SELECT company_id, country, api_base_url, access_token, enabled, last_sync_at, updated_at FROM bsale_integrations WHERE company_id = ?').get(companyId);
+  return row ? {
+    company_id: Number(row.company_id),
+    country: String(row.country || 'PE').toUpperCase(),
+    apiBaseUrl: String(row.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+    accessToken: String(row.access_token || '').trim(),
+    enabled: !!Number(row.enabled || 0),
+    lastSyncAt: row.last_sync_at || null,
+    updatedAt: row.updated_at || null,
+  } : { company_id: Number(companyId || 0), country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', enabled:false, lastSyncAt:null, updatedAt:null };
+}
+
+function saveBsaleConfig(companyId, cfg = {}) {
+  const clean = {
+    country: String(cfg.country || 'PE').toUpperCase(),
+    apiBaseUrl: String(cfg.apiBaseUrl || cfg.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+    accessToken: String(cfg.accessToken || cfg.access_token || '').trim(),
+    enabled: cfg.enabled ? 1 : 0,
+  };
+  db.prepare(`
+    INSERT INTO bsale_integrations (company_id, country, api_base_url, access_token, enabled, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(company_id) DO UPDATE SET
+      country = excluded.country,
+      api_base_url = excluded.api_base_url,
+      access_token = excluded.access_token,
+      enabled = excluded.enabled,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(companyId, clean.country, clean.apiBaseUrl, clean.accessToken, clean.enabled);
+  return getBsaleConfig(companyId);
+}
+
+function getBsaleOfficeMappings(companyId) {
+  const rows = db.prepare('SELECT branch_id, bsale_office_id, bsale_office_name FROM bsale_office_map WHERE company_id = ?').all(companyId);
+  const map = {};
+  rows.forEach(row => {
+    map[String(row.branch_id)] = row.bsale_office_id ? String(row.bsale_office_id) : '';
+  });
+  return map;
+}
+
+function saveBsaleOfficeMappings(companyId, officeMappings = {}) {
+  const branches = db.prepare('SELECT id FROM branches WHERE company_id = ? AND active = 1').all(companyId);
+  const stmt = db.prepare(`
+    INSERT INTO bsale_office_map (company_id, branch_id, bsale_office_id, bsale_office_name, updated_at)
+    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(company_id, branch_id) DO UPDATE SET
+      bsale_office_id = excluded.bsale_office_id,
+      bsale_office_name = excluded.bsale_office_name,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+  branches.forEach(branch => {
+    const key = String(branch.id);
+    const officeId = officeMappings && Object.prototype.hasOwnProperty.call(officeMappings, key) ? String(officeMappings[key] || '') : '';
+    stmt.run(companyId, branch.id, officeId, null);
+  });
+  return getBsaleOfficeMappings(companyId);
+}
+
+async function bsaleRequest(config, path, params = {}) {
+  const baseUrl = String(config?.apiBaseUrl || 'https://api.bsale.io').replace(/\/$/, '');
+  const url = new URL(baseUrl + path);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') url.searchParams.set(key, String(value));
+  });
+  const res = await fetch(url.toString(), {
+    headers: {
+      'access_token': String(config?.accessToken || ''),
+      'Content-Type': 'application/json'
+    }
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!res.ok) {
+    const detail = data?.error || data?.message || data?.raw || `Bsale ${res.status}`;
+    throw new Error(typeof detail === 'string' ? detail : `Bsale ${res.status}`);
+  }
+  return data;
+}
+
+async function fetchBsaleOffices(config) {
+  const data = await bsaleRequest(config, '/v1/offices.json', { limit: 50, state: 0 });
+  return Array.isArray(data?.items) ? data.items.map(item => ({ id: item.id, name: item.name || `Oficina ${item.id}`, address: item.address || '', city: item.city || '' })) : [];
+}
+
+async function fetchBsaleStock(config, { officeId, variantId, code, barcode } = {}) {
+  const params = { officeid: officeId || undefined, expand: '[variant,office]' };
+  if (variantId) params.variantid = variantId;
+  else if (code) params.code = code;
+  else if (barcode) params.barcode = barcode;
+  else throw new Error('Envía un identificador de producto para consultar stock.');
+  const data = await bsaleRequest(config, '/v1/stocks.json', params);
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items[0] || null;
+}
+
 function cleanupDuplicateBranches() {
   const rows = db.prepare('SELECT id, name, company_id FROM branches WHERE active = 1 ORDER BY company_id ASC, id ASC').all();
   const seen = new Set();
@@ -870,6 +997,75 @@ app.post('/api/logout', (req, res) => {
     res.clearCookie('wms.sid', { path: '/', sameSite: isProduction ? 'none' : 'lax', secure: isProduction });
     res.json({ ok: true });
   });
+});
+
+
+app.get('/api/bsale/config', requireAdmin, (req, res) => {
+  const companyId = getSessionCompanyId(req);
+  const config = getBsaleConfig(companyId);
+  res.json({ ok:true, config, mappings: getBsaleOfficeMappings(companyId) });
+});
+
+app.post('/api/bsale/config', requireAdmin, (req, res) => {
+  const companyId = getSessionCompanyId(req);
+  const config = saveBsaleConfig(companyId, req.body || {});
+  res.json({ ok:true, config });
+});
+
+app.post('/api/bsale/test', requireAdmin, async (req, res) => {
+  try {
+    const draft = {
+      country: String(req.body?.country || 'PE').toUpperCase(),
+      apiBaseUrl: String(req.body?.apiBaseUrl || req.body?.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+      accessToken: String(req.body?.accessToken || req.body?.access_token || '').trim(),
+      enabled: true,
+    };
+    if (!draft.accessToken) return res.status(400).json({ ok:false, error:'Ingresa el token de Bsale.' });
+    const offices = await fetchBsaleOffices(draft);
+    res.json({ ok:true, officeCount: offices.length, offices: offices.slice(0, 10) });
+  } catch (err) {
+    res.status(400).json({ ok:false, error: err.message || 'No se pudo conectar con Bsale.' });
+  }
+});
+
+app.post('/api/bsale/offices', requireAdmin, async (req, res) => {
+  try {
+    const companyId = getSessionCompanyId(req);
+    const draft = {
+      country: String(req.body?.country || getBsaleConfig(companyId).country || 'PE').toUpperCase(),
+      apiBaseUrl: String(req.body?.apiBaseUrl || req.body?.api_base_url || getBsaleConfig(companyId).apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+      accessToken: String(req.body?.accessToken || req.body?.access_token || getBsaleConfig(companyId).accessToken || '').trim(),
+      enabled: true,
+    };
+    if (!draft.accessToken) return res.status(400).json({ ok:false, error:'Ingresa el token de Bsale.' });
+    const offices = await fetchBsaleOffices(draft);
+    res.json({ ok:true, offices, mappings: getBsaleOfficeMappings(companyId) });
+  } catch (err) {
+    res.status(400).json({ ok:false, error: err.message || 'No se pudieron cargar las oficinas de Bsale.' });
+  }
+});
+
+app.post('/api/bsale/mappings', requireAdmin, (req, res) => {
+  const companyId = getSessionCompanyId(req);
+  const mappings = req.body?.officeMappings && typeof req.body.officeMappings === 'object' ? req.body.officeMappings : {};
+  res.json({ ok:true, mappings: saveBsaleOfficeMappings(companyId, mappings) });
+});
+
+app.get('/api/bsale/stock', requireAuth, async (req, res) => {
+  try {
+    const companyId = getSessionCompanyId(req);
+    const config = getBsaleConfig(companyId);
+    if (!config.enabled || !config.accessToken) return res.json({ ok:true, stock:null, disabled:true });
+    const branchId = Number(req.query.branchId || 0);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.' });
+    const officeId = getBsaleOfficeMappings(companyId)[String(branch.id)] || '';
+    if (!officeId) return res.json({ ok:true, stock:null, unmapped:true });
+    const stock = await fetchBsaleStock(config, { officeId, variantId: req.query.variantId || req.query.variantid || '', code: req.query.code || '', barcode: req.query.barcode || '' });
+    res.json({ ok:true, stock, officeId });
+  } catch (err) {
+    res.status(400).json({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.' });
+  }
 });
 
 app.get('/api/branches', requireAuth, (req, res) => {

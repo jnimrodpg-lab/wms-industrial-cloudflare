@@ -128,6 +128,87 @@ export async function onRequest(context) {
       return withJson({ ok: true, build: BUILD_MARK }, 200, [clearSessionCookie()]);
     }
 
+    if (path === '/bsale/config' && request.method === 'GET') {
+      const session = await requireAdmin(request, env.DB);
+      if (session.error) return session.error;
+      const config = await getBsaleConfig(env.DB, session.company_id);
+      return withJson({ ok:true, config, mappings: await getBsaleOfficeMappings(env.DB, session.company_id), build: BUILD_MARK });
+    }
+
+    if (path === '/bsale/config' && request.method === 'POST') {
+      const session = await requireAdmin(request, env.DB);
+      if (session.error) return session.error;
+      const body = await readJson(request);
+      const config = await saveBsaleConfig(env.DB, session.company_id, body || {});
+      return withJson({ ok:true, config, build: BUILD_MARK });
+    }
+
+    if (path === '/bsale/test' && request.method === 'POST') {
+      const session = await requireAdmin(request, env.DB);
+      if (session.error) return session.error;
+      try {
+        const body = await readJson(request);
+        const draft = {
+          country: String(body.country || 'PE').toUpperCase(),
+          apiBaseUrl: String(body.apiBaseUrl || body.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+          accessToken: String(body.accessToken || body.access_token || '').trim(),
+          enabled: true,
+        };
+        if (!draft.accessToken) return withJson({ ok:false, error:'Ingresa el token de Bsale.', build: BUILD_MARK }, 400);
+        const offices = await fetchBsaleOffices(draft);
+        return withJson({ ok:true, officeCount: offices.length, offices: offices.slice(0,10), build: BUILD_MARK });
+      } catch (err) {
+        return withJson({ ok:false, error: err.message || 'No se pudo conectar con Bsale.', build: BUILD_MARK }, 400);
+      }
+    }
+
+    if (path === '/bsale/offices' && request.method === 'POST') {
+      const session = await requireAdmin(request, env.DB);
+      if (session.error) return session.error;
+      try {
+        const body = await readJson(request);
+        const current = await getBsaleConfig(env.DB, session.company_id);
+        const draft = {
+          country: String(body.country || current.country || 'PE').toUpperCase(),
+          apiBaseUrl: String(body.apiBaseUrl || body.api_base_url || current.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+          accessToken: String(body.accessToken || body.access_token || current.accessToken || '').trim(),
+          enabled: true,
+        };
+        if (!draft.accessToken) return withJson({ ok:false, error:'Ingresa el token de Bsale.', build: BUILD_MARK }, 400);
+        const offices = await fetchBsaleOffices(draft);
+        return withJson({ ok:true, offices, mappings: await getBsaleOfficeMappings(env.DB, session.company_id), build: BUILD_MARK });
+      } catch (err) {
+        return withJson({ ok:false, error: err.message || 'No se pudieron cargar las oficinas de Bsale.', build: BUILD_MARK }, 400);
+      }
+    }
+
+    if (path === '/bsale/mappings' && request.method === 'POST') {
+      const session = await requireAdmin(request, env.DB);
+      if (session.error) return session.error;
+      const body = await readJson(request);
+      const mappings = body.officeMappings && typeof body.officeMappings === 'object' ? body.officeMappings : {};
+      return withJson({ ok:true, mappings: await saveBsaleOfficeMappings(env.DB, session.company_id, mappings), build: BUILD_MARK });
+    }
+
+    if (path === '/bsale/stock' && request.method === 'GET') {
+      const session = await requireAuth(request, env.DB);
+      if (session.error) return session.error;
+      try {
+        const config = await getBsaleConfig(env.DB, session.company_id);
+        if (!config.enabled || !config.accessToken) return withJson({ ok:true, stock:null, disabled:true, build: BUILD_MARK });
+        const branchId = Number(url.searchParams.get('branchId') || 0);
+        const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
+        if (!branch) return withJson({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.', build: BUILD_MARK }, 404);
+        const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
+        const officeId = mappings[String(branch.id)] || '';
+        if (!officeId) return withJson({ ok:true, stock:null, unmapped:true, build: BUILD_MARK });
+        const stock = await fetchBsaleStock(config, { officeId, variantId: url.searchParams.get('variantId') || url.searchParams.get('variantid') || '', code: url.searchParams.get('code') || '', barcode: url.searchParams.get('barcode') || '' });
+        return withJson({ ok:true, stock, officeId, build: BUILD_MARK });
+      } catch (err) {
+        return withJson({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.', build: BUILD_MARK }, 400);
+      }
+    }
+
     if (path === '/app-state' && request.method === 'GET') {
       const session = await getSession(request, env.DB, true);
       const companyId = session?.company_id || 1;
@@ -704,6 +785,27 @@ async function ensureSchema(db, env) {
       rack_models_json TEXT,
       branch_layouts_json TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS bsale_integrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL UNIQUE,
+      country TEXT NOT NULL DEFAULT 'PE',
+      api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io',
+      access_token TEXT,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      last_sync_at TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+
+    db.prepare(`CREATE TABLE IF NOT EXISTS bsale_office_map (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL,
+      branch_id INTEGER NOT NULL,
+      bsale_office_id TEXT,
+      bsale_office_name TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(company_id, branch_id)
     )`),
 
     db.prepare(`CREATE TABLE IF NOT EXISTS system_meta (
