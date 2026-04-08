@@ -1127,6 +1127,66 @@ async function getBranchById(db, id) {
   return normalizeBranch(row);
 }
 
+async function getBsaleConfig(db, companyId) {
+  const row = await first(db.prepare('SELECT company_id, country, api_base_url, access_token, enabled, last_sync_at, updated_at FROM bsale_integrations WHERE company_id = ?').bind(companyId));
+  return row ? {
+    company_id: Number(row.company_id),
+    country: String(row.country || 'PE').toUpperCase(),
+    apiBaseUrl: String(row.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+    accessToken: String(row.access_token || '').trim(),
+    enabled: !!Number(row.enabled || 0),
+    lastSyncAt: row.last_sync_at || null,
+    updatedAt: row.updated_at || null,
+  } : { company_id: Number(companyId || 0), country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', enabled:false, lastSyncAt:null, updatedAt:null };
+}
+
+async function saveBsaleConfig(db, companyId, cfg = {}) {
+  const clean = {
+    country: String(cfg.country || 'PE').toUpperCase(),
+    apiBaseUrl: String(cfg.apiBaseUrl || cfg.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
+    accessToken: String(cfg.accessToken || cfg.access_token || '').trim(),
+    enabled: cfg.enabled ? 1 : 0,
+  };
+  await db.prepare(`
+    INSERT INTO bsale_integrations (company_id, country, api_base_url, access_token, enabled, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(company_id) DO UPDATE SET
+      country = excluded.country,
+      api_base_url = excluded.api_base_url,
+      access_token = excluded.access_token,
+      enabled = excluded.enabled,
+      updated_at = CURRENT_TIMESTAMP
+  `).bind(companyId, clean.country, clean.apiBaseUrl, clean.accessToken, clean.enabled).run();
+  return await getBsaleConfig(db, companyId);
+}
+
+async function getBsaleOfficeMappings(db, companyId) {
+  const rows = await all(db.prepare('SELECT branch_id, bsale_office_id, bsale_office_name FROM bsale_office_map WHERE company_id = ?').bind(companyId));
+  const map = {};
+  rows.forEach(row => {
+    map[String(row.branch_id)] = row.bsale_office_id ? String(row.bsale_office_id) : '';
+  });
+  return map;
+}
+
+async function saveBsaleOfficeMappings(db, companyId, officeMappings = {}) {
+  const branches = await all(db.prepare('SELECT id FROM branches WHERE company_id = ? AND active = 1').bind(companyId));
+  const mappings = officeMappings && typeof officeMappings === 'object' ? officeMappings : {};
+  for (const branch of branches) {
+    const key = String(branch.id);
+    const officeId = Object.prototype.hasOwnProperty.call(mappings, key) ? String(mappings[key] || '') : '';
+    await db.prepare(`
+      INSERT INTO bsale_office_map (company_id, branch_id, bsale_office_id, bsale_office_name, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(company_id, branch_id) DO UPDATE SET
+        bsale_office_id = excluded.bsale_office_id,
+        bsale_office_name = excluded.bsale_office_name,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(companyId, branch.id, officeId, null).run();
+  }
+  return await getBsaleOfficeMappings(db, companyId);
+}
+
 
 async function bsaleRequest(config, path, params = {}) {
   const baseUrl = String(config?.apiBaseUrl || 'https://api.bsale.io').replace(/\/$/, '');

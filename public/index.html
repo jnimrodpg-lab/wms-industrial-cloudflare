@@ -4863,35 +4863,64 @@ function escapeHtml(str){
     host.innerHTML = branches.map((branch, idx) => { const key = String(branch.id || idx); const current = String(mappings[key] || ''); return `<div class="bsale-office-row"><div class="bsale-office-meta"><div class="bsale-office-name">${escapeHtml(branch.name || ('Sucursal ' + (idx+1)))}</div><div class="bsale-office-sub">${escapeHtml(branch.type || 'tienda')} • ${escapeHtml((branch.warehouses||[]).join(', ') || 'Sin almacenes')}</div></div><select data-bsale-map="${key}"><option value="">Sin asignar</option>${offices.map(of => `<option value="${escapeHtml(String(of.id))}" ${String(of.id)===current?'selected':''}>${escapeHtml(of.name || ('Oficina ' + of.id))}</option>`).join('')}</select></div>`; }).join('');
     host.querySelectorAll('[data-bsale-map]').forEach(sel => sel.onchange = (e) => { if(!appState.admin.bsale) appState.admin.bsale = defaultBsaleConfig(); appState.admin.bsale.officeMappings = { ...(appState.admin.bsale.officeMappings || {}), [String(e.target.dataset.bsaleMap || '')]: String(e.target.value || '') }; saveAdminState(); });
   }
-  async function saveBsaleConfig(){
+  const getBsaleConfig = async () => {
+    try {
+      const data = await httpJson('/api/bsale/config');
+      const remote = normalizeBsaleConfig(data?.config || {});
+      if(!appState.admin.bsale) appState.admin.bsale = defaultBsaleConfig();
+      appState.admin.bsale = { ...appState.admin.bsale, ...remote, officeMappings: { ...(remote.officeMappings || {}), ...(data?.mappings || {}) } };
+      if (data?.mappings && typeof data.mappings === 'object') appState.admin.bsale.officeMappings = { ...data.mappings };
+      saveAdminState();
+      return appState.admin.bsale;
+    } catch (err) {
+      return normalizeBsaleConfig(appState.admin?.bsale || {});
+    }
+  };
+  const saveBsaleConfig = async () => {
     appState.admin.bsale = collectBsaleFormState();
     saveAdminState();
-    await httpJson('/api/bsale/config', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(appState.admin.bsale) });
+    const data = await httpJson('/api/bsale/config', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(appState.admin.bsale) });
+    appState.admin.bsale = { ...appState.admin.bsale, ...normalizeBsaleConfig(data?.config || appState.admin.bsale) };
+    saveAdminState();
     await saveRemoteAppState('integración Bsale');
     return appState.admin.bsale;
-  }
-  async function testBsaleConfig(){
+  };
+  const testBsaleConfig = async () => {
     return await httpJson('/api/bsale/test', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(collectBsaleFormState()) });
-  }
-  async function loadBsaleOffices(){
+  };
+  const loadBsaleOffices = async () => {
     const cfg = collectBsaleFormState();
     if(!String(cfg.accessToken || '').trim()) throw new Error('Ingresa el token de Bsale antes de cargar oficinas.');
     appState.admin.bsale = cfg; saveAdminState();
     const data = await httpJson('/api/bsale/offices', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(cfg) });
+    if(!appState.admin.bsale) appState.admin.bsale = defaultBsaleConfig();
     appState.admin.bsale.officeMappings = { ...(data.mappings || appState.admin.bsale.officeMappings || {}) };
     appState.admin.bsaleOffices = Array.isArray(data.offices) ? data.offices : [];
     saveAdminState();
     renderBsaleOfficeMappings(appState.admin.bsaleOffices);
     showToast(`Oficinas Bsale cargadas: ${(appState.admin.bsaleOffices || []).length}.`, 'success');
     return data;
-  }
+  };
+  const saveBsaleOfficeMappings = async () => {
+    const data = await httpJson('/api/bsale/mappings', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ officeMappings: normalizeBsaleConfig(appState.admin?.bsale).officeMappings || {} }) });
+    if(!appState.admin.bsale) appState.admin.bsale = defaultBsaleConfig();
+    if (data?.mappings && typeof data.mappings === 'object') appState.admin.bsale.officeMappings = { ...data.mappings };
+    saveAdminState();
+    await saveRemoteAppState('mapeo Bsale');
+    return data;
+  };
+  window.getBsaleConfig = getBsaleConfig;
+  window.saveBsaleConfig = saveBsaleConfig;
+  window.testBsaleConfig = testBsaleConfig;
+  window.loadBsaleOffices = loadBsaleOffices;
+  window.saveBsaleOfficeMappings = saveBsaleOfficeMappings;
   function bindBsaleAdminScreen(){
     const testBtn = $('#bsaleTestBtn'); const saveBtn = $('#bsaleSaveBtn'); const loadBtn = $('#bsaleLoadOfficesBtn'); const saveMapBtn = $('#bsaleSaveMapBtn');
     renderBsaleOfficeMappings(Array.isArray(appState.admin?.bsaleOffices) ? appState.admin.bsaleOffices : []);
-    if(testBtn) testBtn.onclick = async () => { const data = await testBsaleConfig(); showToast(`Conexión Bsale OK. Oficinas detectadas: ${Number(data.officeCount || 0)}.`, 'success'); };
-    if(saveBtn) saveBtn.onclick = async () => { await saveBsaleConfig(); showToast('Integración Bsale guardada.', 'success'); renderAdminScreen(); };
-    if(loadBtn) loadBtn.onclick = loadBsaleOffices;
-    if(saveMapBtn) saveMapBtn.onclick = async () => { await httpJson('/api/bsale/mappings', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ officeMappings: normalizeBsaleConfig(appState.admin?.bsale).officeMappings || {} }) }); await saveRemoteAppState('mapeo Bsale'); showToast('Mapeo de sucursales Bsale guardado.', 'success'); };
+    if(testBtn) testBtn.onclick = async () => { const data = await window.testBsaleConfig(); showToast(`Conexión Bsale OK. Oficinas detectadas: ${Number(data.officeCount || 0)}.`, 'success'); };
+    if(saveBtn) saveBtn.onclick = async () => { await window.saveBsaleConfig(); showToast('Integración Bsale guardada.', 'success'); renderAdminScreen(); };
+    if(loadBtn) loadBtn.onclick = () => window.loadBsaleOffices();
+    if(saveMapBtn) saveMapBtn.onclick = async () => { await window.saveBsaleOfficeMappings(); showToast('Mapeo de sucursales Bsale guardado.', 'success'); };
   }
 
   async function httpJson(url, opts={}){ const finalOpts = { credentials:'include', ...opts }; if(opts.headers) finalOpts.headers = opts.headers; const res=await fetch(url, finalOpts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
