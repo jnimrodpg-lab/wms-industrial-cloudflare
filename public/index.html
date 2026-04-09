@@ -4422,9 +4422,21 @@ function escapeHtml(str){
       const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
       const statusClass = variants >= 8 ? 'ok' : variants >= 3 ? 'mid' : 'low';
       const statusText = variants >= 8 ? 'Completo' : variants >= 3 ? 'Medio' : 'Básico';
-      return `<button type="button" class="stock-list-item" data-stock-family="${escapeHtml(family.key)}"><div class="stock-list-item-main"><div class="stock-list-thumb">${thumb}</div><div class="stock-list-copy"><b>${escapeHtml(family.nombre)}</b><span>SKU ${skuBase}</span></div></div><div class="stock-list-metrics"><span>${variants} var.</span><span>${colors.length || 0} col.</span><span>${sizes.length || 0} tallas</span></div><div class="stock-list-state"><span class="stock-status ${statusClass}">${statusText}</span></div></button>`;
+      return `<button type="button" class="stock-line-item" data-stock-family="${escapeHtml(family.key)}">
+        <div class="stock-line-product">
+          <div class="stock-line-thumb">${thumb}</div>
+          <div class="stock-line-copy">
+            <b>${escapeHtml(family.nombre)}</b>
+            <span>SKU ${skuBase}</span>
+          </div>
+        </div>
+        <div class="stock-line-stat">${variants}</div>
+        <div class="stock-line-stat">${colors.length || 0}</div>
+        <div class="stock-line-stat">${sizes.length || 0}</div>
+        <div class="stock-line-state"><span class="stock-status ${statusClass}">${statusText}</span></div>
+      </button>`;
     }).join('');
-    host.innerHTML = `<div class="stock-list-scroll stock-list-scroll-full"><div class="stock-list-head"><span>Producto</span><span>Resumen</span><span>Estado</span></div><div class="stock-list-body">${rows}</div></div>`;
+    host.innerHTML = `<div class="stock-lines-scroll stock-lines-scroll-full"><div class="stock-lines-head"><span>Producto</span><span>Variantes</span><span>Colores</span><span>Tallas</span><span>Estado</span></div><div class="stock-lines-body">${rows}</div></div>`;
   }
   function renderStockDetailPanel(family, data, loading=false){
     const title = document.getElementById('detailTitle');
@@ -4466,9 +4478,9 @@ function escapeHtml(str){
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
     contentTitle.textContent = 'Stock por producto';
-    contentSubtitle.textContent = 'Lista compacta, ordenada y scroleable. Cada producto muestra una vista rápida y separadores claros.';
+    contentSubtitle.textContent = 'Lista compacta por producto, con imagen pequeña y lectura tipo inventario.';
     const families = getStockScreenFamilies();
-    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast stock-screen-full"><div class="stock-toolbar stock-toolbar-products stock-toolbar-option1 stock-toolbar-compact"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="stock-toolbar-note">Solo productos agrupados por nombre. Haz la lista compacta y fácil de leer.</div></div><div class="stock-table-wrap stock-table-wrap-list stock-table-wrap-full" id="stockTableWrap"></div></div>`;
+    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast stock-screen-full"><div class="stock-toolbar stock-toolbar-products stock-toolbar-option1 stock-toolbar-compact"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="stock-toolbar-note">Solo productos agrupados por nombre. Imagen pequeña, nombre primero y métricas en fila.</div></div><div class="stock-table-wrap stock-table-wrap-list stock-table-wrap-full" id="stockTableWrap"></div></div>`;
     detailPanel.style.display = 'none';
     renderStockTable();
     const branchSel = document.getElementById('stockBranchSelect');
@@ -4809,22 +4821,24 @@ function escapeHtml(str){
   .stock-row-copy{display:grid;gap:3px;min-width:0}
   .stock-row-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-row-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stock-toolbar-option1{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}.
+.stock-toolbar-option1{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(220px,1fr)}
   .stock-toolbar-compact{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(220px,1fr)}
-  .stock-list-head{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(180px,.8fr) 120px;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(6,20,23,.92);position:sticky;top:0;z-index:2;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  .stock-list-body{display:grid}
-  .stock-list-item{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(180px,.8fr) 120px;gap:16px;align-items:center;padding:12px 18px;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background .16s ease, transform .16s ease}
-  .stock-list-item:hover{background:rgba(255,255,255,.03)}
-  .stock-list-item-main{display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;align-items:center;min-width:0}
-  .stock-list-thumb{width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:800;flex:0 0 auto}
-  .stock-list-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .stock-list-copy{display:grid;gap:2px;min-width:0}
-  .stock-list-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-list-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-list-metrics{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  .stock-list-metrics span{display:inline-flex;align-items:center;justify-content:center;min-width:70px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);font-size:12px;font-weight:700}
-  .stock-list-state{display:flex;justify-content:flex-end}
-  @media (max-width: 920px){.stock-list-head{display:none}.stock-list-item{grid-template-columns:1fr;gap:10px}.stock-list-state{justify-content:flex-start}}
+  .stock-lines-scroll{height:100%;min-height:0;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(7,20,24,.58)}
+  .stock-lines-scroll-full{height:100%}
+  .stock-lines-head{display:grid;grid-template-columns:minmax(360px,1.8fr) 110px 110px 110px 130px;gap:0;align-items:center;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);position:sticky;top:0;z-index:2;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .stock-lines-body{display:grid}
+  .stock-line-item{display:grid;grid-template-columns:minmax(360px,1.8fr) 110px 110px 110px 130px;gap:0;align-items:center;padding:0 18px;min-height:72px;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background .16s ease}
+  .stock-line-item:hover{background:rgba(255,255,255,.03)}
+  .stock-line-product{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;min-width:0;padding:10px 0}
+  .stock-line-thumb{width:44px;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:800;font-size:12px}
+  .stock-line-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-line-copy{display:grid;gap:2px;min-width:0}
+  .stock-line-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-line-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-line-stat{font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:flex-start}
+  .stock-line-state{display:flex;align-items:center;justify-content:flex-start}
+  @media (max-width: 1024px){.stock-lines-head,.stock-line-item{grid-template-columns:minmax(260px,1.4fr) 88px 88px 88px 110px}}
+  @media (max-width: 860px){.stock-lines-head{display:none}.stock-line-item{grid-template-columns:1fr;gap:6px;padding:12px 16px}.stock-line-product{padding:0}.stock-line-stat,.stock-line-state{padding-left:56px}}
   .stock-toolbar-note{align-self:end;padding:12px 14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03);color:var(--muted);font-size:12px;line-height:1.35}
   .stock-table-option1 thead th:nth-child(1){min-width:360px}
   .stock-table-option1 thead th:nth-child(2){min-width:140px}
