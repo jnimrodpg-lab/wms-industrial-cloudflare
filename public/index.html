@@ -4449,13 +4449,13 @@ function escapeHtml(str){
           </table>
         </div>
       </div>`;
-    const rows = host.querySelectorAll('[data-stock-family]');
-    rows.forEach((row) => {
+    const familyRows = host.querySelectorAll('[data-stock-family]');
+    familyRows.forEach((row) => {
       const open = async () => {
         const key = row.getAttribute('data-stock-family');
         const family = families.find((item) => String(item.key) === String(key));
         if(!family) return;
-        rows.forEach((r) => r.classList.remove('is-active'));
+        familyRows.forEach((r) => r.classList.remove('is-active'));
         row.classList.add('is-active');
         await openStockFamilyCard(family);
       };
