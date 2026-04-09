@@ -2454,6 +2454,7 @@ function escapeHtml(str){
       product.stock,
       product.quantity,
       product.quantityAvailable,
+      product.quantityReserved,
       product.cantidad,
       product.cant,
       product.existencias,
@@ -4428,13 +4429,14 @@ function escapeHtml(str){
       host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    const rowsHtml = families.map((family, idx) => {
+    const rows = families.map((family, idx) => {
       const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
       const variants = Array.isArray(family.items) ? family.items.length : 0;
       const colors = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
       const sizes = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
       const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
-      const stockTotal = Math.round((family.items || []).reduce((acc, item) => acc + getProductStockValue(item), 0));
+      const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
+      const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
       return `<tr class="stock-table-row" data-stock-family="${escapeHtml(family.key || String(idx))}" tabindex="0" role="button" aria-label="Ver detalle de ${escapeHtml(family.nombre)}">
         <td class="stock-col-product">
           <div class="stock-copy stock-copy-noimage">
@@ -4445,13 +4447,13 @@ function escapeHtml(str){
         <td class="stock-col-num">${variants}</td>
         <td class="stock-col-num">${colors.length || 0}</td>
         <td class="stock-col-num">${sizes.length || 0}</td>
-        <td class="stock-col-stock">${stockTotal}</td>
+        <td class="stock-col-state"><span class="stock-status ${coverageClass}">${coverage}</span></td>
       </tr>`;
     }).join('');
     host.innerHTML = `
       <div class="stock-list-shell">
         <div class="stock-list-scroll">
-          <table class="stock-list-table stock-list-table-clean">
+          <table class="stock-list-table">
             <thead>
               <tr>
                 <th>Producto</th>
@@ -4459,31 +4461,28 @@ function escapeHtml(str){
                 <th>Variantes</th>
                 <th>Colores</th>
                 <th>Tallas</th>
-                <th>Stock</th>
+                <th>Estado</th>
               </tr>
             </thead>
-            <tbody>${rowsHtml}</tbody>
+            <tbody>${rows}</tbody>
           </table>
         </div>
       </div>`;
-    const openFamilyByKey = async (key, row) => {
-      const family = families.find((item) => String(item.key) === String(key));
-      if(!family) return;
-      host.querySelectorAll('[data-stock-family]').forEach((r) => r.classList.remove('is-active'));
-      if(row) row.classList.add('is-active');
-      appState.stock.selectedFamilyKey = family.key;
-      await openStockFamilyCard(family);
-    };
-    host.addEventListener('click', async (e) => {
-      const row = e.target.closest('[data-stock-family]');
-      if(!row || !host.contains(row)) return;
-      await openFamilyByKey(row.getAttribute('data-stock-family'), row);
-    });
-    host.querySelectorAll('[data-stock-family]').forEach((row) => {
-      row.addEventListener('keydown', async (e) => {
+    const familyRows = host.querySelectorAll('[data-stock-family]');
+    familyRows.forEach((row) => {
+      const open = async () => {
+        const key = row.getAttribute('data-stock-family');
+        const family = families.find((item) => String(item.key) === String(key));
+        if(!family) return;
+        familyRows.forEach((r) => r.classList.remove('is-active'));
+        row.classList.add('is-active');
+        await openStockFamilyCard(family);
+      };
+      row.addEventListener('click', open);
+      row.addEventListener('keydown', (e) => {
         if(e.key === 'Enter' || e.key === ' '){
           e.preventDefault();
-          await openFamilyByKey(row.getAttribute('data-stock-family'), row);
+          open();
         }
       });
     });
@@ -4841,16 +4840,17 @@ function escapeHtml(str){
   .stock-table-wrap-full{height:100%;min-height:0}
   .stock-list-shell{height:100%;min-height:0}
   .stock-list-scroll{height:100%;min-height:0;overflow:auto}
-  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 30px;table-layout:fixed}
+  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 20px;table-layout:fixed}
   .stock-list-table thead th{position:sticky;top:0;z-index:3;background:rgba(9,14,15,.98);border-bottom:1px solid rgba(255,255,255,.1);padding:14px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:left}
-  .stock-list-table thead th:nth-child(1){width:48%}
-  .stock-list-table thead th:nth-child(2){width:18%}
-  .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5),.stock-list-table thead th:nth-child(6){width:8.5%;text-align:center}
-  .stock-list-table tbody td{padding:30px 16px;vertical-align:middle;font-size:13px;line-height:1.25;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+  .stock-list-table thead th:nth-child(1){width:44%}
+  .stock-list-table thead th:nth-child(2){width:16%}
+  .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5){width:10%;text-align:center}
+  .stock-list-table thead th:nth-child(6){width:10%;text-align:left}
+  .stock-list-table tbody td{padding:22px 16px;vertical-align:middle;font-size:13px;line-height:1.25;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
   .stock-list-table tbody td:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:14px 0 0 14px}
   .stock-list-table tbody td:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 14px 14px 0}
   .stock-list-table tbody tr{cursor:pointer;transition:transform .14s ease, background .14s ease, box-shadow .14s ease;user-select:none}
-  .stock-list-table tbody tr:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(0,0,0,.18)}
+  .stock-list-table tbody tr:hover{transform:translateY(-1px)}
   .stock-list-table tbody tr.is-active td{background:rgba(111,231,193,.07);border-top-color:rgba(111,231,193,.22);border-bottom-color:rgba(111,231,193,.22)}
   .stock-list-table tbody tr:focus-visible{outline:2px solid rgba(111,231,193,.7);outline-offset:2px}
   .stock-col-product .stock-copy{display:grid;gap:3px;min-width:0}
@@ -4858,7 +4858,7 @@ function escapeHtml(str){
   .stock-col-product .stock-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-sku{color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-num{text-align:center;font-weight:800}
-  .stock-col-stock{text-align:center;font-weight:900;color:#dff7ea;white-space:nowrap}
+  .stock-col-state{white-space:nowrap}
   .stock-list-scroll{height:100%;overflow:auto;min-height:0}
   .stock-list-scroll-full{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
   .stock-table{width:100%;border-collapse:separate;border-spacing:0}
