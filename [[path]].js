@@ -1105,12 +1105,17 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
     });
   }
 
+  const bsale = {
+    ...(await getBsaleConfig(db, companyId)),
+    officeMappings: await getBsaleOfficeMappings(db, companyId)
+  };
   return {
     company: savedAdmin?.company || companyRow.name || DEFAULT_COMPANY_NAME,
     companyCode: companyRow.code || savedAdmin?.companyCode || DEFAULT_COMPANY_CODE,
     logo: savedAdmin?.logo || '',
     branches: adminBranches,
-    activeBranch: Number(savedAdmin?.activeBranch || 0)
+    activeBranch: Number(savedAdmin?.activeBranch || 0),
+    bsale
   };
 }
 

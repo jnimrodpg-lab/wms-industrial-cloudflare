@@ -383,12 +383,17 @@ function buildAdminStateFromDb(companyId = 1, savedAdmin = null) {
       sheetMapRows: safeJsonParse(sheet.sheet_map_json, Array.isArray(savedBranch.sheetMapRows) ? savedBranch.sheetMapRows : null),
     };
   });
+  const bsale = {
+    ...getBsaleConfig(companyId),
+    officeMappings: getBsaleOfficeMappings(companyId),
+  };
   return {
     company: savedAdmin?.company || companyRow.name || 'WMS Industrial',
     companyCode: companyRow.code || savedAdmin?.companyCode || '',
     logo: savedAdmin?.logo || '',
     branches: adminBranches,
     activeBranch: Number(savedAdmin?.activeBranch || 0),
+    bsale,
   };
 }
 

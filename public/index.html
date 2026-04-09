@@ -4887,6 +4887,9 @@ function escapeHtml(str){
       appState.admin.bsale = { ...appState.admin.bsale, ...remote, officeMappings: { ...(remote.officeMappings || {}), ...(data?.mappings || {}) } };
       if (data?.mappings && typeof data.mappings === 'object') appState.admin.bsale.officeMappings = { ...data.mappings };
       saveAdminState();
+      const tokenInput = $('#bsaleTokenInput'); if(tokenInput) tokenInput.value = appState.admin.bsale.accessToken || '';
+      const countryInput = $('#bsaleCountryInput'); if(countryInput) countryInput.value = appState.admin.bsale.country || 'PE';
+      const apiBaseInput = $('#bsaleApiBaseInput'); if(apiBaseInput) apiBaseInput.value = appState.admin.bsale.apiBaseUrl || 'https://api.bsale.io';
       return appState.admin.bsale;
     } catch (err) {
       return normalizeBsaleConfig(appState.admin?.bsale || {});
@@ -4933,6 +4936,11 @@ function escapeHtml(str){
   function bindBsaleAdminScreen(){
     const testBtn = $('#bsaleTestBtn'); const saveBtn = $('#bsaleSaveBtn'); const loadBtn = $('#bsaleLoadOfficesBtn'); const saveMapBtn = $('#bsaleSaveMapBtn');
     renderBsaleOfficeMappings(Array.isArray(appState.admin?.bsaleOffices) ? appState.admin.bsaleOffices : []);
+    window.getBsaleConfig().then(cfg => {
+      const offices = Array.isArray(appState.admin?.bsaleOffices) ? appState.admin.bsaleOffices : [];
+      if(offices.length) renderBsaleOfficeMappings(offices);
+      return cfg;
+    }).catch(()=>{});
     if(testBtn) testBtn.onclick = async () => { const data = await window.testBsaleConfig(); showToast(`Conexión Bsale OK. Oficinas detectadas: ${Number(data.officeCount || 0)}.`, 'success'); };
     if(saveBtn) saveBtn.onclick = async () => { await window.saveBsaleConfig(); showToast('Integración Bsale guardada.', 'success'); renderAdminScreen(); };
     if(loadBtn) loadBtn.onclick = () => window.loadBsaleOffices();
@@ -5041,6 +5049,9 @@ function escapeHtml(str){
     try{
       const data = await httpJson('/api/app-state');
       if(data?.state) applyRemoteAppState(data.state);
+      if(appState.auth?.loggedIn && appState.auth?.role === 'admin'){
+        try{ await getBsaleConfig(); }catch(_err){}
+      }
       return true;
     }catch(err){
       console.warn('No se pudo cargar persistencia remota:', err);
