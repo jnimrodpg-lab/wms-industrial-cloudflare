@@ -4410,9 +4410,9 @@ function escapeHtml(str){
       host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    const rows = families.map((family) => {
+    const rows = families.map((family, index) => {
       const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
-      const image = first && getProductImage(first);
+      const image = first && typeof getProductImage === 'function' ? getProductImage(first) : '';
       const thumb = image
         ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(family.nombre)}" loading="lazy">`
         : `<span>${escapeHtml(String(family.nombre || 'P').trim().charAt(0).toUpperCase() || 'P')}</span>`;
@@ -4420,23 +4420,38 @@ function escapeHtml(str){
       const colors = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
       const sizes = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
       const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
-      const statusClass = variants >= 8 ? 'ok' : variants >= 3 ? 'mid' : 'low';
-      const statusText = variants >= 8 ? 'Completo' : variants >= 3 ? 'Medio' : 'Básico';
-      return `<button type="button" class="stock-line-item" data-stock-family="${escapeHtml(family.key)}">
-        <div class="stock-line-product">
-          <div class="stock-line-thumb">${thumb}</div>
-          <div class="stock-line-copy">
-            <b>${escapeHtml(family.nombre)}</b>
-            <span>SKU ${skuBase}</span>
+      const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
+      const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
+      const summary = `${variants} variantes · ${colors.length || 0} colores · ${sizes.length || 0} tallas`;
+      return `<div class="stock-row ${index === 0 ? 'is-first' : ''}">
+        <div class="stock-cell stock-cell-product">
+          <div class="stock-thumb">${thumb}</div>
+          <div class="stock-copy">
+            <div class="stock-name">${escapeHtml(family.nombre)}</div>
+            <div class="stock-sub">${escapeHtml(summary)}</div>
           </div>
         </div>
-        <div class="stock-line-stat">${variants}</div>
-        <div class="stock-line-stat">${colors.length || 0}</div>
-        <div class="stock-line-stat">${sizes.length || 0}</div>
-        <div class="stock-line-state"><span class="stock-status ${statusClass}">${statusText}</span></div>
-      </button>`;
+        <div class="stock-cell stock-cell-sku">${skuBase}</div>
+        <div class="stock-cell stock-cell-number">${variants}</div>
+        <div class="stock-cell stock-cell-number">${colors.length || 0}</div>
+        <div class="stock-cell stock-cell-number">${sizes.length || 0}</div>
+        <div class="stock-cell stock-cell-state"><span class="stock-status ${coverageClass}">${coverage}</span></div>
+      </div>`;
     }).join('');
-    host.innerHTML = `<div class="stock-lines-scroll stock-lines-scroll-full"><div class="stock-lines-head"><span>Producto</span><span>Variantes</span><span>Colores</span><span>Tallas</span><span>Estado</span></div><div class="stock-lines-body">${rows}</div></div>`;
+    host.innerHTML = `
+      <div class="stock-table-shell">
+        <div class="stock-table-scroll">
+          <div class="stock-table-head">
+            <div>Producto</div>
+            <div>SKU</div>
+            <div>Variantes</div>
+            <div>Colores</div>
+            <div>Tallas</div>
+            <div>Estado</div>
+          </div>
+          <div class="stock-table-body">${rows}</div>
+        </div>
+      </div>`;
   }
   function renderStockDetailPanel(family, data, loading=false){
     const title = document.getElementById('detailTitle');
@@ -4477,16 +4492,38 @@ function escapeHtml(str){
     const branches = getStockBranchOptions();
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
-    contentTitle.textContent = 'Stock por producto';
-    contentSubtitle.textContent = 'Lista compacta por producto, con imagen pequeña y lectura tipo inventario.';
     const families = getStockScreenFamilies();
-    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast stock-screen-full"><div class="stock-toolbar stock-toolbar-products stock-toolbar-option1 stock-toolbar-compact"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="stock-toolbar-note">Solo productos agrupados por nombre. Imagen pequeña, nombre primero y métricas en fila.</div></div><div class="stock-table-wrap stock-table-wrap-list stock-table-wrap-full" id="stockTableWrap"></div></div>`;
+    const totalVariants = families.reduce((acc, family) => acc + ((family.items || []).length || 0), 0);
+    const totalColors = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).size, 0);
+    const totalSizes = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).size, 0);
+    contentTitle.textContent = 'Stock';
+    contentSubtitle.textContent = 'Vista operativa por producto, clara y rápida para revisión de catálogo.';
+    contentWrap.innerHTML = `
+      <div class="stock-screen stock-screen-modern">
+        <div class="stock-topbar">
+          <div class="stock-topbar-left">
+            <div class="stock-screen-title">Inventario por producto</div>
+            <div class="stock-screen-note">Una fila por producto, con resumen directo de variantes, colores y tallas.</div>
+          </div>
+          <div class="stock-summary-strip">
+            <div class="stock-summary-pill"><span>Productos</span><strong>${families.length.toLocaleString('es-PE')}</strong></div>
+            <div class="stock-summary-pill"><span>Variantes</span><strong>${totalVariants.toLocaleString('es-PE')}</strong></div>
+            <div class="stock-summary-pill"><span>Colores</span><strong>${totalColors.toLocaleString('es-PE')}</strong></div>
+            <div class="stock-summary-pill"><span>Tallas</span><strong>${totalSizes.toLocaleString('es-PE')}</strong></div>
+          </div>
+        </div>
+        <div class="stock-filters-bar">
+          <div class="stock-filter stock-filter-search"><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar producto por nombre"></div>
+          <div class="stock-filter"><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div>
+        </div>
+        <div class="stock-table-wrap stock-table-wrap-full" id="stockTableWrap"></div>
+      </div>`;
     detailPanel.style.display = 'none';
     renderStockTable();
     const branchSel = document.getElementById('stockBranchSelect');
     const qInput = document.getElementById('stockSearchInput');
     if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value || 0); renderStockScreen(); };
-    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); renderStockTable(); };
+    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); renderStockTable(); contentStatus.textContent = `${getStockScreenFamilies().length.toLocaleString('es-PE')} productos filtrados.`; };
     contentStatus.textContent = `${families.length.toLocaleString('es-PE')} productos en lista.`;
     contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes en la sucursal`;
   }
@@ -4812,41 +4849,37 @@ function escapeHtml(str){
   .stock-toolbar-fast{grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr)}
   .stock-screen-fast{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%;min-height:0}
   .stock-screen-full{height:100%;min-height:0}
-  .stock-toolbar-products{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}
-  .stock-table-products thead th{min-width:340px}
-  .stock-cell-main{padding:0 !important}
-  .stock-row-main{display:grid;grid-template-columns:40px minmax(0,1fr);gap:14px;align-items:center;padding:12px 14px}
-  .stock-row-thumb{width:40px;height:40px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:900;font-size:12px}
-  .stock-row-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .stock-row-copy{display:grid;gap:3px;min-width:0}
-  .stock-row-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-row-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stock-toolbar-option1{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(220px,1fr)}
-  .stock-toolbar-compact{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(220px,1fr)}
-  .stock-lines-scroll{height:100%;min-height:0;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(7,20,24,.58)}
-  .stock-lines-scroll-full{height:100%}
-  .stock-lines-head{display:grid;grid-template-columns:minmax(360px,1.8fr) 110px 110px 110px 130px;gap:0;align-items:center;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);position:sticky;top:0;z-index:2;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  .stock-lines-body{display:grid}
-  .stock-line-item{display:grid;grid-template-columns:minmax(360px,1.8fr) 110px 110px 110px 130px;gap:0;align-items:center;padding:0 18px;min-height:72px;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background .16s ease}
-  .stock-line-item:hover{background:rgba(255,255,255,.03)}
-  .stock-line-product{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;min-width:0;padding:10px 0}
-  .stock-line-thumb{width:44px;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:800;font-size:12px}
-  .stock-line-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .stock-line-copy{display:grid;gap:2px;min-width:0}
-  .stock-line-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-line-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-line-stat{font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:flex-start}
-  .stock-line-state{display:flex;align-items:center;justify-content:flex-start}
-  @media (max-width: 1024px){.stock-lines-head,.stock-line-item{grid-template-columns:minmax(260px,1.4fr) 88px 88px 88px 110px}}
-  @media (max-width: 860px){.stock-lines-head{display:none}.stock-line-item{grid-template-columns:1fr;gap:6px;padding:12px 16px}.stock-line-product{padding:0}.stock-line-stat,.stock-line-state{padding-left:56px}}
-  .stock-toolbar-note{align-self:end;padding:12px 14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03);color:var(--muted);font-size:12px;line-height:1.35}
-  .stock-table-option1 thead th:nth-child(1){min-width:360px}
-  .stock-table-option1 thead th:nth-child(2){min-width:140px}
-  .stock-table-option1 thead th:nth-child(3),.stock-table-option1 thead th:nth-child(4),.stock-table-option1 thead th:nth-child(5){min-width:110px;text-align:center}
-  .stock-table-option1 thead th:nth-child(6){min-width:140px}
-  .stock-table-option1 tbody td:nth-child(3),.stock-table-option1 tbody td:nth-child(4),.stock-table-option1 tbody td:nth-child(5){text-align:center}
-  .stock-row-main-compact{grid-template-columns:44px minmax(0,1fr)}
-  .stock-row-thumb-compact{width:44px;height:44px;border-radius:12px}
+  .stock-screen-modern{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px;height:100%;min-height:0}
+  .stock-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .stock-topbar-left{display:grid;gap:4px}
+  .stock-screen-title{font-size:22px;font-weight:900;letter-spacing:-.03em}
+  .stock-screen-note{font-size:13px;color:var(--muted)}
+  .stock-summary-strip{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .stock-summary-pill{min-width:120px;padding:10px 14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.035);display:grid;gap:2px}
+  .stock-summary-pill span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stock-summary-pill strong{font-size:18px;line-height:1;font-weight:900}
+  .stock-filters-bar{display:grid;grid-template-columns:minmax(280px,1fr) 240px;gap:12px}
+  .stock-filter input,.stock-filter select{width:100%;height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:var(--text);padding:0 14px;font-size:14px}
+  .stock-table-wrap{min-height:0;height:100%;border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.02)}
+  .stock-table-wrap-full{height:100%;min-height:0}
+  .stock-table-shell{height:100%;min-height:0;display:flex;flex-direction:column}
+  .stock-table-scroll{height:100%;min-height:0;overflow:auto}
+  .stock-table-head{display:grid;grid-template-columns:minmax(360px,2.2fr) 140px 110px 110px 110px 140px;gap:0;position:sticky;top:0;z-index:4;padding:14px 20px;background:rgba(9,14,15,.96);border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stock-table-body{display:grid}
+  .stock-row{display:grid;grid-template-columns:minmax(360px,2.2fr) 140px 110px 110px 110px 140px;gap:0;align-items:center;padding:0 20px;min-height:74px;border-bottom:1px solid rgba(255,255,255,.08);background:transparent}
+  .stock-row:hover{background:rgba(255,255,255,.022)}
+  .stock-cell{display:flex;align-items:center;min-width:0;font-size:13px;color:var(--text)}
+  .stock-cell-product{gap:14px;padding:10px 0}
+  .stock-thumb{width:48px;height:48px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 48px;color:var(--muted);font-size:13px;font-weight:800}
+  .stock-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-copy{display:grid;gap:3px;min-width:0}
+  .stock-name{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-cell-sku{color:var(--muted);font-weight:700}
+  .stock-cell-number{font-weight:800}
+  .stock-cell-state{justify-content:flex-start}
+  @media (max-width: 1180px){.stock-filters-bar{grid-template-columns:1fr}.stock-table-head,.stock-row{grid-template-columns:minmax(300px,2fr) 120px 90px 90px 90px 120px}}
+  @media (max-width: 860px){.stock-summary-strip{width:100%;justify-content:flex-start}.stock-table-head{display:none}.stock-row{grid-template-columns:1fr;gap:4px;padding:14px 16px}.stock-cell:not(.stock-cell-product){padding-left:62px}.stock-cell-state{padding-bottom:10px}}
   .stock-status{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:800;white-space:nowrap}
   .stock-status.ok{background:rgba(69,211,135,.14);border-color:rgba(69,211,135,.26);color:#8df0b6}
   .stock-status.mid{background:rgba(255,196,84,.14);border-color:rgba(255,196,84,.26);color:#ffd37c}
