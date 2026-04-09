@@ -2082,6 +2082,11 @@ function escapeHtml(str){
     });
   }
 
+  function getProductImage(product){
+    const urls = typeof getProductImageUrls === 'function' ? getProductImageUrls(product) : [];
+    return urls[0] || '';
+  }
+
   function getProductImageUrls(product){
     if(!product) return [];
     const collectFields = (item) => [item?.imagen, item?.image, item?.imagen2, item?.image2, item?.foto2, item?.img2]

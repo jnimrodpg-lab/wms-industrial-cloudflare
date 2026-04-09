@@ -829,6 +829,11 @@
     });
   }
 
+  function getProductImage(product){
+    const urls = typeof getProductImageUrls === 'function' ? getProductImageUrls(product) : [];
+    return urls[0] || '';
+  }
+
   function getProductImageUrls(product){
     if(!product) return [];
     const raw = [product.imagen, product.image, product.imagen2, product.image2, product.foto2, product.img2].filter(Boolean).map(v => String(v).trim());
