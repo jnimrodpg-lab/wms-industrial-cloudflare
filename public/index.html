@@ -4405,20 +4405,17 @@ function escapeHtml(str){
       host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    if(appState.stock.selectedFamilyKey && !families.some(item => item.key === appState.stock.selectedFamilyKey)) appState.stock.selectedFamilyKey = '';
     const rows = families.map((family) => {
-      return `<tr class="${appState.stock.selectedFamilyKey === family.key ? 'active' : ''}" data-stock-family="${escapeHtml(family.key)}"><td class="stock-list-name">${escapeHtml(family.nombre)}</td></tr>`;
+      const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
+      const image = first && getProductImage(first);
+      const thumb = image
+        ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(family.nombre)}" loading="lazy">`
+        : `<span>${escapeHtml(String(family.nombre || 'P').trim().charAt(0).toUpperCase() || 'P')}</span>`;
+      const variants = Array.isArray(family.items) ? family.items.length : 0;
+      const colorsCount = new Set((family.items || []).map((item) => normalizeVariantValue(getProductColorValue(item))).filter(Boolean)).size;
+      return `<tr data-stock-family="${escapeHtml(family.key)}"><td class="stock-cell-main"><div class="stock-row-main"><div class="stock-row-thumb">${thumb}</div><div class="stock-row-copy"><b>${escapeHtml(family.nombre)}</b><span>${variants} variantes${colorsCount ? ` • ${colorsCount} colores` : ''}</span></div></div></td></tr>`;
     }).join('');
-    host.innerHTML = `<div class="stock-list-scroll"><table class="stock-table stock-table-list-only"><thead><tr><th>Producto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    host.querySelectorAll('[data-stock-family]').forEach((row) => {
-      row.onclick = async () => {
-        appState.stock.selectedFamilyKey = row.getAttribute('data-stock-family') || '';
-        renderStockTable();
-        renderStockDetailPanel(getStockScreenFamilies().find(item => item.key === appState.stock.selectedFamilyKey) || null, null, true);
-        const payload = await ensureSelectedFamilyMatrix();
-        if(payload) renderStockDetailPanel(payload.family, payload.data, false);
-      };
-    });
+    host.innerHTML = `<div class="stock-list-scroll"><table class="stock-table stock-table-products"><thead><tr><th>Productos</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function renderStockDetailPanel(family, data, loading=false){
     const title = document.getElementById('detailTitle');
@@ -4460,19 +4457,17 @@ function escapeHtml(str){
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
     contentTitle.textContent = 'Stock por producto';
-    contentSubtitle.textContent = 'Lista simple y scroleable. El card de detalle solo aparece al hacer clic.';
+    contentSubtitle.textContent = 'Lista ordenada y scroleable de productos. Por ahora dejamos lista solo la vista principal.';
     const families = getStockScreenFamilies();
-    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast"><div class="stock-toolbar stock-toolbar-fast"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="muted tiny">Lista de nombres a la izquierda. Card de detalle a la derecha con colores en vertical y tallas en horizontal.</div></div><div class="stock-table-wrap stock-table-wrap-list" id="stockTableWrap"></div></div>`;
-    detailPanel.style.display = '';
+    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast"><div class="stock-toolbar stock-toolbar-products"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="muted tiny">Vista simplificada: lista clara de productos con imagen reducida, sin panel lateral.</div></div><div class="stock-table-wrap stock-table-wrap-list" id="stockTableWrap"></div></div>`;
+    detailPanel.style.display = 'none';
     renderStockTable();
-    const currentFamily = families.find((item) => item.key === appState.stock.selectedFamilyKey) || null;
-    renderStockDetailPanel(currentFamily, null, false);
     const branchSel = document.getElementById('stockBranchSelect');
     const qInput = document.getElementById('stockSearchInput');
-    if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value || 0); appState.stock.selectedFamilyKey = ''; renderStockScreen(); };
-    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); appState.stock.selectedFamilyKey = ''; renderStockTable(); renderStockDetailPanel(null, null, false); };
-    contentStatus.textContent = `${families.length.toLocaleString('es-PE')} productos detectados.`;
-    contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes`;
+    if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value || 0); renderStockScreen(); };
+    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); renderStockTable(); };
+    contentStatus.textContent = `${families.length.toLocaleString('es-PE')} productos en lista.`;
+    contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes en la sucursal`;
   }
 
   function defaultBsaleConfig(){ return { enabled:false, country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', officeMappings:{} }; }
@@ -4793,6 +4788,15 @@ function escapeHtml(str){
   .stock-matrix-compact tbody th{min-width:120px}
   .stock-toolbar-fast{grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr)}
   .stock-screen-fast{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%}
+  .stock-toolbar-products{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}
+  .stock-table-products thead th{min-width:340px}
+  .stock-cell-main{padding:0 !important}
+  .stock-row-main{display:grid;grid-template-columns:40px minmax(0,1fr);gap:14px;align-items:center;padding:12px 14px}
+  .stock-row-thumb{width:40px;height:40px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:900;font-size:12px}
+  .stock-row-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-row-copy{display:grid;gap:3px;min-width:0}
+  .stock-row-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-row-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   @media (max-width: 1280px){.stock-toolbar{grid-template-columns:1fr}.stock-detail-simple{grid-template-rows:auto auto minmax(220px,auto) minmax(220px,auto)}}
   @media (max-width: 1080px){ .bsale-grid{grid-template-columns:1fr} .bsale-office-row{grid-template-columns:1fr} }
   </style>
