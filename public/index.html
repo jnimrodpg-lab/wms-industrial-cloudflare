@@ -4449,11 +4449,14 @@ function escapeHtml(str){
           </table>
         </div>
       </div>`;
-    host.querySelectorAll('[data-stock-family]').forEach((row) => {
+    const rows = host.querySelectorAll('[data-stock-family]');
+    rows.forEach((row) => {
       const open = async () => {
         const key = row.getAttribute('data-stock-family');
         const family = families.find((item) => String(item.key) === String(key));
         if(!family) return;
+        rows.forEach((r) => r.classList.remove('is-active'));
+        row.classList.add('is-active');
         await openStockFamilyCard(family);
       };
       row.addEventListener('click', open);
@@ -4818,20 +4821,21 @@ function escapeHtml(str){
   .stock-table-wrap-full{height:100%;min-height:0}
   .stock-list-shell{height:100%;min-height:0}
   .stock-list-scroll{height:100%;min-height:0;overflow:auto}
-  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 10px;table-layout:fixed}
+  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 20px;table-layout:fixed}
   .stock-list-table thead th{position:sticky;top:0;z-index:3;background:rgba(9,14,15,.98);border-bottom:1px solid rgba(255,255,255,.1);padding:14px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:left}
   .stock-list-table thead th:nth-child(1){width:44%}
   .stock-list-table thead th:nth-child(2){width:16%}
   .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5){width:10%;text-align:center}
   .stock-list-table thead th:nth-child(6){width:10%;text-align:left}
-  .stock-list-table tbody td{padding:16px 16px;vertical-align:middle;font-size:13px;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+  .stock-list-table tbody td{padding:22px 16px;vertical-align:middle;font-size:13px;line-height:1.25;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
   .stock-list-table tbody td:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:14px 0 0 14px}
   .stock-list-table tbody td:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 14px 14px 0}
-  .stock-list-table tbody tr{cursor:pointer;transition:transform .14s ease, background .14s ease, box-shadow .14s ease}
+  .stock-list-table tbody tr{cursor:pointer;transition:transform .14s ease, background .14s ease, box-shadow .14s ease;user-select:none}
   .stock-list-table tbody tr:hover{transform:translateY(-1px)}
+  .stock-list-table tbody tr.is-active td{background:rgba(111,231,193,.07);border-top-color:rgba(111,231,193,.22);border-bottom-color:rgba(111,231,193,.22)}
   .stock-list-table tbody tr:focus-visible{outline:2px solid rgba(111,231,193,.7);outline-offset:2px}
   .stock-col-product .stock-copy{display:grid;gap:3px;min-width:0}
-  .stock-col-product .stock-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-col-product .stock-name{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-product .stock-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-sku{color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-num{text-align:center;font-weight:800}
