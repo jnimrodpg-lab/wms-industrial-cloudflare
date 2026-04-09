@@ -4412,10 +4412,6 @@ function escapeHtml(str){
     }
     const rows = families.map((family) => {
       const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
-      const image = first && typeof getProductImage === 'function' ? getProductImage(first) : '';
-      const thumb = image
-        ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(family.nombre)}" loading="lazy">`
-        : `<span>${escapeHtml(String(family.nombre || 'P').trim().charAt(0).toUpperCase() || 'P')}</span>`;
       const variants = Array.isArray(family.items) ? family.items.length : 0;
       const colors = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
       const sizes = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
@@ -4423,10 +4419,9 @@ function escapeHtml(str){
       const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
       const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
       const summary = `${variants} variantes · ${colors.length || 0} colores · ${sizes.length || 0} tallas`;
-      return `<div class="stock-row">
-        <div class="stock-cell stock-cell-product">
-          <div class="stock-thumb">${thumb}</div>
-          <div class="stock-copy">
+      return `<div class="stock-row stock-row-compact">
+        <div class="stock-cell stock-cell-product stock-cell-product-noimage">
+          <div class="stock-copy stock-copy-noimage">
             <div class="stock-name">${escapeHtml(family.nombre)}</div>
             <div class="stock-sub">${escapeHtml(summary)}</div>
           </div>
@@ -4881,6 +4876,14 @@ function escapeHtml(str){
   .stock-cell-sku{color:var(--muted);font-weight:700}
   .stock-cell-number{font-weight:800}
   .stock-cell-state{justify-content:flex-start}
+  .stock-row-compact{min-height:60px;max-height:60px}
+  .stock-cell-product-noimage{padding:0}
+  .stock-copy-noimage{gap:1px}
+  .stock-copy-noimage .stock-name{font-size:13px;line-height:1.1}
+  .stock-copy-noimage .stock-sub{font-size:11px;line-height:1.1}
+  .stock-thumb{display:none}
+  .stock-table-scroll{overflow:auto}
+  .stock-table-head{position:sticky;top:0}
   @media (max-width: 1180px){.stock-filters-bar,.stock-filters-bar-wide{grid-template-columns:1fr}.stock-table-head,.stock-row{grid-template-columns:minmax(300px,2fr) 120px 90px 90px 90px 120px}}
   @media (max-width: 860px){.stock-summary-strip{width:100%;justify-content:flex-start}.stock-table-head{display:none}.stock-row{grid-template-columns:1fr;gap:4px;padding:14px 16px}.stock-cell:not(.stock-cell-product){padding-left:62px}.stock-cell-state{padding-bottom:10px}}
   .stock-status{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:800;white-space:nowrap}
