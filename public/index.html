@@ -4419,32 +4419,36 @@ function escapeHtml(str){
       const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
       const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
       const summary = `${variants} variantes · ${colors.length || 0} colores · ${sizes.length || 0} tallas`;
-      return `<div class="stock-row stock-row-compact">
-        <div class="stock-cell stock-cell-product stock-cell-product-noimage">
+      return `<tr class="stock-table-row">
+        <td class="stock-col-product">
           <div class="stock-copy stock-copy-noimage">
             <div class="stock-name">${escapeHtml(family.nombre)}</div>
             <div class="stock-sub">${escapeHtml(summary)}</div>
           </div>
-        </div>
-        <div class="stock-cell stock-cell-sku">${skuBase}</div>
-        <div class="stock-cell stock-cell-number">${variants}</div>
-        <div class="stock-cell stock-cell-number">${colors.length || 0}</div>
-        <div class="stock-cell stock-cell-number">${sizes.length || 0}</div>
-        <div class="stock-cell stock-cell-state"><span class="stock-status ${coverageClass}">${coverage}</span></div>
-      </div>`;
+        </td>
+        <td class="stock-col-sku">${skuBase}</td>
+        <td class="stock-col-num">${variants}</td>
+        <td class="stock-col-num">${colors.length || 0}</td>
+        <td class="stock-col-num">${sizes.length || 0}</td>
+        <td class="stock-col-state"><span class="stock-status ${coverageClass}">${coverage}</span></td>
+      </tr>`;
     }).join('');
     host.innerHTML = `
-      <div class="stock-table-shell stock-table-shell-expanded">
-        <div class="stock-table-head">
-          <div>Producto</div>
-          <div>SKU</div>
-          <div>Variantes</div>
-          <div>Colores</div>
-          <div>Tallas</div>
-          <div>Estado</div>
-        </div>
-        <div class="stock-table-scroll stock-table-scroll-expanded">
-          <div class="stock-table-body">${rows}</div>
+      <div class="stock-list-shell">
+        <div class="stock-list-scroll">
+          <table class="stock-list-table">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>SKU</th>
+                <th>Variantes</th>
+                <th>Colores</th>
+                <th>Tallas</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
       </div>`;
   }
@@ -4786,6 +4790,22 @@ function escapeHtml(str){
   .stock-table-wrap{min-height:0;height:100%;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.02)}
   .stock-table-wrap-list{display:flex;flex-direction:column;min-height:0;height:100%}
   .stock-table-wrap-full{height:100%;min-height:0}
+  .stock-list-shell{height:100%;min-height:0}
+  .stock-list-scroll{height:100%;min-height:0;overflow:auto}
+  .stock-list-table{width:100%;border-collapse:collapse;table-layout:fixed}
+  .stock-list-table thead th{position:sticky;top:0;z-index:3;background:rgba(9,14,15,.98);border-bottom:1px solid rgba(255,255,255,.1);padding:14px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:left}
+  .stock-list-table thead th:nth-child(1){width:44%}
+  .stock-list-table thead th:nth-child(2){width:16%}
+  .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5){width:10%;text-align:center}
+  .stock-list-table thead th:nth-child(6){width:10%;text-align:left}
+  .stock-list-table tbody td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle;font-size:13px;color:var(--text)}
+  .stock-list-table tbody tr:hover{background:rgba(255,255,255,.02)}
+  .stock-col-product .stock-copy{display:grid;gap:3px;min-width:0}
+  .stock-col-product .stock-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-col-product .stock-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-col-sku{color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-col-num{text-align:center;font-weight:800}
+  .stock-col-state{white-space:nowrap}
   .stock-list-scroll{height:100%;overflow:auto;min-height:0}
   .stock-list-scroll-full{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
   .stock-table{width:100%;border-collapse:separate;border-spacing:0}
@@ -4884,8 +4904,8 @@ function escapeHtml(str){
   .stock-thumb{display:none}
   .stock-table-scroll{overflow:auto}
   .stock-table-head{position:sticky;top:0}
-  @media (max-width: 1180px){.stock-filters-bar,.stock-filters-bar-wide{grid-template-columns:1fr}.stock-table-head,.stock-row{grid-template-columns:minmax(300px,2fr) 120px 90px 90px 90px 120px}}
-  @media (max-width: 860px){.stock-summary-strip{width:100%;justify-content:flex-start}.stock-table-head{display:none}.stock-row{grid-template-columns:1fr;gap:4px;padding:14px 16px}.stock-cell:not(.stock-cell-product){padding-left:62px}.stock-cell-state{padding-bottom:10px}}
+  @media (max-width: 1180px){.stock-filters-bar,.stock-filters-bar-wide{grid-template-columns:1fr}.stock-list-table thead th:nth-child(1){width:38%}.stock-list-table thead th:nth-child(2){width:18%}}
+  @media (max-width: 860px){.stock-summary-strip{width:100%;justify-content:flex-start}.stock-list-table{min-width:760px}}
   .stock-status{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:800;white-space:nowrap}
   .stock-status.ok{background:rgba(69,211,135,.14);border-color:rgba(69,211,135,.26);color:#8df0b6}
   .stock-status.mid{background:rgba(255,196,84,.14);border-color:rgba(255,196,84,.26);color:#ffd37c}
