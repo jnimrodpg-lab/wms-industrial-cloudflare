@@ -4410,7 +4410,7 @@ function escapeHtml(str){
       host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    const rows = families.map((family, index) => {
+    const rows = families.map((family) => {
       const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
       const image = first && typeof getProductImage === 'function' ? getProductImage(first) : '';
       const thumb = image
@@ -4423,7 +4423,7 @@ function escapeHtml(str){
       const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
       const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
       const summary = `${variants} variantes · ${colors.length || 0} colores · ${sizes.length || 0} tallas`;
-      return `<div class="stock-row ${index === 0 ? 'is-first' : ''}">
+      return `<div class="stock-row">
         <div class="stock-cell stock-cell-product">
           <div class="stock-thumb">${thumb}</div>
           <div class="stock-copy">
@@ -4439,16 +4439,16 @@ function escapeHtml(str){
       </div>`;
     }).join('');
     host.innerHTML = `
-      <div class="stock-table-shell">
-        <div class="stock-table-scroll">
-          <div class="stock-table-head">
-            <div>Producto</div>
-            <div>SKU</div>
-            <div>Variantes</div>
-            <div>Colores</div>
-            <div>Tallas</div>
-            <div>Estado</div>
-          </div>
+      <div class="stock-table-shell stock-table-shell-expanded">
+        <div class="stock-table-head">
+          <div>Producto</div>
+          <div>SKU</div>
+          <div>Variantes</div>
+          <div>Colores</div>
+          <div>Tallas</div>
+          <div>Estado</div>
+        </div>
+        <div class="stock-table-scroll stock-table-scroll-expanded">
           <div class="stock-table-body">${rows}</div>
         </div>
       </div>`;
@@ -4494,29 +4494,25 @@ function escapeHtml(str){
     appState.stock.branchIndex = currentIndex;
     const families = getStockScreenFamilies();
     const totalVariants = families.reduce((acc, family) => acc + ((family.items || []).length || 0), 0);
-    const totalColors = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)).size, 0);
-    const totalSizes = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)).size, 0);
     contentTitle.textContent = 'Stock';
-    contentSubtitle.textContent = 'Vista operativa por producto, clara y rápida para revisión de catálogo.';
+    contentSubtitle.textContent = 'Lista vertical de productos, compacta y navegable.';
     contentWrap.innerHTML = `
-      <div class="stock-screen stock-screen-modern">
-        <div class="stock-topbar">
+      <div class="stock-screen stock-screen-modern stock-screen-fullheight">
+        <div class="stock-topbar stock-topbar-compact">
           <div class="stock-topbar-left">
-            <div class="stock-screen-title">Inventario por producto</div>
-            <div class="stock-screen-note">Una fila por producto, con resumen directo de variantes, colores y tallas.</div>
+            <div class="stock-screen-title">Stock por producto</div>
+            <div class="stock-screen-note">Lista vertical de lectura rápida con separadores claros y scroll continuo.</div>
           </div>
-          <div class="stock-summary-strip">
+          <div class="stock-summary-strip stock-summary-strip-compact">
             <div class="stock-summary-pill"><span>Productos</span><strong>${families.length.toLocaleString('es-PE')}</strong></div>
             <div class="stock-summary-pill"><span>Variantes</span><strong>${totalVariants.toLocaleString('es-PE')}</strong></div>
-            <div class="stock-summary-pill"><span>Colores</span><strong>${totalColors.toLocaleString('es-PE')}</strong></div>
-            <div class="stock-summary-pill"><span>Tallas</span><strong>${totalSizes.toLocaleString('es-PE')}</strong></div>
           </div>
         </div>
-        <div class="stock-filters-bar">
-          <div class="stock-filter stock-filter-search"><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar producto por nombre"></div>
+        <div class="stock-filters-bar stock-filters-bar-wide">
           <div class="stock-filter"><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div>
+          <div class="stock-filter stock-filter-search"><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar producto por nombre"></div>
         </div>
-        <div class="stock-table-wrap stock-table-wrap-full" id="stockTableWrap"></div>
+        <div class="stock-table-wrap stock-table-wrap-full stock-table-wrap-immersive" id="stockTableWrap"></div>
       </div>`;
     detailPanel.style.display = 'none';
     renderStockTable();
@@ -4849,36 +4845,43 @@ function escapeHtml(str){
   .stock-toolbar-fast{grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr)}
   .stock-screen-fast{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%;min-height:0}
   .stock-screen-full{height:100%;min-height:0}
-  .stock-screen-modern{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px;height:100%;min-height:0}
+  .stock-screen-modern{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;height:100%;min-height:0}
+  .stock-screen-fullheight{height:100%;min-height:0}
   .stock-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .stock-topbar-compact{gap:10px}
   .stock-topbar-left{display:grid;gap:4px}
   .stock-screen-title{font-size:22px;font-weight:900;letter-spacing:-.03em}
   .stock-screen-note{font-size:13px;color:var(--muted)}
   .stock-summary-strip{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-  .stock-summary-pill{min-width:120px;padding:10px 14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.035);display:grid;gap:2px}
+  .stock-summary-strip-compact{gap:8px}
+  .stock-summary-pill{min-width:110px;padding:9px 12px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.035);display:grid;gap:2px}
   .stock-summary-pill span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
   .stock-summary-pill strong{font-size:18px;line-height:1;font-weight:900}
   .stock-filters-bar{display:grid;grid-template-columns:minmax(280px,1fr) 240px;gap:12px}
+  .stock-filters-bar-wide{grid-template-columns:280px minmax(320px,1fr)}
   .stock-filter input,.stock-filter select{width:100%;height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:var(--text);padding:0 14px;font-size:14px}
   .stock-table-wrap{min-height:0;height:100%;border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.02)}
+  .stock-table-wrap-immersive{border-radius:20px;background:rgba(255,255,255,.018)}
   .stock-table-wrap-full{height:100%;min-height:0}
   .stock-table-shell{height:100%;min-height:0;display:flex;flex-direction:column}
+  .stock-table-shell-expanded{height:100%;min-height:0}
   .stock-table-scroll{height:100%;min-height:0;overflow:auto}
-  .stock-table-head{display:grid;grid-template-columns:minmax(360px,2.2fr) 140px 110px 110px 110px 140px;gap:0;position:sticky;top:0;z-index:4;padding:14px 20px;background:rgba(9,14,15,.96);border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stock-table-scroll-expanded{padding-bottom:10px}
+  .stock-table-head{display:grid;grid-template-columns:minmax(420px,2.8fr) 160px 110px 110px 110px 140px;gap:0;position:sticky;top:0;z-index:4;padding:12px 18px;background:rgba(9,14,15,.98);border-bottom:1px solid rgba(255,255,255,.1);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
   .stock-table-body{display:grid}
-  .stock-row{display:grid;grid-template-columns:minmax(360px,2.2fr) 140px 110px 110px 110px 140px;gap:0;align-items:center;padding:0 20px;min-height:74px;border-bottom:1px solid rgba(255,255,255,.08);background:transparent}
+  .stock-row{display:grid;grid-template-columns:minmax(420px,2.8fr) 160px 110px 110px 110px 140px;gap:0;align-items:center;padding:0 18px;min-height:68px;max-height:68px;border-bottom:1px solid rgba(255,255,255,.1);background:transparent}
   .stock-row:hover{background:rgba(255,255,255,.022)}
   .stock-cell{display:flex;align-items:center;min-width:0;font-size:13px;color:var(--text)}
-  .stock-cell-product{gap:14px;padding:10px 0}
-  .stock-thumb{width:48px;height:48px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 48px;color:var(--muted);font-size:13px;font-weight:800}
+  .stock-cell-product{gap:12px;padding:8px 0}
+  .stock-thumb{width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 40px;color:var(--muted);font-size:12px;font-weight:800}
   .stock-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .stock-copy{display:grid;gap:3px;min-width:0}
-  .stock-name{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stock-sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-copy{display:grid;gap:2px;min-width:0}
+  .stock-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-cell-sku{color:var(--muted);font-weight:700}
   .stock-cell-number{font-weight:800}
   .stock-cell-state{justify-content:flex-start}
-  @media (max-width: 1180px){.stock-filters-bar{grid-template-columns:1fr}.stock-table-head,.stock-row{grid-template-columns:minmax(300px,2fr) 120px 90px 90px 90px 120px}}
+  @media (max-width: 1180px){.stock-filters-bar,.stock-filters-bar-wide{grid-template-columns:1fr}.stock-table-head,.stock-row{grid-template-columns:minmax(300px,2fr) 120px 90px 90px 90px 120px}}
   @media (max-width: 860px){.stock-summary-strip{width:100%;justify-content:flex-start}.stock-table-head{display:none}.stock-row{grid-template-columns:1fr;gap:4px;padding:14px 16px}.stock-cell:not(.stock-cell-product){padding-left:62px}.stock-cell-state{padding-bottom:10px}}
   .stock-status{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:800;white-space:nowrap}
   .stock-status.ok{background:rgba(69,211,135,.14);border-color:rgba(69,211,135,.26);color:#8df0b6}
