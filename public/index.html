@@ -2448,6 +2448,24 @@ function escapeHtml(str){
     return match ? match[1].toUpperCase().replace('ÚNICA','UNICA') : '';
   }
 
+  function getProductStockValue(product){
+    if(!product) return 0;
+    const candidates = [
+      product.stock,
+      product.quantity,
+      product.quantityAvailable,
+      product.cantidad,
+      product.cant,
+      product.existencias,
+      product.disponible
+    ];
+    for(const value of candidates){
+      const num = Number(value);
+      if(Number.isFinite(num)) return num;
+    }
+    return 0;
+  }
+
   function getProductColorValue(product){
     if(!product) return '';
     const raw = String(product.color || '').trim();
