@@ -4494,8 +4494,8 @@ function escapeHtml(str){
     appState.stock.branchIndex = currentIndex;
     const families = getStockScreenFamilies();
     const totalVariants = families.reduce((acc, family) => acc + ((family.items || []).length || 0), 0);
-    const totalColors = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).size, 0);
-    const totalSizes = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).size, 0);
+    const totalColors = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)).size, 0);
+    const totalSizes = families.reduce((acc, family) => acc + new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)).size, 0);
     contentTitle.textContent = 'Stock';
     contentSubtitle.textContent = 'Vista operativa por producto, clara y rápida para revisión de catálogo.';
     contentWrap.innerHTML = `
