@@ -4422,9 +4422,9 @@ function escapeHtml(str){
       const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
       const statusClass = variants >= 8 ? 'ok' : variants >= 3 ? 'mid' : 'low';
       const statusText = variants >= 8 ? 'Completo' : variants >= 3 ? 'Medio' : 'Básico';
-      return `<tr data-stock-family="${escapeHtml(family.key)}"><td class="stock-cell-main"><div class="stock-row-main stock-row-main-compact"><div class="stock-row-thumb stock-row-thumb-compact">${thumb}</div><div class="stock-row-copy"><b>${escapeHtml(family.nombre)}</b><span>${colors.length || 0} colores • ${sizes.length || 0} tallas</span></div></div></td><td>${skuBase}</td><td><span class="stock-kpi">${variants}</span></td><td><span class="stock-kpi">${colors.length || 0}</span></td><td><span class="stock-kpi">${sizes.length || 0}</span></td><td><span class="stock-status ${statusClass}">${statusText}</span></td></tr>`;
+      return `<button type="button" class="stock-list-item" data-stock-family="${escapeHtml(family.key)}"><div class="stock-list-item-main"><div class="stock-list-thumb">${thumb}</div><div class="stock-list-copy"><b>${escapeHtml(family.nombre)}</b><span>SKU ${skuBase}</span></div></div><div class="stock-list-metrics"><span>${variants} var.</span><span>${colors.length || 0} col.</span><span>${sizes.length || 0} tallas</span></div><div class="stock-list-state"><span class="stock-status ${statusClass}">${statusText}</span></div></button>`;
     }).join('');
-    host.innerHTML = `<div class="stock-list-scroll"><table class="stock-table stock-table-products stock-table-option1"><thead><tr><th>Producto</th><th>SKU</th><th>Variantes</th><th>Colores</th><th>Tallas</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    host.innerHTML = `<div class="stock-list-scroll stock-list-scroll-full"><div class="stock-list-head"><span>Producto</span><span>Resumen</span><span>Estado</span></div><div class="stock-list-body">${rows}</div></div>`;
   }
   function renderStockDetailPanel(family, data, loading=false){
     const title = document.getElementById('detailTitle');
@@ -4466,9 +4466,9 @@ function escapeHtml(str){
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
     contentTitle.textContent = 'Stock por producto';
-    contentSubtitle.textContent = 'Vista compacta tipo inventario: lista scroleable, clara y ordenada por producto.';
+    contentSubtitle.textContent = 'Lista compacta, ordenada y scroleable. Cada producto muestra una vista rápida y separadores claros.';
     const families = getStockScreenFamilies();
-    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast"><div class="stock-toolbar stock-toolbar-products stock-toolbar-option1"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="stock-toolbar-note">Lista de productos agrupados por nombre, con imagen reducida y resumen rápido de variantes.</div></div><div class="stock-table-wrap stock-table-wrap-list" id="stockTableWrap"></div></div>`;
+    contentWrap.innerHTML = `<div class="stock-screen stock-screen-fast stock-screen-full"><div class="stock-toolbar stock-toolbar-products stock-toolbar-option1 stock-toolbar-compact"><div class="grid"><label>Sucursal</label><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div><div class="grid"><label>Buscar producto</label><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar por nombre del producto"></div><div class="stock-toolbar-note">Solo productos agrupados por nombre. Haz la lista compacta y fácil de leer.</div></div><div class="stock-table-wrap stock-table-wrap-list stock-table-wrap-full" id="stockTableWrap"></div></div>`;
     detailPanel.style.display = 'none';
     renderStockTable();
     const branchSel = document.getElementById('stockBranchSelect');
@@ -4744,8 +4744,10 @@ function escapeHtml(str){
   .stock-screen{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%}
   .stock-toolbar{display:grid;grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr);gap:12px;align-items:end}
   .stock-table-wrap{min-height:0;height:100%;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.02)}
-  .stock-table-wrap-list{display:flex;flex-direction:column}
-  .stock-list-scroll{height:100%;overflow:auto}
+  .stock-table-wrap-list{display:flex;flex-direction:column;min-height:0;height:100%}
+  .stock-table-wrap-full{height:100%;min-height:0}
+  .stock-list-scroll{height:100%;overflow:auto;min-height:0}
+  .stock-list-scroll-full{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
   .stock-table{width:100%;border-collapse:separate;border-spacing:0}
   .stock-table thead th{position:sticky;top:0;z-index:1;background:rgba(6,20,23,.96);backdrop-filter:blur(8px);text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
   .stock-table tbody td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle}
@@ -4796,7 +4798,8 @@ function escapeHtml(str){
   .stock-matrix-compact th,.stock-matrix-compact td{padding:10px 12px}
   .stock-matrix-compact tbody th{min-width:120px}
   .stock-toolbar-fast{grid-template-columns:minmax(220px,280px) minmax(220px,320px) minmax(0,1fr)}
-  .stock-screen-fast{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%}
+  .stock-screen-fast{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;height:100%;min-height:0}
+  .stock-screen-full{height:100%;min-height:0}
   .stock-toolbar-products{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}
   .stock-table-products thead th{min-width:340px}
   .stock-cell-main{padding:0 !important}
@@ -4806,7 +4809,22 @@ function escapeHtml(str){
   .stock-row-copy{display:grid;gap:3px;min-width:0}
   .stock-row-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-row-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stock-toolbar-option1{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}
+.stock-toolbar-option1{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(0,1fr)}.
+  .stock-toolbar-compact{grid-template-columns:minmax(220px,280px) minmax(260px,380px) minmax(220px,1fr)}
+  .stock-list-head{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(180px,.8fr) 120px;gap:16px;align-items:center;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(6,20,23,.92);position:sticky;top:0;z-index:2;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .stock-list-body{display:grid}
+  .stock-list-item{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(180px,.8fr) 120px;gap:16px;align-items:center;padding:12px 18px;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:transparent;color:inherit;text-align:left;cursor:pointer;transition:background .16s ease, transform .16s ease}
+  .stock-list-item:hover{background:rgba(255,255,255,.03)}
+  .stock-list-item-main{display:grid;grid-template-columns:40px minmax(0,1fr);gap:12px;align-items:center;min-width:0}
+  .stock-list-thumb{width:40px;height:40px;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-weight:800;flex:0 0 auto}
+  .stock-list-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .stock-list-copy{display:grid;gap:2px;min-width:0}
+  .stock-list-copy b{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-list-copy span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stock-list-metrics{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .stock-list-metrics span{display:inline-flex;align-items:center;justify-content:center;min-width:70px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);font-size:12px;font-weight:700}
+  .stock-list-state{display:flex;justify-content:flex-end}
+  @media (max-width: 920px){.stock-list-head{display:none}.stock-list-item{grid-template-columns:1fr;gap:10px}.stock-list-state{justify-content:flex-start}}
   .stock-toolbar-note{align-self:end;padding:12px 14px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.03);color:var(--muted);font-size:12px;line-height:1.35}
   .stock-table-option1 thead th:nth-child(1){min-width:360px}
   .stock-table-option1 thead th:nth-child(2){min-width:140px}
