@@ -1207,6 +1207,15 @@ body.theme-light .seg-btn,
   .rack-model-fixed-viewer .rack-model-mini-stage{height:260px}
 }
 
+
+    .stock-list-table-modern tbody tr{cursor:pointer;transition:background .16s ease}
+    .stock-list-table-modern tbody tr:hover,.stock-list-table-modern tbody tr.is-active{background:rgba(91,185,140,.10)}
+    .stock-name-clickable{font-weight:800}
+    .stock-modal-card-wide{width:min(1100px,92vw)}
+    .presupuesto-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+    .presupuesto-grid .stock-filter{display:grid;gap:6px}
+    .presupuesto-card{padding:16px}
+
 </style>
 </head>
 <body>
@@ -1229,6 +1238,7 @@ body.theme-light .seg-btn,
             <div class="menu-item" data-screen="layout" data-admin-only="1">🗺 <span>Edición de Layout</span></div>
             <div class="menu-item" data-screen="racks" data-admin-only="1">🧱 <span>Edición de Rack</span></div>
             <div class="menu-item" data-screen="stock" data-admin-only="1">📦 <span>Stock</span></div>
+            <div class="menu-item" data-screen="presupuesto" data-admin-only="1">🧾 <span>Presupuesto</span></div>
           </div>
         </div>
         <div class="menu-section">
@@ -2410,6 +2420,7 @@ function escapeHtml(str){
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
       else if(screen === 'stock') renderStockScreen();
+      else if(screen === 'presupuesto') renderPresupuestoScreen();
       else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
@@ -4336,6 +4347,67 @@ function escapeHtml(str){
     if(!q) return families;
     return families.filter((family) => family.items.some((item) => getProductSearchText(item).includes(q)) || norm(family.nombre).includes(q));
   }
+
+  function getStockFamilyItemParams(item, branchId){
+    const params = getBsaleStockQueryForProduct(item, branchId);
+    if(!params) return null;
+    return {
+      variantId: String(params.get('variantId') || params.get('variantid') || '').trim(),
+      barcode: String(params.get('barcode') || '').trim(),
+      code: String(params.get('code') || '').trim()
+    };
+  }
+  async function fetchStockEntriesForProducts(products, branchIndex){
+    const items = Array.isArray(products) ? products : [];
+    if(!items.length) return [];
+    const branches = getStockBranchOptions();
+    const branch = branches[Number(branchIndex) || 0];
+    const branchId = Number(branch?.id || 0);
+    if(!branchId) return items.map(() => ({ quantity:null, quantityAvailable:null, quantityReserved:null }));
+    const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
+    const uncachedPayload = [];
+    const uncachedIndexes = [];
+    const results = new Array(items.length).fill(null);
+    items.forEach((product, idx) => {
+      const key = getStockCacheKey(branchId, product);
+      if(cache[key]) { results[idx] = cache[key]; return; }
+      const payload = getStockFamilyItemParams(product, branchId);
+      if(!payload){
+        const entry = { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:true, unmapped:true };
+        cache[key] = entry;
+        results[idx] = entry;
+        return;
+      }
+      uncachedIndexes.push(idx);
+      uncachedPayload.push({ idx, branchId, ...payload });
+    });
+    if(uncachedPayload.length){
+      try{
+        const data = await httpJson('/api/bsale/stock/batch', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ branchId, products: uncachedPayload })
+        });
+        const returned = Array.isArray(data?.results) ? data.results : [];
+        returned.forEach((row) => {
+          const idx = Number(row?.idx);
+          if(!Number.isFinite(idx) || !items[idx]) return;
+          const entry = row?.stock ? {
+            quantity: Number(row.stock.quantity || 0),
+            quantityAvailable: Number(row.stock.quantityAvailable || 0),
+            quantityReserved: Number(row.stock.quantityReserved || 0)
+          } : { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:!!row?.disabled, unmapped:!!row?.unmapped, missingIdentifier:!!row?.missingIdentifier, error:!!row?.error };
+          const key = getStockCacheKey(branchId, items[idx]);
+          cache[key] = entry;
+          results[idx] = entry;
+        });
+      }catch(_err){
+        const fallback = await Promise.all(uncachedIndexes.map((idx) => fetchStockEntryForProduct(items[idx], branchIndex)));
+        fallback.forEach((entry, j) => { results[uncachedIndexes[j]] = entry; });
+      }
+    }
+    return results.map((entry, idx) => entry || cache[getStockCacheKey(branchId, items[idx])] || { quantity:null, quantityAvailable:null, quantityReserved:null });
+  }
   function getStockCacheKey(branchId, product){
     return [String(branchId || ''), String(product?.sku || ''), String(product?.barras || ''), String(product?.variante || ''), String(product?.nombre || '')].join('¦');
   }
@@ -4371,15 +4443,18 @@ function escapeHtml(str){
   }
   function buildEmptyStockCell(){ return { quantity:0, quantityAvailable:0, quantityReserved:0, count:0 }; }
   async function buildFamilyStockMatrix(family, branchIndex){
+    const items = Array.isArray(family?.items) ? family.items : [];
     const matrix = {};
     const sizes = new Set();
     const colors = new Set();
-    let totals = { quantity:0, quantityAvailable:0, quantityReserved:0, known:false };
-    for(const item of (family?.items || [])){
+    const totals = { quantity:0, quantityAvailable:0, quantityReserved:0, known:false };
+    const stockResults = await fetchStockEntriesForProducts(items, branchIndex);
+    items.forEach((item, index) => {
       const size = getProductSizeValue(item) || '—';
       const color = getProductColorValue(item) || 'Sin color';
-      sizes.add(size); colors.add(color);
-      const stock = await fetchStockEntryForProduct(item, branchIndex);
+      sizes.add(size);
+      colors.add(color);
+      const stock = stockResults[index] || { quantity:null, quantityAvailable:null, quantityReserved:null };
       if(!matrix[size]) matrix[size] = {};
       if(!matrix[size][color]) matrix[size][color] = buildEmptyStockCell();
       const cell = matrix[size][color];
@@ -4393,7 +4468,7 @@ function escapeHtml(str){
         totals.quantityReserved += Number(stock.quantityReserved || 0);
         totals.known = true;
       }
-    }
+    });
     const orderedSizes = Array.from(sizes).sort((a,b) => getLogicalSizeRank(a) - getLogicalSizeRank(b) || compareTextLettersFirst(a,b));
     const orderedColors = Array.from(colors).sort(compareTextLettersFirst);
     return { matrix, sizes:orderedSizes, colors:orderedColors, totals };
@@ -4434,26 +4509,20 @@ function escapeHtml(str){
       const variants = Array.isArray(family.items) ? family.items.length : 0;
       const colors = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
       const sizes = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
-      const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
-      const coverage = variants >= 12 ? 'Completo' : variants >= 6 ? 'Medio' : 'Básico';
-      const coverageClass = variants >= 12 ? 'ok' : variants >= 6 ? 'mid' : 'low';
+      const stockValue = getProductStockValue(first);
       return `<tr class="stock-table-row" data-stock-family="${escapeHtml(family.key || String(idx))}" tabindex="0" role="button" aria-label="Ver detalle de ${escapeHtml(family.nombre)}">
-        <td class="stock-col-product">
-          <div class="stock-copy stock-copy-noimage">
-            <div class="stock-name">${escapeHtml(family.nombre)}</div>
-          </div>
-        </td>
-        <td class="stock-col-sku">${skuBase}</td>
+        <td class="stock-col-product"><div class="stock-name stock-name-clickable">${escapeHtml(family.nombre)}</div></td>
+        <td class="stock-col-sku">${escapeHtml(String(first?.sku || '—').trim() || '—')}</td>
         <td class="stock-col-num">${variants}</td>
         <td class="stock-col-num">${colors.length || 0}</td>
         <td class="stock-col-num">${sizes.length || 0}</td>
-        <td class="stock-col-state"><span class="stock-status ${coverageClass}">${coverage}</span></td>
+        <td class="stock-col-num">${Number.isFinite(stockValue) ? stockValue : '—'}</td>
       </tr>`;
     }).join('');
     host.innerHTML = `
-      <div class="stock-list-shell">
+      <div class="stock-list-shell stock-list-shell-modern">
         <div class="stock-list-scroll">
-          <table class="stock-list-table">
+          <table class="stock-list-table stock-list-table-modern">
             <thead>
               <tr>
                 <th>Producto</th>
@@ -4461,7 +4530,7 @@ function escapeHtml(str){
                 <th>Variantes</th>
                 <th>Colores</th>
                 <th>Tallas</th>
-                <th>Estado</th>
+                <th>Stock</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -4476,15 +4545,16 @@ function escapeHtml(str){
         if(!family) return;
         familyRows.forEach((r) => r.classList.remove('is-active'));
         row.classList.add('is-active');
+        appState.stock.selectedFamilyKey = family.key;
         await openStockFamilyCard(family);
       };
-      row.addEventListener('click', open);
-      row.addEventListener('keydown', (e) => {
+      row.onclick = open;
+      row.onkeydown = (e) => {
         if(e.key === 'Enter' || e.key === ' '){
           e.preventDefault();
           open();
         }
-      });
+      };
     });
   }
   function renderStockDetailPanel(family, data, loading=false){
@@ -4508,16 +4578,21 @@ function escapeHtml(str){
     const modal = document.createElement('div');
     modal.id = 'stockModal';
     modal.className = 'stock-modal';
-    modal.innerHTML = `<div class="stock-modal-backdrop" data-stock-close="1"></div><div class="stock-modal-card"><button class="stock-modal-close" type="button" data-stock-close="1">×</button><div class="stock-card-panel"><div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>—</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>—</strong></div></div><div class="stock-matrix-wrap"><div class="stock-empty">Cargando stock organizado…</div></div></div></div>`;
+    modal.innerHTML = `<div class="stock-modal-backdrop" data-stock-close="1"></div><div class="stock-modal-card stock-modal-card-wide"><button class="stock-modal-close" type="button" data-stock-close="1">×</button><div class="stock-card-panel"><div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>…</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>…</strong></div></div><div class="stock-matrix-wrap"><div class="stock-empty">Cargando stock organizado…</div></div></div></div>`;
     document.body.appendChild(modal);
     modal.querySelectorAll('[data-stock-close]').forEach((el) => el.addEventListener('click', closeStockModal));
     const onEsc = (e) => { if(e.key === 'Escape'){ closeStockModal(); document.removeEventListener('keydown', onEsc); } };
     document.addEventListener('keydown', onEsc);
-    const ensured = await ensureSelectedFamilyMatrix();
-    let data = ensured && ensured.family && ensured.family.key === family.key ? ensured.data : null;
-    if(!data){
-      const branchIndex = getStockBranchIndex();
-      data = await buildFamilyStockMatrix(family, branchIndex);
+    let data = null;
+    try{
+      const ensured = await ensureSelectedFamilyMatrix();
+      data = ensured && ensured.family && ensured.family.key === family.key ? ensured.data : null;
+      if(!data){
+        const branchIndex = getStockBranchIndex();
+        data = await buildFamilyStockMatrix(family, branchIndex);
+      }
+    }catch(_err){
+      data = { matrix:{}, sizes:[], colors:[], totals:{ quantity:0, quantityAvailable:0, quantityReserved:0, known:false } };
     }
     const sizes = Array.isArray(data?.sizes) ? data.sizes : [];
     const colors = Array.isArray(data?.colors) ? data.colors : [];
@@ -4527,12 +4602,12 @@ function escapeHtml(str){
         const cell = data.matrix?.[size]?.[color] || buildEmptyStockCell();
         const available = Number(cell.quantityAvailable || 0);
         const total = Number(cell.quantity || 0);
-        return `<td><div class="stock-matrix-val">${available}</div><div class="stock-matrix-sub">tot ${total}</div></td>`;
+        return `<td><div class="stock-matrix-val">${available}</div><div class="stock-matrix-sub">Total ${total}</div></td>`;
       }).join('');
       return `<tr><th>${escapeHtml(color)}</th>${cells}</tr>`;
-    }).join('') || `<tr><td colspan="${Math.max(2, sizes.length + 1)}" class="muted tiny">Sin matriz disponible.</td></tr>`;
+    }).join('') || `<tr><td colspan="${Math.max(2, sizes.length + 1)}" class="muted tiny">Sin variantes con stock disponible para mostrar.</td></tr>`;
     const panel = modal.querySelector('.stock-card-panel');
-    panel.innerHTML = `<div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>${colors.length}</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>${sizes.length}</strong></div></div><div class="stock-matrix-wrap"><table class="stock-matrix-table stock-matrix-compact"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="stock-card-foot">Disponible por color y talla. Debajo de cada valor verás el total registrado.</div>`;
+    panel.innerHTML = `<div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>${colors.length}</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>${sizes.length}</strong></div><div class="stock-meta-item"><span>Disponible</span><strong>${Number(data?.totals?.quantityAvailable || 0)}</strong></div></div><div class="stock-matrix-wrap"><table class="stock-matrix-table stock-matrix-compact"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="stock-card-foot">Matriz color × talla. Cada celda muestra disponible y debajo el total registrado en Bsale.</div>`;
   }
   async function renderStockScreen(){
     const branches = getStockBranchOptions();
@@ -4571,6 +4646,57 @@ function escapeHtml(str){
     contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes en la sucursal`;
   }
 
+
+  function getPresupuestoBrands(){
+    const families = getStockScreenFamilies();
+    return Array.from(new Set(families.map((f) => String((f.items?.[0]?.marca || f.items?.[0]?.brand || 'Sin marca')).trim()).filter(Boolean))).sort(compareTextLettersFirst);
+  }
+  function getPresupuestoModels(brand){
+    const families = getStockScreenFamilies();
+    return families.filter((f) => String((f.items?.[0]?.marca || f.items?.[0]?.brand || 'Sin marca')).trim() === brand);
+  }
+  function renderPresupuestoScreen(){
+    const brands = getPresupuestoBrands();
+    appState.presupuesto = appState.presupuesto || { brand:'', modelKey:'', quantity:1 };
+    const selectedBrand = appState.presupuesto.brand && brands.includes(appState.presupuesto.brand) ? appState.presupuesto.brand : (brands[0] || '');
+    appState.presupuesto.brand = selectedBrand;
+    const models = getPresupuestoModels(selectedBrand);
+    if(!models.find((m) => m.key === appState.presupuesto.modelKey)) appState.presupuesto.modelKey = models[0]?.key || '';
+    const selectedModel = models.find((m) => m.key === appState.presupuesto.modelKey) || null;
+    const qty = Math.max(1, Number(appState.presupuesto.quantity || 1));
+    contentTitle.textContent = 'Presupuesto';
+    contentSubtitle.textContent = 'Selecciona marca, modelo y cantidad para armar una cotización rápida.';
+    contentWrap.innerHTML = `
+      <div class="stock-screen stock-screen-modern stock-screen-fullheight">
+        <div class="stock-topbar stock-topbar-compact">
+          <div class="stock-topbar-left">
+            <div class="stock-screen-title">Presupuesto rápido</div>
+            <div class="stock-screen-note">Flujo simple: marca → modelo → cantidad.</div>
+          </div>
+        </div>
+        <div class="presupuesto-grid">
+          <label class="stock-filter"><span>Marca</span><select id="presBrand">${brands.map((b) => `<option ${b===selectedBrand?'selected':''}>${escapeHtml(b)}</option>`).join('')}</select></label>
+          <label class="stock-filter"><span>Modelo</span><select id="presModel">${models.map((m) => `<option value="${escapeHtml(m.key)}" ${m.key===appState.presupuesto.modelKey?'selected':''}>${escapeHtml(m.nombre)}</option>`).join('')}</select></label>
+          <label class="stock-filter"><span>Cantidad</span><input id="presQty" type="number" min="1" step="1" value="${qty}"></label>
+        </div>
+        <div class="stock-list-shell stock-list-shell-modern presupuesto-card">
+          <div class="stock-screen-title">${escapeHtml(selectedModel?.nombre || 'Sin modelo')}</div>
+          <div class="stock-screen-note">SKU base: ${escapeHtml(String(selectedModel?.items?.[0]?.sku || '—'))}</div>
+          <div class="stock-summary-strip stock-summary-strip-compact">
+            <div class="stock-summary-pill"><span>Marca</span><strong>${escapeHtml(selectedBrand || '—')}</strong></div>
+            <div class="stock-summary-pill"><span>Variantes</span><strong>${selectedModel?.items?.length || 0}</strong></div>
+            <div class="stock-summary-pill"><span>Cantidad</span><strong>${qty}</strong></div>
+          </div>
+        </div>
+      </div>`;
+    detailPanel.style.display = 'none';
+    const bind = (id, fn) => { const el = document.getElementById(id); if(el){ el.onchange = fn; if(el.tagName === 'INPUT') el.oninput = fn; } };
+    bind('presBrand', (e) => { appState.presupuesto.brand = String(e.target.value || ''); renderPresupuestoScreen(); });
+    bind('presModel', (e) => { appState.presupuesto.modelKey = String(e.target.value || ''); renderPresupuestoScreen(); });
+    bind('presQty', (e) => { appState.presupuesto.quantity = Math.max(1, Number(e.target.value || 1)); });
+    contentStatus.textContent = `${models.length.toLocaleString('es-PE')} modelos disponibles.`;
+    contentFootRight.textContent = 'Presupuesto';
+  }
   function defaultBsaleConfig(){ return { enabled:false, country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', officeMappings:{} }; }
   function normalizeBsaleConfig(cfg){ const src = (cfg && typeof cfg === 'object') ? cfg : {}; return { enabled:!!src.enabled, country:String(src.country || 'PE').toUpperCase(), apiBaseUrl:String(src.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io', accessToken:String(src.accessToken || '').trim(), officeMappings: src.officeMappings && typeof src.officeMappings === 'object' ? { ...src.officeMappings } : {} }; }
   function normalizeAdminState(admin){ const raw = admin && typeof admin === 'object' ? clone(admin) : {}; raw.bsale = normalizeBsaleConfig(raw.bsale); return raw; }

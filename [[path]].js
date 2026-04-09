@@ -213,6 +213,38 @@ export async function onRequest(context) {
       }
     }
 
+    if (path === '/bsale/stock/batch' && request.method === 'POST') {
+      const session = await requireAuth(request, env.DB);
+      if (session.error) return session.error;
+      try {
+        const config = await getBsaleConfig(env.DB, session.company_id);
+        if (!config.enabled || !config.accessToken) return withJson({ ok:true, results:[], disabled:true, build: BUILD_MARK });
+        const body = await readJson(request);
+        const branchId = Number(body.branchId || 0);
+        const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
+        if (!branch) return withJson({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.', build: BUILD_MARK }, 404);
+        const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
+        const officeId = mappings[String(branch.id)] || '';
+        if (!officeId) return withJson({ ok:true, results:[], unmapped:true, build: BUILD_MARK });
+        const products = Array.isArray(body.products) ? body.products : [];
+        const results = await Promise.all(products.map(async (item, idx) => {
+          const variantId = String(item?.variantId || item?.variantid || '').trim();
+          const barcode = String(item?.barcode || '').trim();
+          const code = String(item?.code || '').trim();
+          if (!variantId && !barcode && !code) return { idx:Number(item?.idx ?? idx), stock:null, missingIdentifier:true };
+          try {
+            const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
+            return { idx:Number(item?.idx ?? idx), stock };
+          } catch (err) {
+            return { idx:Number(item?.idx ?? idx), stock:null, error:true, message: err.message || 'error' };
+          }
+        }));
+        return withJson({ ok:true, officeId, results, build: BUILD_MARK });
+      } catch (err) {
+        return withJson({ ok:false, error: err.message || 'No se pudo consultar stock batch en Bsale.', build: BUILD_MARK }, 400);
+      }
+    }
+
     if (path === '/app-state' && request.method === 'GET') {
       const session = await getSession(request, env.DB, true);
       const companyId = session?.company_id || 1;

@@ -1077,6 +1077,35 @@ app.get('/api/bsale/stock', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/bsale/stock/batch', requireAuth, async (req, res) => {
+  try {
+    const companyId = getSessionCompanyId(req);
+    const config = getBsaleConfig(companyId);
+    if (!config.enabled || !config.accessToken) return res.json({ ok:true, results:[], disabled:true });
+    const branchId = Number(req.body?.branchId || 0);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.' });
+    const officeId = getBsaleOfficeMappings(companyId)[String(branch.id)] || '';
+    if (!officeId) return res.json({ ok:true, results:[], unmapped:true });
+    const products = Array.isArray(req.body?.products) ? req.body.products : [];
+    const results = await Promise.all(products.map(async (item, idx) => {
+      const variantId = String(item?.variantId || item?.variantid || '').trim();
+      const barcode = String(item?.barcode || '').trim();
+      const code = String(item?.code || '').trim();
+      if (!variantId && !barcode && !code) return { idx:Number(item?.idx ?? idx), stock:null, missingIdentifier:true };
+      try {
+        const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
+        return { idx:Number(item?.idx ?? idx), stock };
+      } catch (err) {
+        return { idx:Number(item?.idx ?? idx), stock:null, error:true, message: err.message || 'error' };
+      }
+    }));
+    res.json({ ok:true, officeId, results });
+  } catch (err) {
+    res.status(400).json({ ok:false, error: err.message || 'No se pudo consultar stock batch en Bsale.' });
+  }
+});
+
 app.get('/api/branches', requireAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').all(getSessionCompanyId(req));
   res.json({ branches: rows.map(normalizeBranch) });
