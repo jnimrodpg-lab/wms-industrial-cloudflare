@@ -202,52 +202,46 @@ export async function onRequest(context) {
         const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
         const officeId = mappings[String(branch.id)] || '';
         if (!officeId) return withJson({ ok:true, stock:null, unmapped:true, build: BUILD_MARK });
-        const stock = await fetchBsaleStock(config, { officeId, variantId: url.searchParams.get('variantId') || url.searchParams.get('variantid') || '', code: url.searchParams.get('code') || '', barcode: url.searchParams.get('barcode') || '' });
+        const variantId = String(url.searchParams.get('variantId') || url.searchParams.get('variantid') || '').trim();
+        const barcode = String(url.searchParams.get('barcode') || '').trim();
+        const code = String(url.searchParams.get('code') || '').trim();
+        if (!variantId && !barcode && !code) return withJson({ ok:true, stock:null, missingIdentifier:true, officeId, build: BUILD_MARK });
+        const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
         return withJson({ ok:true, stock, officeId, build: BUILD_MARK });
       } catch (err) {
         return withJson({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.', build: BUILD_MARK }, 400);
       }
     }
 
-    // ✅ NUEVO: endpoint batch — consulta múltiples SKUs en paralelo desde el servidor
     if (path === '/bsale/stock/batch' && request.method === 'POST') {
       const session = await requireAuth(request, env.DB);
       if (session.error) return session.error;
       try {
-        const body = await readJson(request);
-        const items = Array.isArray(body?.items) ? body.items : [];
-        const branchId = Number(body?.branchId || 0);
-        if (!items.length) return withJson({ ok:true, results:[], build: BUILD_MARK });
         const config = await getBsaleConfig(env.DB, session.company_id);
-        if (!config.enabled || !config.accessToken) return withJson({ ok:true, results: items.map(() => ({ stock:null, disabled:true })), build: BUILD_MARK });
+        if (!config.enabled || !config.accessToken) return withJson({ ok:true, results:[], disabled:true, build: BUILD_MARK });
+        const body = await readJson(request);
+        const branchId = Number(body.branchId || 0);
         const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ ok:false, error:'Sucursal no encontrada.', build: BUILD_MARK }, 404);
+        if (!branch) return withJson({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.', build: BUILD_MARK }, 404);
         const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
         const officeId = mappings[String(branch.id)] || '';
-        if (!officeId) return withJson({ ok:true, results: items.map(() => ({ stock:null, unmapped:true })), build: BUILD_MARK });
-        // Disparar todas las consultas en paralelo (máx 20 para no saturar)
-        const CHUNK = 20;
-        const results = [];
-        for (let i = 0; i < items.length; i += CHUNK) {
-          const chunk = items.slice(i, i + CHUNK);
-          const chunkResults = await Promise.all(chunk.map(async (item) => {
-            try {
-              const stock = await fetchBsaleStock(config, {
-                officeId,
-                variantId: String(item.variantId || ''),
-                code: String(item.code || ''),
-                barcode: String(item.barcode || '')
-              });
-              return { stock, officeId };
-            } catch (err) {
-              return { stock: null, error: err.message || 'Error' };
-            }
-          }));
-          results.push(...chunkResults);
-        }
-        return withJson({ ok:true, results, build: BUILD_MARK });
+        if (!officeId) return withJson({ ok:true, results:[], unmapped:true, build: BUILD_MARK });
+        const products = Array.isArray(body.products) ? body.products : [];
+        const results = await Promise.all(products.map(async (item, idx) => {
+          const variantId = String(item?.variantId || item?.variantid || '').trim();
+          const barcode = String(item?.barcode || '').trim();
+          const code = String(item?.code || '').trim();
+          if (!variantId && !barcode && !code) return { idx:Number(item?.idx ?? idx), stock:null, missingIdentifier:true };
+          try {
+            const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
+            return { idx:Number(item?.idx ?? idx), stock };
+          } catch (err) {
+            return { idx:Number(item?.idx ?? idx), stock:null, error:true, message: err.message || 'error' };
+          }
+        }));
+        return withJson({ ok:true, officeId, results, build: BUILD_MARK });
       } catch (err) {
-        return withJson({ ok:false, error: err.message || 'Error en batch stock.', build: BUILD_MARK }, 400);
+        return withJson({ ok:false, error: err.message || 'No se pudo consultar stock batch en Bsale.', build: BUILD_MARK }, 400);
       }
     }
 

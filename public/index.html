@@ -1207,6 +1207,15 @@ body.theme-light .seg-btn,
   .rack-model-fixed-viewer .rack-model-mini-stage{height:260px}
 }
 
+
+    .stock-list-table-modern tbody tr{cursor:pointer;transition:background .16s ease}
+    .stock-list-table-modern tbody tr:hover,.stock-list-table-modern tbody tr.is-active{background:rgba(91,185,140,.10)}
+    .stock-name-clickable{font-weight:800}
+    .stock-modal-card-wide{width:min(1100px,92vw)}
+    .presupuesto-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px;margin-bottom:14px}
+    .presupuesto-grid .stock-filter{display:grid;gap:6px}
+    .presupuesto-card{padding:16px}
+
 </style>
 </head>
 <body>
@@ -1545,7 +1554,6 @@ function escapeHtml(str){
     ],
     admin: loadAdminState(),
     stock: { branchIndex:0, query:'', selectedFamilyKey:'', selectedSize:'', selectedColor:'', familyMatrixCache:{}, loading:false },
-    presupuesto: { items:[], marcaInput:'', modeloInput:'', cantidadInput:1 },
     ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
@@ -2457,6 +2465,7 @@ function escapeHtml(str){
       product.stock,
       product.quantity,
       product.quantityAvailable,
+      product.quantityReserved,
       product.cantidad,
       product.cant,
       product.existencias,
@@ -4303,7 +4312,6 @@ function escapeHtml(str){
   }
 
 
-  // ─── STOCK HELPERS ───────────────────────────────────────────────────────────
   function getStockBranchOptions(){ return Array.isArray(appState.admin?.branches) ? appState.admin.branches : []; }
   function getStockBranchIndex(){
     const branches = getStockBranchOptions();
@@ -4339,6 +4347,67 @@ function escapeHtml(str){
     if(!q) return families;
     return families.filter((family) => family.items.some((item) => getProductSearchText(item).includes(q)) || norm(family.nombre).includes(q));
   }
+
+  function getStockFamilyItemParams(item, branchId){
+    const params = getBsaleStockQueryForProduct(item, branchId);
+    if(!params) return null;
+    return {
+      variantId: String(params.get('variantId') || params.get('variantid') || '').trim(),
+      barcode: String(params.get('barcode') || '').trim(),
+      code: String(params.get('code') || '').trim()
+    };
+  }
+  async function fetchStockEntriesForProducts(products, branchIndex){
+    const items = Array.isArray(products) ? products : [];
+    if(!items.length) return [];
+    const branches = getStockBranchOptions();
+    const branch = branches[Number(branchIndex) || 0];
+    const branchId = Number(branch?.id || 0);
+    if(!branchId) return items.map(() => ({ quantity:null, quantityAvailable:null, quantityReserved:null }));
+    const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
+    const uncachedPayload = [];
+    const uncachedIndexes = [];
+    const results = new Array(items.length).fill(null);
+    items.forEach((product, idx) => {
+      const key = getStockCacheKey(branchId, product);
+      if(cache[key]) { results[idx] = cache[key]; return; }
+      const payload = getStockFamilyItemParams(product, branchId);
+      if(!payload){
+        const entry = { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:true, unmapped:true };
+        cache[key] = entry;
+        results[idx] = entry;
+        return;
+      }
+      uncachedIndexes.push(idx);
+      uncachedPayload.push({ idx, branchId, ...payload });
+    });
+    if(uncachedPayload.length){
+      try{
+        const data = await httpJson('/api/bsale/stock/batch', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ branchId, products: uncachedPayload })
+        });
+        const returned = Array.isArray(data?.results) ? data.results : [];
+        returned.forEach((row) => {
+          const idx = Number(row?.idx);
+          if(!Number.isFinite(idx) || !items[idx]) return;
+          const entry = row?.stock ? {
+            quantity: Number(row.stock.quantity || 0),
+            quantityAvailable: Number(row.stock.quantityAvailable || 0),
+            quantityReserved: Number(row.stock.quantityReserved || 0)
+          } : { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:!!row?.disabled, unmapped:!!row?.unmapped, missingIdentifier:!!row?.missingIdentifier, error:!!row?.error };
+          const key = getStockCacheKey(branchId, items[idx]);
+          cache[key] = entry;
+          results[idx] = entry;
+        });
+      }catch(_err){
+        const fallback = await Promise.all(uncachedIndexes.map((idx) => fetchStockEntryForProduct(items[idx], branchIndex)));
+        fallback.forEach((entry, j) => { results[uncachedIndexes[j]] = entry; });
+      }
+    }
+    return results.map((entry, idx) => entry || cache[getStockCacheKey(branchId, items[idx])] || { quantity:null, quantityAvailable:null, quantityReserved:null });
+  }
   function getStockCacheKey(branchId, product){
     return [String(branchId || ''), String(product?.sku || ''), String(product?.barras || ''), String(product?.variante || ''), String(product?.nombre || '')].join('¦');
   }
@@ -4373,63 +4442,19 @@ function escapeHtml(str){
     }
   }
   function buildEmptyStockCell(){ return { quantity:0, quantityAvailable:0, quantityReserved:0, count:0 }; }
-
-  // ✅ MEJORADO: carga paralela con Promise.all en lugar de for-await secuencial
-  // Usa el endpoint batch del servidor si hay múltiples variantes (más eficiente)
   async function buildFamilyStockMatrix(family, branchIndex){
     const items = Array.isArray(family?.items) ? family.items : [];
+    const matrix = {};
     const sizes = new Set();
     const colors = new Set();
-    // Pre-registrar tallas y colores
-    items.forEach((item) => {
-      sizes.add(getProductSizeValue(item) || '—');
-      colors.add(getProductColorValue(item) || 'Sin color');
-    });
-    let stockResults;
-    const branches = getStockBranchOptions();
-    const branch = branches[Number(branchIndex) || 0];
-    const branchId = Number(branch?.id || 0);
-    const cfg = normalizeBsaleConfig(appState.admin?.bsale);
-    // Intentar endpoint batch si hay >1 item y bsale está configurado
-    if(items.length > 1 && branchId && cfg.enabled && cfg.accessToken){
-      try{
-        const batchItems = items.map(item => ({
-          variantId: String(item.variantId || item.variantid || ''),
-          code: String(item.sku || ''),
-          barcode: String(item.barras || '')
-        }));
-        const resp = await httpJson('/api/bsale/stock/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ branchId, items: batchItems })
-        });
-        if(resp?.ok && Array.isArray(resp.results)){
-          const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
-          stockResults = resp.results.map((r, i) => {
-            const item = items[i];
-            const key = getStockCacheKey(branchId, item);
-            const s = r?.stock;
-            const entry = s && Number.isFinite(Number(s.quantity))
-              ? { quantity: Number(s.quantity||0), quantityAvailable: Number(s.quantityAvailable||0), quantityReserved: Number(s.quantityReserved||0) }
-              : { quantity:null, quantityAvailable:null, quantityReserved:null, disabled:!!r?.disabled, unmapped:!!r?.unmapped, error:!!r?.error };
-            cache[key] = entry;
-            return entry;
-          });
-        }
-      }catch(batchErr){
-        console.warn('Batch stock fallback to parallel individual requests', batchErr);
-      }
-    }
-    // Fallback: Promise.all individual
-    if(!stockResults){
-      stockResults = await Promise.all(items.map((item) => fetchStockEntryForProduct(item, branchIndex)));
-    }
-    const matrix = {};
-    let totals = { quantity:0, quantityAvailable:0, quantityReserved:0, known:false };
-    items.forEach((item, i) => {
+    const totals = { quantity:0, quantityAvailable:0, quantityReserved:0, known:false };
+    const stockResults = await fetchStockEntriesForProducts(items, branchIndex);
+    items.forEach((item, index) => {
       const size = getProductSizeValue(item) || '—';
       const color = getProductColorValue(item) || 'Sin color';
-      const stock = stockResults[i];
+      sizes.add(size);
+      colors.add(color);
+      const stock = stockResults[index] || { quantity:null, quantityAvailable:null, quantityReserved:null };
       if(!matrix[size]) matrix[size] = {};
       if(!matrix[size][color]) matrix[size][color] = buildEmptyStockCell();
       const cell = matrix[size][color];
@@ -4448,7 +4473,6 @@ function escapeHtml(str){
     const orderedColors = Array.from(colors).sort(compareTextLettersFirst);
     return { matrix, sizes:orderedSizes, colors:orderedColors, totals };
   }
-
   async function ensureSelectedFamilyMatrix(){
     const families = getStockScreenFamilies();
     const family = families.find((item) => item.key === appState.stock?.selectedFamilyKey) || families[0] || null;
@@ -4459,6 +4483,7 @@ function escapeHtml(str){
     const cache = appState.stock.familyMatrixCache || (appState.stock.familyMatrixCache = {});
     if(!cache[cacheKey] || !cache[cacheKey].matrix){
       appState.stock.loading = true;
+      renderStockDetailPanel(family, null, true);
       cache[cacheKey] = await buildFamilyStockMatrix(family, branchIndex);
       appState.stock.loading = false;
     }
@@ -4471,410 +4496,215 @@ function escapeHtml(str){
     const sizeMatch = items.find((item) => normalizeVariantValue(getProductSizeValue(item)) === normalizeVariantValue(selectedSize));
     return sizeMatch || items[0] || null;
   }
-
-  // ✅ MEJORADO: lista solo de productos (familias), no variantes
   function renderStockTable(){
     const host = document.getElementById('stockTableWrap');
     if(!host) return;
     const families = getStockScreenFamilies();
     if(!families.length){
-      host.innerHTML = '<div class="stkv2-empty"><div class="stkv2-empty-icon">📦</div><div>No hay productos importados en la sucursal seleccionada.</div></div>';
+      host.innerHTML = '<div class="stock-empty">No hay productos importados en la sucursal seleccionada.</div>';
       return;
     }
-    const rowsHtml = families.map((family, idx) => {
+    const rows = families.map((family, idx) => {
       const first = Array.isArray(family.items) ? (family.items[0] || null) : null;
       const variants = Array.isArray(family.items) ? family.items.length : 0;
-      const colorSet = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
-      const sizeSet = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
-      const skuBase = escapeHtml(String(first?.sku || '—').trim() || '—');
-      const stockLocal = Math.round((family.items || []).reduce((acc, item) => acc + getProductStockValue(item), 0));
-      // Pills de color pequeños
-      const colorDots = colorSet.slice(0,5).map(c => `<span class="stkv2-colordot" style="background:${cssColorApprox(c)}" title="${escapeHtml(c)}"></span>`).join('');
-      const extraColors = colorSet.length > 5 ? `<span class="stkv2-colordot-more">+${colorSet.length - 5}</span>` : '';
-      // Badge de tallas
-      const sizeBadge = sizeSet.length ? `<span class="stkv2-sizes-badge">${sizeSet.slice(0,4).map(s => escapeHtml(s)).join(' · ')}${sizeSet.length > 4 ? ' …' : ''}</span>` : '';
-      const stockBadge = stockLocal > 0
-        ? `<span class="stkv2-stock-badge ok">${stockLocal}</span>`
-        : `<span class="stkv2-stock-badge zero">0</span>`;
-      return `<div class="stkv2-row" data-stock-family="${escapeHtml(family.key || String(idx))}" tabindex="0" role="button" aria-label="Ver detalle de ${escapeHtml(family.nombre)}">
-        <div class="stkv2-row-main">
-          <div class="stkv2-row-avatar">${escapeHtml((family.nombre || '?').charAt(0).toUpperCase())}</div>
-          <div class="stkv2-row-info">
-            <div class="stkv2-row-name">${escapeHtml(family.nombre)}</div>
-            <div class="stkv2-row-meta">
-              <span class="stkv2-sku">${skuBase}</span>
-              ${sizeBadge}
-            </div>
-          </div>
-        </div>
-        <div class="stkv2-row-colors">${colorDots}${extraColors}</div>
-        <div class="stkv2-row-stat"><span class="stkv2-stat-label">Variantes</span><strong>${variants}</strong></div>
-        <div class="stkv2-row-stat"><span class="stkv2-stat-label">Colores</span><strong>${colorSet.length}</strong></div>
-        <div class="stkv2-row-stockcell">${stockBadge}</div>
-        <div class="stkv2-row-arrow">›</div>
-      </div>`;
+      const colors = Array.from(new Set((family.items || []).map((item) => String(getProductColorValue(item) || '').trim()).filter(Boolean)));
+      const sizes = Array.from(new Set((family.items || []).map((item) => String(getProductSizeValue(item) || '').trim()).filter(Boolean)));
+      const stockValue = getProductStockValue(first);
+      return `<tr class="stock-table-row" data-stock-family="${escapeHtml(family.key || String(idx))}" tabindex="0" role="button" aria-label="Ver detalle de ${escapeHtml(family.nombre)}">
+        <td class="stock-col-product"><div class="stock-name stock-name-clickable">${escapeHtml(family.nombre)}</div></td>
+        <td class="stock-col-sku">${escapeHtml(String(first?.sku || '—').trim() || '—')}</td>
+        <td class="stock-col-num">${variants}</td>
+        <td class="stock-col-num">${colors.length || 0}</td>
+        <td class="stock-col-num">${sizes.length || 0}</td>
+        <td class="stock-col-num">${Number.isFinite(stockValue) ? stockValue : '—'}</td>
+      </tr>`;
     }).join('');
     host.innerHTML = `
-      <div class="stkv2-shell">
-        <div class="stkv2-head-row">
-          <div>Producto</div>
-          <div>Colores</div>
-          <div>Variantes</div>
-          <div>Colores</div>
-          <div>Stock local</div>
-          <div></div>
+      <div class="stock-list-shell stock-list-shell-modern">
+        <div class="stock-list-scroll">
+          <table class="stock-list-table stock-list-table-modern">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>SKU</th>
+                <th>Variantes</th>
+                <th>Colores</th>
+                <th>Tallas</th>
+                <th>Stock</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
-        <div class="stkv2-body">${rowsHtml}</div>
       </div>`;
-    const openFamilyByKey = async (key, row) => {
-      const family = families.find((item) => String(item.key) === String(key));
-      if(!family) return;
-      host.querySelectorAll('[data-stock-family]').forEach((r) => r.classList.remove('stkv2-row-active'));
-      if(row) row.classList.add('stkv2-row-active');
-      appState.stock.selectedFamilyKey = family.key;
-      await openStockFamilyCard(family);
-    };
-    host.addEventListener('click', async (e) => {
-      const row = e.target.closest('[data-stock-family]');
-      if(!row || !host.contains(row)) return;
-      await openFamilyByKey(row.getAttribute('data-stock-family'), row);
-    });
-    host.querySelectorAll('[data-stock-family]').forEach((row) => {
-      row.addEventListener('keydown', async (e) => {
-        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); await openFamilyByKey(row.getAttribute('data-stock-family'), row); }
-      });
+    const familyRows = host.querySelectorAll('[data-stock-family]');
+    familyRows.forEach((row) => {
+      const open = async () => {
+        const key = row.getAttribute('data-stock-family');
+        const family = families.find((item) => String(item.key) === String(key));
+        if(!family) return;
+        familyRows.forEach((r) => r.classList.remove('is-active'));
+        row.classList.add('is-active');
+        appState.stock.selectedFamilyKey = family.key;
+        await openStockFamilyCard(family);
+      };
+      row.onclick = open;
+      row.onkeydown = (e) => {
+        if(e.key === 'Enter' || e.key === ' '){
+          e.preventDefault();
+          open();
+        }
+      };
     });
   }
-
-  // Aproximación visual de color a partir de nombre (heurística simple)
-  function cssColorApprox(name){
-    const n = norm(name);
-    const map = { negro:'#1a1a1a', blanco:'#f0f0f0', rojo:'#e53935', azul:'#1e88e5', verde:'#43a047', amarillo:'#fdd835', naranja:'#fb8c00', rosa:'#e91e8c', morado:'#8e24aa', gris:'#757575', cafe:'#795548', celeste:'#29b6f6', beige:'#d7c4a8', marron:'#6d4c41', turquesa:'#00acc1', violeta:'#7b1fa2' };
-    for(const [k,v] of Object.entries(map)){ if(n.includes(k)) return v; }
-    let hash = 0; for(let i=0;i<n.length;i++) hash = ((hash<<5)-hash+n.charCodeAt(i))|0;
-    const hue = Math.abs(hash) % 360;
-    return `hsl(${hue},60%,50%)`;
+  function renderStockDetailPanel(family, data, loading=false){
+    const title = document.getElementById('detailTitle');
+    const subtitle = document.getElementById('detailSubtitle');
+    const foot = document.getElementById('detailStatus');
+    const chip = document.getElementById('detailChip');
+    if(title) title.textContent = 'Detalle de stock';
+    if(subtitle) subtitle.textContent = 'Haz clic en un producto para ver su card y la tabla color × talla.';
+    if(foot) foot.textContent = family ? 'Detalle abierto en card.' : 'Sin selección.';
+    if(chip) chip.textContent = family ? (family.nombre || '—') : '—';
+    return;
   }
-
-  function renderStockDetailPanel(family, data, loading=false){ /* stub — ahora usamos modal */ }
-
   function closeStockModal(){
     const modal = document.getElementById('stockModal');
-    if(modal){ modal.classList.add('stock-modal-out'); setTimeout(() => modal.remove(), 200); }
+    if(modal) modal.remove();
   }
-
-  // ✅ MEJORADO: card con carga paralela y UI refinada
   async function openStockFamilyCard(family){
     closeStockModal();
     const branchName = escapeHtml((getStockBranchOptions()[getStockBranchIndex()] || {}).name || '—');
-    const colorSet = Array.from(new Set((family.items || []).map(i => getProductColorValue(i)||'').filter(Boolean)));
-    const sizeSet = Array.from(new Set((family.items || []).map(i => getProductSizeValue(i)||'').filter(Boolean)));
     const modal = document.createElement('div');
     modal.id = 'stockModal';
-    modal.className = 'stock-modal stkv2-modal';
-    modal.innerHTML = `
-      <div class="stock-modal-backdrop" data-stock-close="1"></div>
-      <div class="stkv2-card">
-        <div class="stkv2-card-topbar">
-          <div class="stkv2-card-title">${escapeHtml(family.nombre)}</div>
-          <div class="stkv2-card-branch">📍 ${branchName}</div>
-          <button class="stkv2-card-close" data-stock-close="1" title="Cerrar (Esc)">×</button>
-        </div>
-        <div class="stkv2-card-pills">
-          <div class="stkv2-pill"><span>Variantes</span><strong>${family.items.length}</strong></div>
-          <div class="stkv2-pill"><span>Colores</span><strong>${colorSet.length || '—'}</strong></div>
-          <div class="stkv2-pill"><span>Tallas</span><strong>${sizeSet.length || '—'}</strong></div>
-          <div class="stkv2-pill stkv2-pill-bsale" id="stkModalBsalePill"><span>Stock Bsale</span><strong class="stkv2-loading-dots">···</strong></div>
-        </div>
-        <div class="stkv2-card-variants-head">
-          <div class="stkv2-cvh-title">Variantes del producto</div>
-          <div class="stkv2-cvh-sub">Talla × Color con stock Bsale en tiempo real</div>
-        </div>
-        <div class="stkv2-matrix-wrap" id="stkModalMatrix">
-          <div class="stkv2-matrix-loading"><div class="stkv2-spinner"></div><span>Cargando stock de ${family.items.length} variante${family.items.length !== 1 ? 's' : ''} en paralelo…</span></div>
-        </div>
-        <div class="stkv2-card-varlist" id="stkModalVarList">
-          ${family.items.map(item => {
-            const sz = getProductSizeValue(item); const cl = getProductColorValue(item);
-            const localStock = getProductStockValue(item);
-            return `<div class="stkv2-varrow" data-sku="${escapeHtml(item.sku||'')}">
-              <div class="stkv2-varrow-info">
-                <span class="stkv2-varrow-sku">${escapeHtml(item.sku||'—')}</span>
-                ${sz ? `<span class="stkv2-vartag size">${escapeHtml(sz)}</span>` : ''}
-                ${cl ? `<span class="stkv2-vartag color" style="border-left:3px solid ${cssColorApprox(cl)}">${escapeHtml(cl)}</span>` : ''}
-                ${item.variante && item.variante !== sz && item.variante !== cl ? `<span class="stkv2-vartag">${escapeHtml(item.variante)}</span>` : ''}
-              </div>
-              <div class="stkv2-varrow-local">${localStock > 0 ? localStock : '—'}</div>
-              <div class="stkv2-varrow-bsale" id="stkv2bsale_${escapeHtml(item.sku||String(Math.random()))}"><span class="stkv2-loading-dots">···</span></div>
-            </div>`;
-          }).join('')}
-        </div>
-        <div class="stkv2-card-foot">Clic fuera del card o ESC para cerrar · Stock Bsale se carga en paralelo</div>
-      </div>`;
+    modal.className = 'stock-modal';
+    modal.innerHTML = `<div class="stock-modal-backdrop" data-stock-close="1"></div><div class="stock-modal-card stock-modal-card-wide"><button class="stock-modal-close" type="button" data-stock-close="1">×</button><div class="stock-card-panel"><div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>…</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>…</strong></div></div><div class="stock-matrix-wrap"><div class="stock-empty">Cargando stock organizado…</div></div></div></div>`;
     document.body.appendChild(modal);
-    requestAnimationFrame(() => modal.classList.add('stock-modal-in'));
-    modal.querySelectorAll('[data-stock-close]').forEach(el => el.addEventListener('click', closeStockModal));
+    modal.querySelectorAll('[data-stock-close]').forEach((el) => el.addEventListener('click', closeStockModal));
     const onEsc = (e) => { if(e.key === 'Escape'){ closeStockModal(); document.removeEventListener('keydown', onEsc); } };
     document.addEventListener('keydown', onEsc);
-    // Cargar stock en paralelo para TODOS los items
-    const branchIndex = getStockBranchIndex();
-    buildFamilyStockMatrix(family, branchIndex).then(data => {
-      // Actualizar pill de totales Bsale
-      const bsalePill = document.getElementById('stkModalBsalePill');
-      if(bsalePill){
-        const total = data?.totals?.quantityAvailable ?? null;
-        bsalePill.querySelector('strong').textContent = total !== null ? String(total) : '—';
-        if(total !== null) bsalePill.classList.add('stkv2-pill-loaded');
+    let data = null;
+    try{
+      const ensured = await ensureSelectedFamilyMatrix();
+      data = ensured && ensured.family && ensured.family.key === family.key ? ensured.data : null;
+      if(!data){
+        const branchIndex = getStockBranchIndex();
+        data = await buildFamilyStockMatrix(family, branchIndex);
       }
-      // Actualizar stock por variante en la lista
-      family.items.forEach((item, i) => {
-        const stock = data && Array.isArray(data.sizes) ? (() => {
-          const sz = getProductSizeValue(item) || '—';
-          const cl = getProductColorValue(item) || 'Sin color';
-          const cell = data.matrix?.[sz]?.[cl];
-          return cell || null;
-        })() : null;
-        const id = `stkv2bsale_${escapeHtml(item.sku||String(i))}`;
-        const el = document.getElementById(id);
-        if(el){
-          if(stock && Number.isFinite(stock.quantityAvailable)){
-            const avail = Number(stock.quantityAvailable || 0);
-            el.innerHTML = `<span class="stkv2-bsale-val ${avail > 0 ? 'ok' : 'zero'}">${avail}</span>`;
-          } else { el.innerHTML = '<span class="stkv2-bsale-na">—</span>'; }
-        }
-      });
-      // Renderizar matriz color × talla
-      const matrixWrap = document.getElementById('stkModalMatrix');
-      if(!matrixWrap) return;
-      const sizes = Array.isArray(data?.sizes) ? data.sizes : [];
-      const colors = Array.isArray(data?.colors) ? data.colors : [];
-      if(!sizes.length && !colors.length){ matrixWrap.innerHTML = '<div class="stkv2-matrix-na">Sin datos de talla/color para esta familia.</div>'; return; }
-      const head = `<tr><th class="stkv2-mt-corner">Color \\ Talla</th>${sizes.map(s=>`<th>${escapeHtml(s)}</th>`).join('')}</tr>`;
-      const body = colors.map(color => {
-        const dot = `<span class="stkv2-mtdot" style="background:${cssColorApprox(color)}"></span>`;
-        const cells = sizes.map(size => {
-          const cell = data.matrix?.[size]?.[color] || buildEmptyStockCell();
-          const avail = Number(cell.quantityAvailable || 0);
-          const tot = Number(cell.quantity || 0);
-          const cls = avail > 10 ? 'hi' : avail > 0 ? 'mid' : 'lo';
-          return `<td class="stkv2-mt-cell ${cls}"><div class="stkv2-mt-avail">${avail}</div><div class="stkv2-mt-tot">/${tot}</div></td>`;
-        }).join('');
-        return `<tr><th class="stkv2-mt-color">${dot}${escapeHtml(color)}</th>${cells}</tr>`;
+    }catch(_err){
+      data = { matrix:{}, sizes:[], colors:[], totals:{ quantity:0, quantityAvailable:0, quantityReserved:0, known:false } };
+    }
+    const sizes = Array.isArray(data?.sizes) ? data.sizes : [];
+    const colors = Array.isArray(data?.colors) ? data.colors : [];
+    const head = ['<th>Color</th>', ...sizes.map((size) => `<th>${escapeHtml(size)}</th>`)].join('');
+    const body = colors.map((color) => {
+      const cells = sizes.map((size) => {
+        const cell = data.matrix?.[size]?.[color] || buildEmptyStockCell();
+        const available = Number(cell.quantityAvailable || 0);
+        const total = Number(cell.quantity || 0);
+        return `<td><div class="stock-matrix-val">${available}</div><div class="stock-matrix-sub">Total ${total}</div></td>`;
       }).join('');
-      matrixWrap.innerHTML = `<div class="stkv2-matrix-scroll"><table class="stkv2-matrix-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
-    }).catch(err => {
-      const matrixWrap = document.getElementById('stkModalMatrix');
-      if(matrixWrap) matrixWrap.innerHTML = `<div class="stkv2-matrix-na">Error al cargar stock: ${escapeHtml(String(err?.message||err))}</div>`;
-    });
+      return `<tr><th>${escapeHtml(color)}</th>${cells}</tr>`;
+    }).join('') || `<tr><td colspan="${Math.max(2, sizes.length + 1)}" class="muted tiny">Sin variantes con stock disponible para mostrar.</td></tr>`;
+    const panel = modal.querySelector('.stock-card-panel');
+    panel.innerHTML = `<div class="stock-card-head"><div><div class="title">${escapeHtml(family.nombre)}</div><div class="sku">Sucursal: ${branchName}</div></div><div class="stock-card-badge">${family.items.length} variantes</div></div><div class="stock-card-meta"><div class="stock-meta-item"><span>Variantes</span><strong>${family.items.length}</strong></div><div class="stock-meta-item"><span>Colores</span><strong>${colors.length}</strong></div><div class="stock-meta-item"><span>Tallas</span><strong>${sizes.length}</strong></div><div class="stock-meta-item"><span>Disponible</span><strong>${Number(data?.totals?.quantityAvailable || 0)}</strong></div></div><div class="stock-matrix-wrap"><table class="stock-matrix-table stock-matrix-compact"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="stock-card-foot">Matriz color × talla. Cada celda muestra disponible y debajo el total registrado en Bsale.</div>`;
   }
-
   async function renderStockScreen(){
     const branches = getStockBranchOptions();
     const currentIndex = getStockBranchIndex();
     appState.stock.branchIndex = currentIndex;
     const families = getStockScreenFamilies();
-    const totalVariants = families.reduce((acc, f) => acc + ((f.items||[]).length||0), 0);
+    const totalVariants = families.reduce((acc, family) => acc + ((family.items || []).length || 0), 0);
     contentTitle.textContent = 'Stock';
-    contentSubtitle.textContent = 'Productos agrupados · haz clic para ver variantes y stock Bsale.';
+    contentSubtitle.textContent = 'Lista vertical de productos, compacta y navegable.';
     contentWrap.innerHTML = `
-      <div class="stkv2-screen">
-        <div class="stkv2-topbar">
-          <div class="stkv2-topbar-left">
-            <div class="stkv2-screen-title">📦 Stock por producto</div>
-            <div class="stkv2-screen-sub">Clic en un producto para ver variantes, tallas, colores y stock Bsale en tiempo real.</div>
+      <div class="stock-screen stock-screen-modern stock-screen-fullheight">
+        <div class="stock-topbar stock-topbar-compact">
+          <div class="stock-topbar-left">
+            <div class="stock-screen-title">Stock por producto</div>
+            <div class="stock-screen-note">Lista vertical de lectura rápida con separadores claros y scroll continuo.</div>
           </div>
-          <div class="stkv2-summary">
-            <div class="stkv2-spill"><span>Productos</span><strong>${families.length.toLocaleString('es-PE')}</strong></div>
-            <div class="stkv2-spill"><span>Variantes</span><strong>${totalVariants.toLocaleString('es-PE')}</strong></div>
-          </div>
-        </div>
-        <div class="stkv2-filters">
-          <select id="stockBranchSelect" class="stkv2-select">${branches.map((b,i)=>`<option value="${i}" ${i===currentIndex?'selected':''}>${escapeHtml(b?.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
-          <div class="stkv2-search-wrap">
-            <span class="stkv2-search-icon">⌕</span>
-            <input id="stockSearchInput" class="stkv2-search" value="${escapeHtml(appState.stock.query||'')}" placeholder="Buscar por nombre, SKU, talla o color…">
+          <div class="stock-summary-strip stock-summary-strip-compact">
+            <div class="stock-summary-pill"><span>Productos</span><strong>${families.length.toLocaleString('es-PE')}</strong></div>
+            <div class="stock-summary-pill"><span>Variantes</span><strong>${totalVariants.toLocaleString('es-PE')}</strong></div>
           </div>
         </div>
-        <div class="stkv2-table-wrap" id="stockTableWrap"></div>
+        <div class="stock-filters-bar stock-filters-bar-wide">
+          <div class="stock-filter"><select id="stockBranchSelect">${branches.map((branch, idx) => `<option value="${idx}" ${idx===currentIndex?'selected':''}>${escapeHtml(branch?.name || ('Sucursal ' + (idx + 1)))}</option>`).join('')}</select></div>
+          <div class="stock-filter stock-filter-search"><input id="stockSearchInput" value="${escapeHtml(appState.stock.query || '')}" placeholder="Buscar producto por nombre"></div>
+        </div>
+        <div class="stock-table-wrap stock-table-wrap-full stock-table-wrap-immersive" id="stockTableWrap"></div>
       </div>`;
-    if(typeof detailPanel !== 'undefined') detailPanel.style.display = 'none';
+    detailPanel.style.display = 'none';
     closeStockModal();
     renderStockTable();
     const branchSel = document.getElementById('stockBranchSelect');
     const qInput = document.getElementById('stockSearchInput');
-    if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value||0); renderStockScreen(); };
-    if(qInput) qInput.oninput = (e) => { appState.stock.query = String(e.target.value||''); renderStockTable(); if(typeof contentStatus !== 'undefined') contentStatus.textContent = `${getStockScreenFamilies().length.toLocaleString('es-PE')} productos filtrados.`; };
-    if(typeof contentStatus !== 'undefined') contentStatus.textContent = `${families.length.toLocaleString('es-PE')} productos.`;
-    if(typeof contentFootRight !== 'undefined') contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes totales`;
+    if(branchSel) branchSel.onchange = async (e) => { appState.stock.branchIndex = Number(e.target.value || 0); renderStockScreen(); };
+    if(qInput) qInput.oninput = async (e) => { appState.stock.query = String(e.target.value || ''); renderStockTable(); contentStatus.textContent = `${getStockScreenFamilies().length.toLocaleString('es-PE')} productos filtrados.`; };
+    contentStatus.textContent = `${families.length.toLocaleString('es-PE')} productos en lista.`;
+    contentFootRight.textContent = `${readBranchProductsSnapshot(currentIndex).length.toLocaleString('es-PE')} variantes en la sucursal`;
   }
 
-  // ─── PRESUPUESTO SCREEN ───────────────────────────────────────────────────────
-  function getPresupuestoFamilies(){
-    const idx = getStockBranchIndex();
-    const products = readBranchProductsSnapshot(idx);
-    return buildStockFamilies(products);
+
+  function getProductBrand(item){
+    const src = item && typeof item === 'object' ? item : {};
+    const direct = [src.marca, src.Marca, src.brand, src.Brand].find((v) => String(v || '').trim());
+    if(direct) return String(direct).trim();
+    const key = Object.keys(src).find((k) => norm(k) === 'marca');
+    if(key && String(src[key] || '').trim()) return String(src[key]).trim();
+    return 'Sin marca';
   }
-  function getPresupuestoMarcas(){
-    const idx = getStockBranchIndex();
-    const products = readBranchProductsSnapshot(idx);
-    const marcas = new Set((products||[]).map(p => String(p?.marca||'').trim()).filter(Boolean));
-    return Array.from(marcas).sort(compareTextLettersFirst);
+  function getPresupuestoBrands(){
+    const families = getStockScreenFamilies();
+    return Array.from(new Set(families.map((f) => getProductBrand(f.items?.[0])).filter(Boolean))).sort(compareTextLettersFirst);
   }
-  function getPresupuestoModelosByMarca(marca){
-    const idx = getStockBranchIndex();
-    const products = readBranchProductsSnapshot(idx);
-    const mNorm = norm(marca);
-    const filtered = (products||[]).filter(p => norm(p?.marca||'') === mNorm || (!mNorm && !norm(p?.marca||'')));
-    // agrupar por nombre de producto (familia)
-    const families = buildStockFamilies(filtered);
-    return families.map(f => ({ nombre: f.nombre, key: f.key, items: f.items }));
+  function getPresupuestoModels(brand){
+    const families = getStockScreenFamilies();
+    return families.filter((f) => getProductBrand(f.items?.[0]) === brand);
   }
   function renderPresupuestoScreen(){
+    const brands = getPresupuestoBrands();
+    appState.presupuesto = appState.presupuesto || { brand:'', modelKey:'', quantity:1 };
+    const selectedBrand = appState.presupuesto.brand && brands.includes(appState.presupuesto.brand) ? appState.presupuesto.brand : (brands[0] || '');
+    appState.presupuesto.brand = selectedBrand;
+    const models = getPresupuestoModels(selectedBrand);
+    if(!models.find((m) => m.key === appState.presupuesto.modelKey)) appState.presupuesto.modelKey = models[0]?.key || '';
+    const selectedModel = models.find((m) => m.key === appState.presupuesto.modelKey) || null;
+    const qty = Math.max(1, Number(appState.presupuesto.quantity || 1));
     contentTitle.textContent = 'Presupuesto';
-    contentSubtitle.textContent = 'Arma tu pedido: selecciona marca, modelo y cantidad.';
-    const items = appState.presupuesto?.items || [];
-    const marcas = getPresupuestoMarcas();
-    const allFamilies = getPresupuestoFamilies();
-    // Si no hay marcas, mostrar directamente por nombre
-    const useMarcas = marcas.length > 0;
-    const total = items.reduce((acc, it) => acc + (Number(it.precio||0) * Number(it.cantidad||0)), 0);
-
+    contentSubtitle.textContent = 'Selecciona marca, modelo y cantidad para armar una cotización rápida.';
     contentWrap.innerHTML = `
-      <div class="ppto-screen">
-        <div class="ppto-left">
-          <div class="ppto-panel-title">Agregar producto</div>
-          ${useMarcas ? `
-          <div class="ppto-field">
-            <label class="ppto-label">1 · Marca</label>
-            <select id="pptoMarcaSelect" class="ppto-select">
-              <option value="">— Seleccionar marca —</option>
-              ${marcas.map(m => `<option value="${escapeHtml(m)}" ${norm(appState.presupuesto?.marcaInput||'')=== norm(m)?'selected':''}>${escapeHtml(m)}</option>`).join('')}
-            </select>
+      <div class="stock-screen stock-screen-modern stock-screen-fullheight">
+        <div class="stock-topbar stock-topbar-compact">
+          <div class="stock-topbar-left">
+            <div class="stock-screen-title">Presupuesto rápido</div>
+            <div class="stock-screen-note">Flujo simple: marca → modelo → cantidad.</div>
           </div>
-          ` : ''}
-          <div class="ppto-field">
-            <label class="ppto-label">${useMarcas?'2':'1'} · Modelo / Producto</label>
-            <select id="pptoModeloSelect" class="ppto-select">
-              <option value="">— Seleccionar modelo —</option>
-              ${(useMarcas && appState.presupuesto?.marcaInput
-                ? getPresupuestoModelosByMarca(appState.presupuesto.marcaInput)
-                : allFamilies
-              ).map(f => `<option value="${escapeHtml(f.key)}">${escapeHtml(f.nombre)} (${f.items.length} var.)</option>`).join('')}
-            </select>
-          </div>
-          <div class="ppto-field">
-            <label class="ppto-label">${useMarcas?'3':'2'} · Cantidad para todas las variantes</label>
-            <div class="ppto-qty-row">
-              <button class="ppto-qty-btn" id="pptoQtyMinus">−</button>
-              <input type="number" id="pptoQtyInput" class="ppto-qty-input" value="${Number(appState.presupuesto?.cantidadInput||1)}" min="1" max="9999">
-              <button class="ppto-qty-btn" id="pptoQtyPlus">+</button>
-            </div>
-          </div>
-          <button class="ppto-add-btn" id="pptoAddBtn">＋ Agregar al presupuesto</button>
-          <div class="ppto-hint" id="pptoHint"></div>
         </div>
-        <div class="ppto-right">
-          <div class="ppto-panel-title">Presupuesto actual <span class="ppto-items-count">${items.length} línea${items.length!==1?'s':''}</span></div>
-          <div class="ppto-list" id="pptoList">
-            ${items.length === 0
-              ? '<div class="ppto-empty">Aún no hay productos en el presupuesto.<br>Agrega usando el panel izquierdo.</div>'
-              : items.map((item, idx) => `
-                <div class="ppto-line" data-ppto-idx="${idx}">
-                  <div class="ppto-line-main">
-                    <div class="ppto-line-name">${escapeHtml(item.nombre)}</div>
-                    <div class="ppto-line-meta">
-                      ${item.marca?`<span class="ppto-tag">${escapeHtml(item.marca)}</span>`:''}
-                      <span class="ppto-tag">${item.variantCount} variante${item.variantCount!==1?'s':''}</span>
-                    </div>
-                  </div>
-                  <div class="ppto-line-qty">
-                    <span class="ppto-qty-label">×</span>
-                    <input type="number" class="ppto-line-qty-input" data-ppto-idx="${idx}" value="${item.cantidad}" min="1" max="9999">
-                  </div>
-                  <button class="ppto-line-remove" data-ppto-remove="${idx}" title="Eliminar">✕</button>
-                </div>`).join('')
-            }
+        <div class="presupuesto-grid">
+          <label class="stock-filter"><span>Marca</span><select id="presBrand">${brands.map((b) => `<option ${b===selectedBrand?'selected':''}>${escapeHtml(b)}</option>`).join('')}</select></label>
+          <label class="stock-filter"><span>Modelo</span><select id="presModel">${models.map((m) => `<option value="${escapeHtml(m.key)}" ${m.key===appState.presupuesto.modelKey?'selected':''}>${escapeHtml(m.nombre)}</option>`).join('')}</select></label>
+          <label class="stock-filter"><span>Cantidad</span><input id="presQty" type="number" min="1" step="1" value="${qty}"></label>
+        </div>
+        <div class="stock-list-shell stock-list-shell-modern presupuesto-card">
+          <div class="stock-screen-title">${escapeHtml(selectedModel?.nombre || 'Sin modelo')}</div>
+          <div class="stock-screen-note">SKU base: ${escapeHtml(String(selectedModel?.items?.[0]?.sku || '—'))}</div>
+          <div class="stock-summary-strip stock-summary-strip-compact">
+            <div class="stock-summary-pill"><span>Marca</span><strong>${escapeHtml(selectedBrand || '—')}</strong></div>
+            <div class="stock-summary-pill"><span>Variantes</span><strong>${selectedModel?.items?.length || 0}</strong></div>
+            <div class="stock-summary-pill"><span>Cantidad</span><strong>${qty}</strong></div>
           </div>
-          ${items.length > 0 ? `
-          <div class="ppto-footer">
-            <div class="ppto-footer-info">${items.reduce((a,it)=>a+Number(it.variantCount||0),0)} variantes totales · ${items.reduce((a,it)=>a+Number(it.cantidad||0)*Number(it.variantCount||0),0)} unidades</div>
-            <div class="ppto-footer-actions">
-              <button class="ppto-btn-secondary" id="pptoClearBtn">Limpiar todo</button>
-              <button class="ppto-btn-primary" id="pptoExportBtn">⬇ Exportar CSV</button>
-            </div>
-          </div>` : ''}
         </div>
       </div>`;
-
-    // --- Handlers ---
-    const marcaSel = document.getElementById('pptoMarcaSelect');
-    const modeloSel = document.getElementById('pptoModeloSelect');
-    const qtyInput = document.getElementById('pptoQtyInput');
-    const addBtn = document.getElementById('pptoAddBtn');
-    const hint = document.getElementById('pptoHint');
-
-    if(marcaSel){
-      marcaSel.onchange = (e) => {
-        appState.presupuesto.marcaInput = e.target.value;
-        appState.presupuesto.modeloInput = '';
-        renderPresupuestoScreen();
-      };
-    }
-    if(modeloSel) modeloSel.onchange = (e) => { appState.presupuesto.modeloInput = e.target.value; };
-    if(qtyInput) qtyInput.oninput = (e) => { appState.presupuesto.cantidadInput = Math.max(1, Number(e.target.value||1)); };
-    const qMinus = document.getElementById('pptoQtyMinus');
-    const qPlus = document.getElementById('pptoQtyPlus');
-    if(qMinus) qMinus.onclick = () => { const v = Math.max(1, Number(qtyInput?.value||1)-1); if(qtyInput) qtyInput.value = v; appState.presupuesto.cantidadInput = v; };
-    if(qPlus) qPlus.onclick = () => { const v = Math.min(9999, Number(qtyInput?.value||1)+1); if(qtyInput) qtyInput.value = v; appState.presupuesto.cantidadInput = v; };
-
-    if(addBtn) addBtn.onclick = () => {
-      const familyKey = modeloSel?.value || '';
-      if(!familyKey){ if(hint) hint.textContent = '⚠ Selecciona un modelo primero.'; return; }
-      const family = allFamilies.find(f => f.key === familyKey);
-      if(!family){ if(hint) hint.textContent = '⚠ Producto no encontrado.'; return; }
-      const cantidad = Math.max(1, Number(qtyInput?.value||1));
-      const marcaVal = marcaSel?.value || (family.items[0]?.marca||'');
-      const existing = (appState.presupuesto.items||[]).findIndex(it => it.familyKey === familyKey);
-      if(existing >= 0){
-        appState.presupuesto.items[existing].cantidad = cantidad;
-        if(hint) hint.textContent = `✓ Cantidad actualizada para "${family.nombre}".`;
-      } else {
-        if(!appState.presupuesto.items) appState.presupuesto.items = [];
-        appState.presupuesto.items.push({ familyKey, nombre: family.nombre, marca: marcaVal, variantCount: family.items.length, cantidad });
-        if(hint) hint.textContent = `✓ "${family.nombre}" agregado con cantidad ${cantidad}.`;
-      }
-      setTimeout(() => renderPresupuestoScreen(), 300);
-    };
-
-    // Qty inline en líneas
-    document.querySelectorAll('.ppto-line-qty-input').forEach(inp => {
-      inp.oninput = (e) => {
-        const i = Number(e.target.getAttribute('data-ppto-idx'));
-        if(appState.presupuesto.items[i]) appState.presupuesto.items[i].cantidad = Math.max(1, Number(e.target.value||1));
-      };
-    });
-    // Botones de eliminar
-    document.querySelectorAll('[data-ppto-remove]').forEach(btn => {
-      btn.onclick = (e) => {
-        const i = Number(e.target.getAttribute('data-ppto-remove'));
-        appState.presupuesto.items.splice(i, 1);
-        renderPresupuestoScreen();
-      };
-    });
-    const clearBtn = document.getElementById('pptoClearBtn');
-    if(clearBtn) clearBtn.onclick = () => { if(confirm('¿Limpiar todo el presupuesto?')){ appState.presupuesto.items=[]; renderPresupuestoScreen(); } };
-    const exportBtn = document.getElementById('pptoExportBtn');
-    if(exportBtn) exportBtn.onclick = () => {
-      const rows = [['Marca','Modelo','Variantes','Cantidad por variante','Unidades totales']];
-      (appState.presupuesto.items||[]).forEach(it => {
-        rows.push([it.marca||'', it.nombre, it.variantCount, it.cantidad, it.variantCount*it.cantidad]);
-      });
-      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-      const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'presupuesto.csv'; a.click();
-    };
+    detailPanel.style.display = 'none';
+    const bind = (id, fn) => { const el = document.getElementById(id); if(el){ el.onchange = fn; if(el.tagName === 'INPUT') el.oninput = fn; } };
+    bind('presBrand', (e) => { appState.presupuesto.brand = String(e.target.value || ''); renderPresupuestoScreen(); });
+    bind('presModel', (e) => { appState.presupuesto.modelKey = String(e.target.value || ''); renderPresupuestoScreen(); });
+    bind('presQty', (e) => { appState.presupuesto.quantity = Math.max(1, Number(e.target.value || 1)); });
+    contentStatus.textContent = `${models.length.toLocaleString('es-PE')} modelos disponibles.`;
+    contentFootRight.textContent = 'Presupuesto';
   }
-
   function defaultBsaleConfig(){ return { enabled:false, country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', officeMappings:{} }; }
   function normalizeBsaleConfig(cfg){ const src = (cfg && typeof cfg === 'object') ? cfg : {}; return { enabled:!!src.enabled, country:String(src.country || 'PE').toUpperCase(), apiBaseUrl:String(src.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io', accessToken:String(src.accessToken || '').trim(), officeMappings: src.officeMappings && typeof src.officeMappings === 'object' ? { ...src.officeMappings } : {} }; }
   function normalizeAdminState(admin){ const raw = admin && typeof admin === 'object' ? clone(admin) : {}; raw.bsale = normalizeBsaleConfig(raw.bsale); return raw; }
@@ -5144,16 +4974,17 @@ function escapeHtml(str){
   .stock-table-wrap-full{height:100%;min-height:0}
   .stock-list-shell{height:100%;min-height:0}
   .stock-list-scroll{height:100%;min-height:0;overflow:auto}
-  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 30px;table-layout:fixed}
+  .stock-list-table{width:100%;border-collapse:separate;border-spacing:0 20px;table-layout:fixed}
   .stock-list-table thead th{position:sticky;top:0;z-index:3;background:rgba(9,14,15,.98);border-bottom:1px solid rgba(255,255,255,.1);padding:14px 16px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:left}
-  .stock-list-table thead th:nth-child(1){width:48%}
-  .stock-list-table thead th:nth-child(2){width:18%}
-  .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5),.stock-list-table thead th:nth-child(6){width:8.5%;text-align:center}
-  .stock-list-table tbody td{padding:30px 16px;vertical-align:middle;font-size:13px;line-height:1.25;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
+  .stock-list-table thead th:nth-child(1){width:44%}
+  .stock-list-table thead th:nth-child(2){width:16%}
+  .stock-list-table thead th:nth-child(3),.stock-list-table thead th:nth-child(4),.stock-list-table thead th:nth-child(5){width:10%;text-align:center}
+  .stock-list-table thead th:nth-child(6){width:10%;text-align:left}
+  .stock-list-table tbody td{padding:22px 16px;vertical-align:middle;font-size:13px;line-height:1.25;color:var(--text);background:rgba(255,255,255,.025);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)}
   .stock-list-table tbody td:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:14px 0 0 14px}
   .stock-list-table tbody td:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 14px 14px 0}
   .stock-list-table tbody tr{cursor:pointer;transition:transform .14s ease, background .14s ease, box-shadow .14s ease;user-select:none}
-  .stock-list-table tbody tr:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(0,0,0,.18)}
+  .stock-list-table tbody tr:hover{transform:translateY(-1px)}
   .stock-list-table tbody tr.is-active td{background:rgba(111,231,193,.07);border-top-color:rgba(111,231,193,.22);border-bottom-color:rgba(111,231,193,.22)}
   .stock-list-table tbody tr:focus-visible{outline:2px solid rgba(111,231,193,.7);outline-offset:2px}
   .stock-col-product .stock-copy{display:grid;gap:3px;min-width:0}
@@ -5161,7 +4992,7 @@ function escapeHtml(str){
   .stock-col-product .stock-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-sku{color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stock-col-num{text-align:center;font-weight:800}
-  .stock-col-stock{text-align:center;font-weight:900;color:#dff7ea;white-space:nowrap}
+  .stock-col-state{white-space:nowrap}
   .stock-list-scroll{height:100%;overflow:auto;min-height:0}
   .stock-list-scroll-full{display:grid;grid-template-rows:auto minmax(0,1fr);height:100%}
   .stock-table{width:100%;border-collapse:separate;border-spacing:0}
@@ -5274,144 +5105,6 @@ function escapeHtml(str){
   .stock-status.low{background:rgba(255,127,127,.14);border-color:rgba(255,127,127,.24);color:#ff9c9c}
   @media (max-width: 1280px){.stock-toolbar{grid-template-columns:1fr}.stock-detail-simple{grid-template-rows:auto auto minmax(220px,auto) minmax(220px,auto)}}
   @media (max-width: 1080px){ .bsale-grid{grid-template-columns:1fr} .bsale-office-row{grid-template-columns:1fr} }
-
-  /* ── STOCK v2 ────────────────────────────────────────────────────────────── */
-  .stkv2-screen{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:14px;height:100%;min-height:0}
-  .stkv2-topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
-  .stkv2-screen-title{font-size:21px;font-weight:900;letter-spacing:-.03em}
-  .stkv2-screen-sub{font-size:12px;color:var(--muted);margin-top:3px}
-  .stkv2-summary{display:flex;gap:10px}
-  .stkv2-spill{min-width:100px;padding:9px 13px;border:1px solid rgba(255,255,255,.08);border-radius:13px;background:rgba(255,255,255,.03);display:grid;gap:1px}
-  .stkv2-spill span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-  .stkv2-spill strong{font-size:17px;font-weight:900;line-height:1}
-  .stkv2-filters{display:grid;grid-template-columns:230px 1fr;gap:10px;align-items:center}
-  .stkv2-select{width:100%;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:0 12px;font-size:13px}
-  .stkv2-search-wrap{position:relative;display:flex;align-items:center}
-  .stkv2-search-icon{position:absolute;left:13px;font-size:16px;color:var(--muted);pointer-events:none}
-  .stkv2-search{width:100%;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:0 14px 0 38px;font-size:13px}
-  .stkv2-search:focus{outline:none;border-color:rgba(108,229,154,.4);background:rgba(108,229,154,.04)}
-  .stkv2-table-wrap{min-height:0;height:100%;border:1px solid rgba(255,255,255,.07);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.015);display:flex;flex-direction:column}
-  .stkv2-shell{display:flex;flex-direction:column;height:100%;min-height:0}
-  .stkv2-head-row{display:none} /* hidden — visual only in rows */
-  .stkv2-body{flex:1;overflow:auto;min-height:0;padding:6px 0}
-  .stkv2-row{display:grid;grid-template-columns:1fr auto auto auto auto 28px;gap:0;align-items:center;padding:0 18px;min-height:64px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);transition:background .12s ease,transform .12s ease;position:relative}
-  .stkv2-row:hover{background:rgba(255,255,255,.03);transform:translateX(2px)}
-  .stkv2-row:focus-visible{outline:2px solid rgba(108,229,154,.7);outline-offset:-2px}
-  .stkv2-row-active{background:rgba(108,229,154,.06)!important;border-left:3px solid rgba(108,229,154,.7)}
-  .stkv2-row-main{display:flex;align-items:center;gap:12px;min-width:0;padding:10px 0}
-  .stkv2-row-avatar{width:36px;height:36px;flex:0 0 36px;border-radius:10px;background:linear-gradient(135deg,rgba(108,229,154,.22),rgba(88,179,255,.14));display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:rgba(200,255,220,.9);border:1px solid rgba(108,229,154,.18)}
-  .stkv2-row-info{display:grid;gap:3px;min-width:0}
-  .stkv2-row-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .stkv2-row-meta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .stkv2-sku{font-size:11px;color:var(--muted);font-weight:700}
-  .stkv2-sizes-badge{font-size:10px;color:rgba(190,220,210,.6);background:rgba(255,255,255,.04);padding:2px 7px;border-radius:5px;border:1px solid rgba(255,255,255,.07)}
-  .stkv2-row-colors{display:flex;gap:4px;align-items:center;padding:0 14px}
-  .stkv2-colordot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(255,255,255,.18);flex:0 0 11px}
-  .stkv2-colordot-more{font-size:10px;color:var(--muted);font-weight:700}
-  .stkv2-row-stat{display:grid;gap:1px;text-align:center;padding:0 14px;min-width:54px}
-  .stkv2-stat-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .stkv2-row-stat strong{font-size:15px;font-weight:900}
-  .stkv2-row-stockcell{padding:0 14px}
-  .stkv2-stock-badge{display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:5px 10px;border-radius:8px;font-weight:900;font-size:14px}
-  .stkv2-stock-badge.ok{background:rgba(69,211,135,.14);border:1px solid rgba(69,211,135,.26);color:#8df0b6}
-  .stkv2-stock-badge.zero{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:var(--muted)}
-  .stkv2-row-arrow{font-size:18px;color:var(--muted);text-align:center;transition:transform .12s ease}
-  .stkv2-row:hover .stkv2-row-arrow{transform:translateX(3px);color:rgba(108,229,154,.8)}
-  .stkv2-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted)}
-  .stkv2-empty-icon{font-size:40px;opacity:.5}
-  /* Modal v2 */
-  .stkv2-modal .stock-modal-backdrop{background:rgba(2,8,10,.7);backdrop-filter:blur(12px)}
-  .stkv2-card{position:relative;z-index:1;width:min(1060px,calc(100vw - 28px));max-height:calc(100vh - 40px);overflow:auto;border-radius:22px;padding:0;background:linear-gradient(180deg,rgba(9,20,26,.97),rgba(8,16,20,.96));border:1px solid rgba(255,255,255,.1);box-shadow:0 32px 100px rgba(0,0,0,.5);display:flex;flex-direction:column}
-  .stkv2-card-topbar{display:flex;align-items:center;gap:12px;padding:18px 22px 14px;border-bottom:1px solid rgba(255,255,255,.07);flex-wrap:wrap}
-  .stkv2-card-title{font-size:20px;font-weight:900;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .stkv2-card-branch{font-size:12px;color:var(--muted)}
-  .stkv2-card-close{margin-left:auto;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#fff;font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 36px}
-  .stkv2-card-close:hover{background:rgba(255,100,100,.15);border-color:rgba(255,100,100,.3)}
-  .stkv2-card-pills{display:flex;gap:10px;padding:14px 22px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,.06)}
-  .stkv2-pill{display:grid;gap:2px;padding:9px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);min-width:90px}
-  .stkv2-pill span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
-  .stkv2-pill strong{font-size:18px;font-weight:900}
-  .stkv2-pill-bsale{border-color:rgba(108,229,154,.14);background:rgba(108,229,154,.04)}
-  .stkv2-pill-loaded{border-color:rgba(108,229,154,.3)!important;background:rgba(108,229,154,.1)!important}
-  .stkv2-pill-loaded strong{color:#8df0b6}
-  .stkv2-loading-dots{color:var(--muted);animation:stkv2blink 1s infinite}
-  @keyframes stkv2blink{0%,100%{opacity:.3}50%{opacity:1}}
-  .stkv2-spinner{width:20px;height:20px;border:2px solid rgba(108,229,154,.2);border-top-color:rgba(108,229,154,.9);border-radius:50%;animation:stkv2spin .7s linear infinite;flex:0 0 20px}
-  @keyframes stkv2spin{to{transform:rotate(360deg)}}
-  .stkv2-card-variants-head{padding:14px 22px 8px;display:grid;gap:2px}
-  .stkv2-cvh-title{font-size:14px;font-weight:800}
-  .stkv2-cvh-sub{font-size:11px;color:var(--muted)}
-  .stkv2-matrix-loading{display:flex;align-items:center;gap:12px;padding:20px 22px;color:var(--muted);font-size:13px}
-  .stkv2-matrix-na{padding:16px 22px;color:var(--muted);font-size:13px}
-  .stkv2-matrix-wrap{padding:0 22px 4px;overflow:hidden}
-  .stkv2-matrix-scroll{overflow:auto;border-radius:14px;border:1px solid rgba(255,255,255,.08);max-height:220px}
-  .stkv2-matrix-table{border-collapse:separate;border-spacing:0;min-width:100%}
-  .stkv2-matrix-table th,.stkv2-matrix-table td{padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.06);border-right:1px solid rgba(255,255,255,.05);font-size:12px;text-align:center;white-space:nowrap}
-  .stkv2-matrix-table thead tr th{position:sticky;top:0;background:rgba(8,18,24,.98);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-  .stkv2-mt-corner{text-align:left!important;min-width:120px}
-  .stkv2-mt-color{position:sticky;left:0;background:rgba(8,18,24,.97);text-align:left!important;font-weight:700;display:flex;align-items:center;gap:7px;min-width:110px}
-  .stkv2-mtdot{width:10px;height:10px;border-radius:50%;flex:0 0 10px;display:inline-block;border:1px solid rgba(255,255,255,.2)}
-  .stkv2-mt-cell.hi{color:#8df0b6;font-weight:800}
-  .stkv2-mt-cell.mid{color:#ffd37c;font-weight:700}
-  .stkv2-mt-cell.lo{color:rgba(255,255,255,.25)}
-  .stkv2-mt-avail{font-size:14px;font-weight:900;line-height:1}
-  .stkv2-mt-tot{font-size:9px;color:var(--muted)}
-  .stkv2-card-varlist{padding:0 22px 8px;display:grid;gap:4px;max-height:320px;overflow:auto}
-  .stkv2-varrow{display:grid;grid-template-columns:1fr 60px 70px;gap:0;align-items:center;padding:9px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);transition:background .1s}
-  .stkv2-varrow:hover{background:rgba(255,255,255,.04)}
-  .stkv2-varrow-info{display:flex;gap:7px;align-items:center;flex-wrap:wrap;min-width:0}
-  .stkv2-varrow-sku{font-size:11px;font-weight:700;color:var(--muted)}
-  .stkv2-vartag{font-size:11px;padding:2px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);font-weight:700;white-space:nowrap}
-  .stkv2-vartag.size{border-color:rgba(88,179,255,.22);color:rgba(180,220,255,.9)}
-  .stkv2-vartag.color{border-color:rgba(255,255,255,.12)}
-  .stkv2-varrow-local{text-align:right;font-size:13px;font-weight:700;color:var(--muted);padding-right:10px}
-  .stkv2-varrow-bsale{text-align:right;font-size:13px;font-weight:800}
-  .stkv2-bsale-val.ok{color:#8df0b6}
-  .stkv2-bsale-val.zero{color:rgba(255,255,255,.25)}
-  .stkv2-bsale-na{color:var(--muted)}
-  .stkv2-card-foot{padding:10px 22px 16px;font-size:11px;color:var(--muted);text-align:center;border-top:1px solid rgba(255,255,255,.05);margin-top:4px}
-  /* Modal anim */
-  .stock-modal-in .stkv2-card{animation:stkv2cardIn .18s ease forwards}
-  .stock-modal-out .stkv2-card{animation:stkv2cardOut .16s ease forwards}
-  @keyframes stkv2cardIn{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
-  @keyframes stkv2cardOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.96)}}
-  @media(max-width:860px){.stkv2-row{grid-template-columns:1fr auto auto 28px}.stkv2-row-stat:last-of-type{display:none}.stkv2-filters{grid-template-columns:1fr}}
-
-  /* ── PRESUPUESTO ─────────────────────────────────────────────────────────── */
-  .ppto-screen{display:grid;grid-template-columns:340px 1fr;gap:18px;height:100%;min-height:0;align-items:start}
-  .ppto-left{display:grid;gap:14px;padding:18px;border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.025);position:sticky;top:0}
-  .ppto-right{display:grid;gap:12px;min-height:0}
-  .ppto-panel-title{font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px}
-  .ppto-items-count{font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(108,229,154,.12);border:1px solid rgba(108,229,154,.22);color:#8df0b6;margin-left:4px}
-  .ppto-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;display:block}
-  .ppto-field{display:grid;gap:4px}
-  .ppto-select{width:100%;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:0 12px;font-size:13px;transition:border-color .15s}
-  .ppto-select:focus{outline:none;border-color:rgba(108,229,154,.4)}
-  .ppto-qty-row{display:flex;align-items:center;gap:8px}
-  .ppto-qty-btn{width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--text);font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 36px;transition:background .12s}
-  .ppto-qty-btn:hover{background:rgba(255,255,255,.1)}
-  .ppto-qty-input{flex:1;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);padding:0 12px;font-size:15px;font-weight:800;text-align:center}
-  .ppto-add-btn{width:100%;padding:12px;border-radius:12px;border:none;background:linear-gradient(135deg,rgba(69,211,135,.9),rgba(40,180,110,.8));color:#042010;font-size:14px;font-weight:900;cursor:pointer;transition:opacity .15s,transform .12s}
-  .ppto-add-btn:hover{opacity:.9;transform:translateY(-1px)}
-  .ppto-hint{font-size:12px;color:rgba(108,229,154,.8);min-height:16px}
-  .ppto-empty{padding:30px;text-align:center;color:var(--muted);border:1px dashed rgba(255,255,255,.1);border-radius:14px;line-height:1.7}
-  .ppto-list{display:grid;gap:6px;overflow:auto;max-height:calc(100vh - 280px)}
-  .ppto-line{display:grid;grid-template-columns:1fr auto 36px;gap:8px;align-items:center;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);transition:background .1s}
-  .ppto-line:hover{background:rgba(255,255,255,.04)}
-  .ppto-line-name{font-size:13px;font-weight:800}
-  .ppto-line-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
-  .ppto-tag{font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:var(--muted)}
-  .ppto-line-qty{display:flex;align-items:center;gap:6px}
-  .ppto-qty-label{font-size:13px;color:var(--muted)}
-  .ppto-line-qty-input{width:60px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);text-align:center;font-size:14px;font-weight:800}
-  .ppto-line-remove{width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,100,100,.18);background:rgba(255,100,100,.07);color:rgba(255,130,130,.8);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .1s}
-  .ppto-line-remove:hover{background:rgba(255,100,100,.18)}
-  .ppto-footer{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(255,255,255,.02);flex-wrap:wrap;gap:8px}
-  .ppto-footer-info{font-size:12px;color:var(--muted)}
-  .ppto-footer-actions{display:flex;gap:8px}
-  .ppto-btn-primary{padding:9px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,rgba(69,211,135,.85),rgba(40,180,110,.75));color:#042010;font-size:13px;font-weight:800;cursor:pointer}
-  .ppto-btn-secondary{padding:9px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:var(--text);font-size:13px;font-weight:700;cursor:pointer}
-  @media(max-width:900px){.ppto-screen{grid-template-columns:1fr}.ppto-left{position:static}}
   </style>
         <div class="company-head">
           <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
