@@ -37,3 +37,24 @@ App: `http://localhost:3000`
 - No se modificó la lógica funcional del editor de layout ni del editor de racks.
 - La app sigue siendo compatible con el flujo actual basado en Google Sheets.
 - `localStorage` puede seguir usándose como apoyo visual, pero la base persistente ya queda mejor preparada en SQLite.
+
+
+## Fase 2 aplicada
+
+Se añadió una segunda capa de optimización enfocada en rendimiento de búsqueda y carga:
+
+- Endpoints paginados para productos por sucursal.
+- Endpoint de búsqueda por API (`/api/products/search`).
+- Endpoint de resumen por sucursal (`/api/branches/:id/products-summary`).
+- Serialización de productos desde SQLite al formato que ya usa el frontend.
+- El frontend ahora intenta cargar productos por API antes de usar caché local.
+- Búsqueda del listado conectada al backend cuando hay sesión activa.
+- Paginación visible en la barra del listado.
+- Caché local reducida a un respaldo ligero, ya no como fuente principal del catálogo.
+
+### Resultado esperado
+
+- Menos carga inicial del navegador.
+- Menos lag al buscar.
+- Menos dependencia de `localStorage` para productos.
+- Mejor base para seguir agregando filtros reales por backend.

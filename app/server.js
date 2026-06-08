@@ -635,6 +635,91 @@ function buildProductWhereClause({ branchId = null, query = '', filters = {} } =
     params,
   };
 }
+
+function getPagination(req, { defaultLimit = 120, maxLimit = 250 } = {}) {
+  const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+  const limit = Math.max(1, Math.min(maxLimit, parseInt(req.query.limit || String(defaultLimit), 10) || defaultLimit));
+  const offset = (page - 1) * limit;
+  return { page, limit, offset };
+}
+function getSearchFilters(req) {
+  return {
+    warehouse: req.query.warehouse,
+    zone: req.query.zone,
+    rack: req.query.rack,
+    brand: req.query.brand,
+    category: req.query.category,
+    image_state: req.query.image_state,
+    location_state: req.query.location_state,
+    stock_state: req.query.stock_state,
+  };
+}
+function getRackCodeFromLocation(value) {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return '';
+  const match = raw.match(/^([A-Z0-9]+-E\d+)/);
+  return match ? match[1] : '';
+}
+function serializeProductRow(row) {
+  const payload = safeJsonParse(row?.payload_json, {}) || {};
+  const rackStore = textValue(payload.rackStore || payload.rack_store || getRackCodeFromLocation(payload.almacen || row?.warehouse || ''));
+  return {
+    id: row.id,
+    branch_id: row.branch_id,
+    sku: textValue(payload.sku || row.sku),
+    barras: textValue(payload.barras || payload.barcode || row.barcode),
+    barcode: textValue(payload.barcode || payload.barras || row.barcode),
+    nombre: textValue(payload.nombre || payload.name || row.name),
+    name: textValue(payload.name || payload.nombre || row.name),
+    variante: textValue(payload.variante || payload.variant || row.variant),
+    variant: textValue(payload.variant || payload.variante || row.variant),
+    marca: textValue(payload.marca || payload.brand || row.brand),
+    brand: textValue(payload.brand || payload.marca || row.brand),
+    categoria: textValue(payload.categoria || payload.category || row.category),
+    category: textValue(payload.category || payload.categoria || row.category),
+    color: textValue(payload.color || row.color),
+    talla: textValue(payload.talla || payload.size || row.size),
+    size: textValue(payload.size || payload.talla || row.size),
+    zona: textValue(payload.zona || payload.zone || row.zone),
+    zone: textValue(payload.zone || payload.zona || row.zone),
+    rack: textValue(payload.rack || payload.estante || row.rack),
+    level: textValue(payload.level || payload.nivel || row.level),
+    nivel: textValue(payload.nivel || payload.level || row.level),
+    slot: textValue(payload.slot || row.slot),
+    ubicacion: textValue(payload.ubicacion || payload.location || row.location),
+    location: textValue(payload.location || payload.ubicacion || row.location),
+    almacen: textValue(payload.almacen || payload.warehouse || row.warehouse),
+    warehouse: textValue(payload.warehouse || payload.almacen || row.warehouse),
+    rackStore,
+    stock: Number(payload.stock != null ? payload.stock : row.stock || 0),
+    price: Number(payload.price != null ? payload.price : row.price || 0),
+    image_url: textValue(payload.image_url || payload.imageUrl || payload.imagen || row.image_url),
+    imagen: textValue(payload.imagen || payload.imageUrl || payload.image_url || row.image_url),
+    payload,
+    updated_at: row.updated_at,
+  };
+}
+function getProductFacetOptions(branchId) {
+  const rows = db.prepare(`
+    SELECT
+      brand, category, warehouse, zone, rack,
+      SUM(CASE WHEN TRIM(COALESCE(image_url, '')) <> '' THEN 1 ELSE 0 END) AS with_image,
+      SUM(CASE WHEN TRIM(COALESCE(location, '')) <> '' THEN 1 ELSE 0 END) AS with_location,
+      SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END) AS with_stock,
+      COUNT(*) AS total
+    FROM products
+    WHERE branch_id = ?
+  `).all(branchId);
+  const uniq = (key) => Array.from(new Set(rows.map(r => textValue(r[key])).filter(Boolean))).sort((a,b)=>a.localeCompare(b, 'es', { sensitivity:'base', numeric:true }));
+  return {
+    brands: uniq('brand'),
+    categories: uniq('category'),
+    warehouses: uniq('warehouse'),
+    zones: uniq('zone'),
+    racks: uniq('rack'),
+  };
+}
+
 function parseSheetId(input) {
   const value = String(input || '').trim();
   const match = value.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/i);
@@ -1439,6 +1524,87 @@ app.get('/api/sheets/rows', async (req, res) => {
     res.status(400).json({ error: err.message || 'No se pudo leer la hoja' });
   }
 });
+
+app.get('/api/branches/:id/products', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const { page, limit, offset } = getPagination(req, { defaultLimit: 120, maxLimit: 250 });
+    const query = String(req.query.q || '').trim();
+    const filters = getSearchFilters(req);
+    const { whereSql, params } = buildProductWhereClause({ branchId, query, filters });
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM products ${whereSql}`).get(...params)?.total || 0;
+    const rows = db.prepare(`
+      SELECT * FROM products
+      ${whereSql}
+      ORDER BY name COLLATE NOCASE ASC, variant COLLATE NOCASE ASC, sku COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    res.json({
+      ok: true,
+      branch: normalizeBranch(branch),
+      page,
+      limit,
+      total,
+      total_pages: Math.max(1, Math.ceil(total / limit)),
+      items: rows.map(serializeProductRow),
+      facets: getProductFacetOptions(branchId),
+      query,
+      filters,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudieron listar los productos' });
+  }
+});
+
+app.get('/api/products/search', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.query.branch_id || req.query.branchId || 0);
+    if (!branchId) return res.status(400).json({ ok: false, error: 'branch_id es obligatorio' });
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const { page, limit, offset } = getPagination(req, { defaultLimit: 120, maxLimit: 250 });
+    const query = String(req.query.q || '').trim();
+    const filters = getSearchFilters(req);
+    const { whereSql, params } = buildProductWhereClause({ branchId, query, filters });
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM products ${whereSql}`).get(...params)?.total || 0;
+    const rows = db.prepare(`
+      SELECT * FROM products
+      ${whereSql}
+      ORDER BY name COLLATE NOCASE ASC, variant COLLATE NOCASE ASC, sku COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    res.json({ ok: true, page, limit, total, total_pages: Math.max(1, Math.ceil(total / limit)), items: rows.map(serializeProductRow), query, filters });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo buscar productos' });
+  }
+});
+
+app.get('/api/branches/:id/products-summary', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const summary = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN TRIM(COALESCE(image_url, '')) <> '' THEN 1 ELSE 0 END) AS with_image,
+        SUM(CASE WHEN TRIM(COALESCE(image_url, '')) = '' THEN 1 ELSE 0 END) AS without_image,
+        SUM(CASE WHEN TRIM(COALESCE(location, '')) <> '' THEN 1 ELSE 0 END) AS with_location,
+        SUM(CASE WHEN TRIM(COALESCE(location, '')) = '' THEN 1 ELSE 0 END) AS without_location,
+        SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END) AS with_stock,
+        SUM(CASE WHEN stock <= 0 THEN 1 ELSE 0 END) AS without_stock,
+        MAX(updated_at) AS last_product_update
+      FROM products
+      WHERE branch_id = ?
+    `).get(branchId) || {};
+    res.json({ ok: true, branch: normalizeBranch(branch), summary, facets: getProductFacetOptions(branchId) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo obtener el resumen' });
+  }
+});
+
 app.get('/api/debug/persistence', requireAuth, (req, res) => {
   try {
     const companyId = getSessionCompanyId(req);

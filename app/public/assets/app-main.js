@@ -15,6 +15,7 @@
   const countProducts = $('#countProducts');
   const searchBranchHost = $('#searchBranchHost');
   const productSummary = $('#productSummary');
+  const productToolbar = $('.product-toolbar');
   const activeProductName = $('#activeProductName');
   const activeProductSku = $('#activeProductSku');
   const activeProductMeta = $('#activeProductMeta');
@@ -333,6 +334,109 @@
     appState.filtered = next.slice();
     appState.searchIndex = buildProductSearchIndex(next);
   }
+
+  function apiGetJson(url){
+    return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok || data?.ok === false){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      return data;
+    });
+  }
+  function getBranchByIndex(branchIndex){
+    return (appState.admin?.branches || [])[Number(branchIndex)] || null;
+  }
+  function getCurrentProductsTotal(){
+    return Number(appState?.productPaging?.total || 0) || (Array.isArray(appState.products) ? appState.products.length : 0);
+  }
+  function ensureProductPagerUi(){
+    if(!productToolbar || document.getElementById('productPager')) return;
+    const pager = document.createElement('div');
+    pager.className = 'product-pager';
+    pager.id = 'productPager';
+    pager.innerHTML = `
+      <button class="pager-btn" id="productPrevPage" type="button">←</button>
+      <div class="pager-info" id="productPageInfo">Página 1 / 1</div>
+      <button class="pager-btn" id="productNextPage" type="button">→</button>
+      <span class="pager-mode" id="productModeChip">local</span>
+    `;
+    productToolbar.appendChild(pager);
+    const prev = document.getElementById('productPrevPage');
+    const next = document.getElementById('productNextPage');
+    prev?.addEventListener('click', () => {
+      if((appState.productPaging?.page || 1) <= 1) return;
+      requestProductsPage({ page: (appState.productPaging.page || 1) - 1 });
+    });
+    next?.addEventListener('click', () => {
+      if((appState.productPaging?.page || 1) >= (appState.productPaging?.totalPages || 1)) return;
+      requestProductsPage({ page: (appState.productPaging.page || 1) + 1 });
+    });
+  }
+  function updateProductPagerUi(){
+    const info = document.getElementById('productPageInfo');
+    const prev = document.getElementById('productPrevPage');
+    const next = document.getElementById('productNextPage');
+    const chip = document.getElementById('productModeChip');
+    if(info) info.textContent = `Página ${appState.productPaging.page || 1} / ${appState.productPaging.totalPages || 1}`;
+    if(prev) prev.disabled = (appState.productPaging.page || 1) <= 1 || !!appState.productPaging.loading;
+    if(next) next.disabled = (appState.productPaging.page || 1) >= (appState.productPaging.totalPages || 1) || !!appState.productPaging.loading;
+    if(chip) chip.textContent = appState.productPaging.mode === 'backend' ? 'api' : 'local';
+  }
+  async function fetchBranchProductsPage(branchIndex, { query = '', page = 1, limit = null } = {}){
+    const branch = getBranchByIndex(branchIndex);
+    if(!branch?.id) return null;
+    const pageSize = Number(limit || appState.productPaging.limit || 120);
+    const params = new URLSearchParams();
+    if(query) params.set('q', query);
+    params.set('page', String(page));
+    params.set('limit', String(pageSize));
+    return apiGetJson(`/api/branches/${branch.id}/products?${params.toString()}`);
+  }
+  async function requestProductsPage({ branchIndex = null, query = null, page = null, silent = false } = {}){
+    const targetBranchIndex = Number.isFinite(branchIndex) ? Number(branchIndex) : getActiveBranchIndex();
+    const nextQuery = query != null ? String(query || '').trim() : String(appState.productPaging?.query || '').trim();
+    const nextPage = Math.max(1, Number(page || appState.productPaging?.page || 1));
+    const branch = getBranchByIndex(targetBranchIndex);
+    if(!branch?.id) return false;
+    try{
+      appState.productPaging.loading = true;
+      appState.productPaging.branchId = Number(branch.id || 0);
+      updateProductPagerUi();
+      const data = await fetchBranchProductsPage(targetBranchIndex, { query: nextQuery, page: nextPage });
+      const items = Array.isArray(data?.items) ? data.items : [];
+      appState.productPaging = {
+        ...appState.productPaging,
+        mode:'backend',
+        page:Number(data?.page || nextPage || 1),
+        limit:Number(data?.limit || appState.productPaging.limit || 120),
+        total:Number(data?.total || items.length || 0),
+        totalPages:Number(data?.total_pages || 1),
+        query:nextQuery,
+        loading:false,
+        branchId:Number(branch.id || 0),
+        lastError:''
+      };
+      setProductDataset(items, { keepOrder:true });
+      appState.filtered = appState.products.slice();
+      countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
+      renderProducts(appState.filtered);
+      const selectedKey = getProductIdentityKey(appState.selectedProduct);
+      const selectedStillVisible = items.find(p => getProductIdentityKey(p) === selectedKey);
+      if(selectedStillVisible) updateActiveProductCard(selectedStillVisible);
+      else if(items[0]) selectProduct(items[0]);
+      else updateActiveProductCard(null);
+      if(!silent) syncActiveProductCardHint();
+      updateProductPagerUi();
+      return true;
+    }catch(err){
+      appState.productPaging.loading = false;
+      appState.productPaging.lastError = String(err?.message || err || 'error');
+      updateProductPagerUi();
+      return false;
+    }
+  }
+
   function getHistoryBucket(type){
     if(!appState.history) appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
     return appState.history[type];
@@ -1283,13 +1387,16 @@
       frag.appendChild(row);
     });
     productList.appendChild(frag);
-    countProducts.textContent = appState.products.length.toLocaleString('es-PE');
+    countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
     const shown = items.length;
     const modeLabel = groupedMode ? 'familias' : 'resultados';
     const modeInfo = forceIndividual
       ? ' • vista por unidad automática para variantes del mismo producto'
       : (groupedMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
-    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + modeInfo;
+    const totalRecords = getCurrentProductsTotal();
+    const pageInfo = appState.productPaging.mode === 'backend' ? ` • página ${appState.productPaging.page || 1}/${appState.productPaging.totalPages || 1}` : '';
+    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${totalRecords.toLocaleString('es-PE')} registros` + modeInfo + pageInfo;
+    updateProductPagerUi();
   }
 
 
@@ -1504,6 +1611,18 @@
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
     const q = norm(rawQ);
+    const activeBranch = getBranchByIndex(getActiveBranchIndex());
+    if(activeBranch?.id && appState.auth?.loggedIn){
+      requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ.trim(), page:1, silent:true }).then((ok) => {
+        if(ok){
+          clearSearchHighlights();
+          if(appState.screen === 'dashboard') renderDashboard();
+          else if(['products','viewer'].includes(appState.screen)) renderMapView();
+          else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+        }
+      });
+      return;
+    }
     if(!q){
       appState.filtered = appState.products.slice();
       clearSearchHighlights();
@@ -3101,7 +3220,7 @@
   }
   function saveProductsLocal(branchIndex){
     try{
-      const payload = JSON.stringify((appState.products || []).slice(0,12000));
+      const payload = JSON.stringify((appState.products || []).slice(0,500));
       const key = (Number.isFinite(branchIndex) && branchIndex >= 0) ? getBranchStorageKey(branchIndex) : 'wms_products_v2';
       localStorage.setItem(key, payload);
       if(Number.isFinite(branchIndex) && branchIndex >= 0){
@@ -3145,9 +3264,19 @@
     appState.activeBranchIndex = branchIndex;
     const branch = (appState.admin?.branches || [])[branchIndex];
     if(!branch) return false;
-    if(loadBranchProducts(branchIndex)) return true;
+    if(branch.id && appState.auth?.loggedIn){
+      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
+      if(ok) return true;
+    }
+    if(loadBranchProducts(branchIndex)) {
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      updateProductPagerUi();
+      return true;
+    }
     if(Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length){
       applyBranchProducts(branch.sheetPreviewProducts, branchIndex);
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      updateProductPagerUi();
       return true;
     }
     const hasLink = String(branch.sheetUrl||'').trim() && String(branch.sheetName||'').trim();
@@ -3156,8 +3285,10 @@
     }
     setProductDataset([]);
     appState.filtered = [];
+    appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:0, totalPages:1, query:'', branchId:Number(branch.id || 0), lastError:'' };
     renderProducts([]);
     countProducts.textContent = '0';
+    updateProductPagerUi();
     return false;
   }
   function resetSheetPanelList(){ productList.innerHTML = '<div class="empty" style="padding:18px">Aún no hay productos importados en este asistente.</div>'; productSummary.textContent = 'Importa productos en el paso 3 para verlos aquí.'; countProducts.textContent='0'; }
@@ -7977,6 +8108,8 @@ function zoomLayout(factor, center){
       await loadRemoteAppState();
       await loadAllBranchSheetConfigsFromServer();
     
+  ensureProductPagerUi();
+
   if(searchInput){ searchInput.addEventListener('input', ()=>{ clearTimeout(productSearchDebounce); productSearchDebounce = setTimeout(filterProducts, 180); }); searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(productSearchDebounce); filterProducts(); } }); }
   document.addEventListener('keydown', e => {
     const key = String(e.key || '').toLowerCase();
