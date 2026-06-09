@@ -269,6 +269,10 @@ function initDb() {
   if (!sheetCols.includes('last_sheet_count')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_sheet_count INTEGER NOT NULL DEFAULT 0");
   if (!sheetCols.includes('sheet_headers_json')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN sheet_headers_json TEXT");
   if (!sheetCols.includes('sheet_header_index')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN sheet_header_index INTEGER NOT NULL DEFAULT 0");
+  if (!sheetCols.includes('last_imported_at')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_imported_at TEXT");
+  if (!sheetCols.includes('last_import_source')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_source TEXT");
+  if (!sheetCols.includes('last_import_status')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_status TEXT");
+  if (!sheetCols.includes('last_import_error')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_error TEXT");
   const adminCols = db.prepare("PRAGMA table_info(admin_config)").all().map(r=>r.name);
   if (!adminCols.includes('company_id')) db.exec("ALTER TABLE admin_config ADD COLUMN company_id INTEGER");
   const appCols = db.prepare("PRAGMA table_info(app_state_blobs)").all().map(r=>r.name);
@@ -700,23 +704,42 @@ function serializeProductRow(row) {
   };
 }
 function getProductFacetOptions(branchId) {
-  const rows = db.prepare(`
-    SELECT
-      brand, category, warehouse, zone, rack,
-      SUM(CASE WHEN TRIM(COALESCE(image_url, '')) <> '' THEN 1 ELSE 0 END) AS with_image,
-      SUM(CASE WHEN TRIM(COALESCE(location, '')) <> '' THEN 1 ELSE 0 END) AS with_location,
-      SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END) AS with_stock,
-      COUNT(*) AS total
-    FROM products
-    WHERE branch_id = ?
-  `).all(branchId);
-  const uniq = (key) => Array.from(new Set(rows.map(r => textValue(r[key])).filter(Boolean))).sort((a,b)=>a.localeCompare(b, 'es', { sensitivity:'base', numeric:true }));
+  const facetRows = db.prepare(`
+    SELECT 'brand' AS facet_key, brand AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(brand, '')) <> '' GROUP BY brand
+    UNION ALL
+    SELECT 'category' AS facet_key, category AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(category, '')) <> '' GROUP BY category
+    UNION ALL
+    SELECT 'warehouse' AS facet_key, warehouse AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(warehouse, '')) <> '' GROUP BY warehouse
+    UNION ALL
+    SELECT 'zone' AS facet_key, zone AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(zone, '')) <> '' GROUP BY zone
+    UNION ALL
+    SELECT 'rack' AS facet_key, rack AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(rack, '')) <> '' GROUP BY rack
+  `).all(branchId, branchId, branchId, branchId, branchId);
+  const makeFacet = (facetKey) => facetRows
+    .filter(r => r.facet_key === facetKey && textValue(r.facet_value))
+    .map(r => ({ value: textValue(r.facet_value), count: Number(r.total || 0) }))
+    .sort((a,b) => a.value.localeCompare(b.value, 'es', { sensitivity:'base', numeric:true }));
+  const brands = makeFacet('brand');
+  const categories = makeFacet('category');
+  const warehouses = makeFacet('warehouse');
+  const zones = makeFacet('zone');
+  const racks = makeFacet('rack');
   return {
-    brands: uniq('brand'),
-    categories: uniq('category'),
-    warehouses: uniq('warehouse'),
-    zones: uniq('zone'),
-    racks: uniq('rack'),
+    brands: brands.map(item => item.value),
+    categories: categories.map(item => item.value),
+    warehouses: warehouses.map(item => item.value),
+    zones: zones.map(item => item.value),
+    racks: racks.map(item => item.value),
+    brand_options: brands,
+    category_options: categories,
+    warehouse_options: warehouses,
+    zone_options: zones,
+    rack_options: racks,
   };
 }
 
@@ -1199,8 +1222,8 @@ app.get('/api/branches/:id/sheet', requireAuth, (req, res) => {
   ensureBranchScaffolding(branchId);
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
-  const row = db.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId);
-  const config = row || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet', sheet_map_json: null, imported_products_json: '[]', last_sheet_count: 0, sheet_headers_json: '[]', sheet_header_index: 0 };
+  const row = db.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId);
+  const config = row || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet', sheet_map_json: null, imported_products_json: '[]', last_sheet_count: 0, sheet_headers_json: '[]', sheet_header_index: 0, last_imported_at: null, last_import_source: '', last_import_status: '', last_import_error: '' };
   res.json({ ok: true, config: { ...config, sheet_map_rows: safeJsonParse(config.sheet_map_json, null), imported_products: safeJsonParse(config.imported_products_json, []), sheet_headers: safeJsonParse(config.sheet_headers_json, []), sheet_header_index: Number(config.sheet_header_index || 0) } });
 });
 
@@ -1211,7 +1234,7 @@ app.post('/api/branches/:id/sheet', requireAdmin, (req, res) => {
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
   const body = req.body || {};
-  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
+  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
   const sheet_id = has('sheet_id') ? String(body.sheet_id || '') : String(current.sheet_id || '');
   const sheet_name = has('sheet_name') ? String(body.sheet_name || 'Productos') : String(current.sheet_name || 'Productos');
@@ -1222,9 +1245,14 @@ app.post('/api/branches/:id/sheet', requireAdmin, (req, res) => {
   const sheet_headers = has('sheet_headers') ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
   const sheet_header_index = has('sheet_header_index') ? Number(body.sheet_header_index || 0) : Number(current.sheet_header_index || 0);
   const importedProductsSafe = Array.isArray(imported_products) ? imported_products.slice(0,12000) : [];
+  const explicitImport = has('imported_products');
+  const nextImportStatus = explicitImport ? (importedProductsSafe.length ? 'success' : 'empty') : String(current.last_import_status || '');
+  const nextImportError = explicitImport ? '' : String(current.last_import_error || '');
+  const nextImportSource = explicitImport ? String(body.import_source || 'manual-sheet-import') : String(current.last_import_source || '');
+  const nextImportedAt = explicitImport ? new Date().toISOString() : (current.last_imported_at || null);
   db.prepare(`
     UPDATE branch_sheet_config
-    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, last_imported_at = ?, last_import_source = ?, last_import_status = ?, last_import_error = ?, updated_at = CURRENT_TIMESTAMP
     WHERE branch_id = ?
   `).run(
     sheet_id,
@@ -1235,10 +1263,14 @@ app.post('/api/branches/:id/sheet', requireAdmin, (req, res) => {
     last_sheet_count,
     JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
     sheet_header_index,
+    nextImportedAt,
+    nextImportSource,
+    nextImportStatus,
+    nextImportError,
     branchId
   );
   const syncedCount = syncBranchProducts(branchId, importedProductsSafe);
-  res.json({ ok: true, synced_products: syncedCount });
+  res.json({ ok: true, synced_products: syncedCount, import_report: { imported_at: nextImportedAt, source: nextImportSource, status: nextImportStatus, error: nextImportError } });
 });
 
 
@@ -1249,7 +1281,7 @@ app.post('/api/branches/:id/sheet-metadata', requireAdmin, (req, res) => {
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
   const body = req.body || {};
-  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
+  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
   const sheet_id = String(body.sheet_id != null ? body.sheet_id : (current.sheet_id || ''));
   const sheet_name = String(body.sheet_name != null ? body.sheet_name : (current.sheet_name || 'Productos'));
   const source_type = String(body.source_type != null ? body.source_type : (current.source_type || 'google_sheet'));
@@ -1261,7 +1293,7 @@ app.post('/api/branches/:id/sheet-metadata', requireAdmin, (req, res) => {
   const importedProductsSafe = Array.isArray(imported_products) ? imported_products.slice(0,12000) : [];
   db.prepare(`
     UPDATE branch_sheet_config
-    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, last_imported_at = ?, last_import_source = ?, last_import_status = ?, last_import_error = ?, updated_at = CURRENT_TIMESTAMP
     WHERE branch_id = ?
   `).run(
     sheet_id,
@@ -1272,10 +1304,14 @@ app.post('/api/branches/:id/sheet-metadata', requireAdmin, (req, res) => {
     last_sheet_count,
     JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
     sheet_header_index,
+    current.last_imported_at || null,
+    current.last_import_source || '',
+    current.last_import_status || '',
+    current.last_import_error || '',
     branchId
   );
   const syncedCount = syncBranchProducts(branchId, importedProductsSafe);
-  res.json({ ok: true, preserved_products: importedProductsSafe.length, synced_products: syncedCount });
+  res.json({ ok: true, preserved_products: importedProductsSafe.length, synced_products: syncedCount, import_report: { imported_at: current.last_imported_at || null, source: current.last_import_source || '', status: current.last_import_status || '', error: current.last_import_error || '' } });
 });
 
 app.post('/api/branches/:id/view-link', requireAdmin, (req, res) => {
@@ -1602,6 +1638,22 @@ app.get('/api/branches/:id/products-summary', requireAuth, (req, res) => {
     res.json({ ok: true, branch: normalizeBranch(branch), summary, facets: getProductFacetOptions(branchId) });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || 'No se pudo obtener el resumen' });
+  }
+});
+
+app.get('/api/branches/:id/import-report', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const report = db.prepare(`
+      SELECT sheet_id, sheet_name, last_sheet_count, updated_at, last_imported_at, last_import_source, last_import_status, last_import_error
+      FROM branch_sheet_config
+      WHERE branch_id = ?
+    `).get(branchId) || {};
+    res.json({ ok: true, branch: normalizeBranch(branch), report });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo obtener el reporte de importación' });
   }
 });
 

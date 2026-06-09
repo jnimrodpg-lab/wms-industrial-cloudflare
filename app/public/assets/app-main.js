@@ -109,6 +109,18 @@
     ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
+    productFilters: {
+      brand:'',
+      category:'',
+      warehouse:'',
+      zone:'',
+      rack:'',
+      image_state:'',
+      location_state:'',
+      stock_state:''
+    },
+    productFacets: { brands:[], categories:[], warehouses:[], zones:[], racks:[] },
+    productSummaryData: null,
     searchIndex: [],
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
@@ -378,12 +390,144 @@
     const prev = document.getElementById('productPrevPage');
     const next = document.getElementById('productNextPage');
     const chip = document.getElementById('productModeChip');
-    if(info) info.textContent = `Página ${appState.productPaging.page || 1} / ${appState.productPaging.totalPages || 1}`;
+    const total = Number(appState.productPaging?.total || 0);
+    if(info) info.textContent = `Página ${appState.productPaging.page || 1} / ${appState.productPaging.totalPages || 1} • ${total.toLocaleString('es-PE')} registros`;
     if(prev) prev.disabled = (appState.productPaging.page || 1) <= 1 || !!appState.productPaging.loading;
     if(next) next.disabled = (appState.productPaging.page || 1) >= (appState.productPaging.totalPages || 1) || !!appState.productPaging.loading;
     if(chip) chip.textContent = appState.productPaging.mode === 'backend' ? 'api' : 'local';
   }
-  async function fetchBranchProductsPage(branchIndex, { query = '', page = 1, limit = null } = {}){
+
+  function getActiveProductFilters(){
+    return { ...(appState.productFilters || {}) };
+  }
+
+  function getNormalizedProductFilterEntries(filters = null){
+    const src = filters || appState.productFilters || {};
+    return Object.entries(src).map(([key, value]) => [key, String(value || '').trim()]).filter(([, value]) => value);
+  }
+
+  function updateFilterSummaryChip(){
+    const chip = document.getElementById('productFilterSummary');
+    if(!chip) return;
+    const activeCount = getNormalizedProductFilterEntries().length;
+    chip.textContent = activeCount ? `${activeCount} filtro${activeCount === 1 ? '' : 's'} activo${activeCount === 1 ? '' : 's'}` : 'Sin filtros';
+    chip.dataset.active = activeCount ? '1' : '0';
+  }
+
+  function buildFacetOptionsHtml(items = [], label = 'Todos'){
+    const normalized = Array.isArray(items)
+      ? items.map(item => typeof item === 'string' ? { value:item, count:null } : item).filter(item => String(item?.value || '').trim())
+      : [];
+    return [`<option value="">${label}</option>`].concat(normalized.map(item => {
+      const value = escapeHtml(item.value || '');
+      const suffix = item.count != null ? ` (${Number(item.count || 0).toLocaleString('es-PE')})` : '';
+      return `<option value="${value}">${value}${suffix}</option>`;
+    })).join('');
+  }
+
+  function ensureProductFilterBar(){
+    if(!productToolbar) return null;
+    let bar = document.getElementById('productFilterBar');
+    if(bar) return bar;
+    bar = document.createElement('div');
+    bar.id = 'productFilterBar';
+    bar.className = 'product-filter-bar';
+    bar.innerHTML = `
+      <div class="product-filter-grid">
+        <label><span>Marca</span><select id="filterBrand"></select></label>
+        <label><span>Categoría</span><select id="filterCategory"></select></label>
+        <label><span>Zona</span><select id="filterZone"></select></label>
+        <label><span>Almacén</span><select id="filterWarehouse"></select></label>
+        <label><span>Rack</span><select id="filterRack"></select></label>
+        <label><span>Imagen</span><select id="filterImageState"><option value="">Todas</option><option value="with_image">Con imagen</option><option value="without_image">Sin imagen</option></select></label>
+        <label><span>Ubicación</span><select id="filterLocationState"><option value="">Todas</option><option value="complete">Completa</option><option value="incomplete">Incompleta</option></select></label>
+        <label><span>Stock</span><select id="filterStockState"><option value="">Todos</option><option value="with_stock">Con stock</option><option value="without_stock">Sin stock</option></select></label>
+      </div>
+      <div class="product-filter-actions">
+        <span class="chip" id="productFilterSummary" data-active="0">Sin filtros</span>
+        <button class="seg-btn" id="resetProductFilters" type="button">Limpiar filtros</button>
+      </div>
+    `;
+    productToolbar.appendChild(bar);
+    const bindings = [
+      ['filterBrand','brand'],
+      ['filterCategory','category'],
+      ['filterZone','zone'],
+      ['filterWarehouse','warehouse'],
+      ['filterRack','rack'],
+      ['filterImageState','image_state'],
+      ['filterLocationState','location_state'],
+      ['filterStockState','stock_state'],
+    ];
+    bindings.forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.addEventListener('change', () => {
+        appState.productFilters[key] = String(el.value || '');
+        updateFilterSummaryChip();
+        clearTimeout(productSearchDebounce);
+        productSearchDebounce = setTimeout(filterProducts, 60);
+      });
+    });
+    document.getElementById('resetProductFilters')?.addEventListener('click', () => {
+      appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
+      syncProductFilterUi();
+      updateFilterSummaryChip();
+      clearTimeout(productSearchDebounce);
+      productSearchDebounce = setTimeout(filterProducts, 20);
+    });
+    return bar;
+  }
+
+  function syncProductFilterUi(){
+    ensureProductFilterBar();
+    const facets = appState.productFacets || {};
+    const sets = [
+      ['filterBrand', 'brand', buildFacetOptionsHtml(facets.brand_options || facets.brands || [], 'Todas')],
+      ['filterCategory', 'category', buildFacetOptionsHtml(facets.category_options || facets.categories || [], 'Todas')],
+      ['filterZone', 'zone', buildFacetOptionsHtml(facets.zone_options || facets.zones || [], 'Todas')],
+      ['filterWarehouse', 'warehouse', buildFacetOptionsHtml(facets.warehouse_options || facets.warehouses || [], 'Todos')],
+      ['filterRack', 'rack', buildFacetOptionsHtml(facets.rack_options || facets.racks || [], 'Todos')],
+      ['filterImageState', 'image_state', null],
+      ['filterLocationState', 'location_state', null],
+      ['filterStockState', 'stock_state', null],
+    ];
+    sets.forEach(([id, key, html]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(html != null) el.innerHTML = html;
+      el.value = String(appState.productFilters?.[key] || '');
+    });
+    updateFilterSummaryChip();
+  }
+
+  function updateProductAnalyticsSummary(){
+    const summary = appState.productSummaryData || null;
+    const foot = document.getElementById('contentFootRight');
+    if(!summary){ if(foot) foot.textContent = '—'; return; }
+    const pieces = [];
+    if(Number(summary.with_location || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_location || 0).toLocaleString('es-PE')} con ubicación`);
+    if(Number(summary.with_image || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_image || 0).toLocaleString('es-PE')} con imagen`);
+    if(Number(summary.with_stock || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_stock || 0).toLocaleString('es-PE')} con stock`);
+    if(foot) foot.textContent = pieces.length ? pieces.join(' • ') : '—';
+  }
+
+  async function fetchProductsSummary(branchIndex = null){
+    const targetBranchIndex = Number.isFinite(branchIndex) ? Number(branchIndex) : getActiveBranchIndex();
+    const branch = getBranchByIndex(targetBranchIndex);
+    if(!branch?.id) return null;
+    try{
+      const data = await apiGetJson(`/api/branches/${branch.id}/products-summary`);
+      appState.productSummaryData = data?.summary || null;
+      if(data?.facets) appState.productFacets = data.facets;
+      syncProductFilterUi();
+      updateProductAnalyticsSummary();
+      return data;
+    }catch(_err){
+      return null;
+    }
+  }
+  async function fetchBranchProductsPage(branchIndex, { query = '', page = 1, limit = null, filters = null } = {}){
     const branch = getBranchByIndex(branchIndex);
     if(!branch?.id) return null;
     const pageSize = Number(limit || appState.productPaging.limit || 120);
@@ -391,6 +535,7 @@
     if(query) params.set('q', query);
     params.set('page', String(page));
     params.set('limit', String(pageSize));
+    getNormalizedProductFilterEntries(filters).forEach(([key, value]) => params.set(key, value));
     return apiGetJson(`/api/branches/${branch.id}/products?${params.toString()}`);
   }
   async function requestProductsPage({ branchIndex = null, query = null, page = null, silent = false } = {}){
@@ -403,8 +548,10 @@
       appState.productPaging.loading = true;
       appState.productPaging.branchId = Number(branch.id || 0);
       updateProductPagerUi();
-      const data = await fetchBranchProductsPage(targetBranchIndex, { query: nextQuery, page: nextPage });
+      const activeFilters = getActiveProductFilters();
+      const data = await fetchBranchProductsPage(targetBranchIndex, { query: nextQuery, page: nextPage, filters: activeFilters });
       const items = Array.isArray(data?.items) ? data.items : [];
+      if(data?.facets) appState.productFacets = data.facets;
       appState.productPaging = {
         ...appState.productPaging,
         mode:'backend',
@@ -415,11 +562,13 @@
         query:nextQuery,
         loading:false,
         branchId:Number(branch.id || 0),
+        filters:activeFilters,
         lastError:''
       };
       setProductDataset(items, { keepOrder:true });
-      appState.filtered = appState.products.slice();
+      appState.filtered = appState.products.filter(p => productMatchesLocalFilters(p));
       countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
+      syncProductFilterUi();
       renderProducts(appState.filtered);
       const selectedKey = getProductIdentityKey(appState.selectedProduct);
       const selectedStillVisible = items.find(p => getProductIdentityKey(p) === selectedKey);
@@ -427,6 +576,7 @@
       else if(items[0]) selectProduct(items[0]);
       else updateActiveProductCard(null);
       if(!silent) syncActiveProductCardHint();
+      if(!silent || !appState.productSummaryData) fetchProductsSummary(targetBranchIndex);
       updateProductPagerUi();
       return true;
     }catch(err){
@@ -1608,6 +1758,35 @@
     syncActiveProductCardHint();
   }
 
+  function productMatchesLocalFilters(product, filters = null){
+    const p = product || {};
+    const f = filters || appState.productFilters || {};
+    const exactChecks = [
+      ['brand', p.brand || p.marca || ''],
+      ['category', p.category || p.categoria || ''],
+      ['warehouse', p.warehouse || p.almacen || ''],
+      ['zone', p.zone || p.zona || ''],
+      ['rack', p.rack || p.estante || ''],
+    ];
+    for(const [key, rawValue] of exactChecks){
+      const expected = String(f?.[key] || '').trim();
+      if(expected && String(rawValue || '').trim() !== expected) return false;
+    }
+    const imageState = String(f?.image_state || '').trim();
+    const hasImage = !!String(p.image_url || p.imagen || '').trim();
+    if(imageState === 'with_image' && !hasImage) return false;
+    if(imageState === 'without_image' && hasImage) return false;
+    const locationState = String(f?.location_state || '').trim();
+    const hasLocation = !!String(p.location || p.ubicacion || '').trim();
+    if(locationState === 'complete' && !hasLocation) return false;
+    if(locationState === 'incomplete' && hasLocation) return false;
+    const stockState = String(f?.stock_state || '').trim();
+    const stock = Number(p.stock || 0);
+    if(stockState === 'with_stock' && !(stock > 0)) return false;
+    if(stockState === 'without_stock' && stock > 0) return false;
+    return true;
+  }
+
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
     const q = norm(rawQ);
@@ -1668,7 +1847,7 @@
       return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
     }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
       .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
-    appState.filtered = scored.map(x => x.p);
+    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
     const primary = appState.filtered[0] || null;
     if(primary){
       appState.selectedProduct = primary;
@@ -3154,6 +3333,10 @@
         if(Array.isArray(cfg.sheet_map_rows)) branch.sheetMapRows = cfg.sheet_map_rows;
         if(Array.isArray(cfg.sheet_headers)) branch.sheetHeaders = cfg.sheet_headers;
         if(Number.isFinite(Number(cfg.sheet_header_index))) branch.sheetHeaderIndex = Number(cfg.sheet_header_index || 0);
+        branch.lastImportAt = cfg.last_imported_at || '';
+        branch.lastImportStatus = cfg.last_import_status || '';
+        branch.lastImportSource = cfg.last_import_source || '';
+        branch.lastImportError = cfg.last_import_error || '';
         if(Array.isArray(cfg.imported_products) && cfg.imported_products.length){
           branch.sheetPreviewProducts = cfg.imported_products.slice(0,12000);
           branch.lastSheetCount = Number(cfg.last_sheet_count || cfg.imported_products.length || 0);
@@ -3592,6 +3775,7 @@ function getSheetBranchOpenMap(){
       payload.imported_products = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length)
         ? branch.sheetPreviewProducts.slice(0,12000)
         : ((Array.isArray(appState.products) && appState.products.length) ? appState.products.slice(0,12000) : []);
+      payload.import_source = 'google-sheet-ui';
     }
     await httpJson(`/api/branches/${branchId}/sheet`, {
       method:'POST',
@@ -3901,14 +4085,21 @@ function getSheetBranchOpenMap(){
       branch.lastSheetCount = totalRows || list.length;
       branch.sheetConnected = true;
       branch.sheetStatusText = `Importados: ${list.length.toLocaleString('es-PE')} • detectados ${branch.lastSheetCount.toLocaleString('es-PE')}`;
+      branch.lastImportAt = new Date().toISOString();
+      branch.lastImportStatus = list.length ? 'success' : 'empty';
+      branch.lastImportSource = 'google-sheet-ui';
+      branch.lastImportError = '';
       setBranchMetaStatus(branch, BRANCH_STATUS.IMPORTED, { touchImportedAt:true, headerCount:getSheetBranchHeaderCount(branch), productCount:list.length });
       saveAdminState();
       await persistBranchSheet(index, { includeProducts:true });
+      await fetchProductsSummary(index);
       contentStatus.textContent = 'Productos importados y guardados en servidor.';
       renderSheetScreen();
       showToast(`Se importaron ${list.length.toLocaleString('es-PE')} productos.`, 'success', 3200);
     }catch(err){
       branch.sheetStatusText = err.message || 'Error al importar';
+      branch.lastImportStatus = 'error';
+      branch.lastImportError = branch.sheetStatusText;
       setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:branch.sheetStatusText, headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
       saveAdminState(); renderSheetScreen(); showToast(branch.sheetStatusText, 'error', 4000);
     }
@@ -3943,7 +4134,10 @@ function getSheetBranchOpenMap(){
       const statusText = statusInfo.label;
       const helperText = String(b.sheetStatusText || '').trim();
       const helperHtml = helperText && helperText !== statusText ? `<div class="tiny muted sheet-helper-text">${escapeHtml(helperText)}</div>` : '';
-      const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(ensureBranchMeta(b).lastImportedAt))}</span></div>`;
+      const importStamp = b.lastImportAt || ensureBranchMeta(b).lastImportedAt;
+      const importBadge = b.lastImportStatus ? `<span>Estado importación: ${escapeHtml(String(b.lastImportStatus || '').toUpperCase())}</span>` : '';
+      const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
+      const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
       const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
@@ -8109,6 +8303,8 @@ function zoomLayout(factor, center){
       await loadAllBranchSheetConfigsFromServer();
     
   ensureProductPagerUi();
+  ensureProductFilterBar();
+  syncProductFilterUi();
 
   if(searchInput){ searchInput.addEventListener('input', ()=>{ clearTimeout(productSearchDebounce); productSearchDebounce = setTimeout(filterProducts, 180); }); searchInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ clearTimeout(productSearchDebounce); filterProducts(); } }); }
   document.addEventListener('keydown', e => {
