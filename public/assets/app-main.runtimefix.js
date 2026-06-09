@@ -153,7 +153,7 @@
   let modalResolver = null;
 
   function ensureProductPagingState(){
-    const base = { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'' };
+    const base = { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', backendUnavailable:false };
     if(!appState.productPaging || typeof appState.productPaging !== 'object'){
       appState.productPaging = { ...base };
     }else{
@@ -417,7 +417,10 @@
     return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if(!res.ok || data?.ok === false){
-        throw new Error(data?.error || `HTTP ${res.status}`);
+        const err = new Error(data?.error || `HTTP ${res.status}`);
+        err.status = Number(res.status || 0);
+        err.payload = data;
+        throw err;
       }
       return data;
     });
@@ -551,6 +554,11 @@
     const nextPage = Math.max(1, Number(page || paging?.page || 1));
     const branch = getBranchByIndex(targetBranchIndex);
     if(!branch?.id) return false;
+    if(paging.backendUnavailable){
+      appState.productPaging = { ...paging, mode:'local', loading:false, query:nextQuery };
+      filterProducts();
+      return false;
+    }
     try{
       appState.productPaging.loading = true;
       appState.productPaging.branchId = Number(branch.id || 0);
@@ -587,6 +595,25 @@
       updateProductPagerUi();
       return true;
     }catch(err){
+      const status = Number(err?.status || 0);
+      if(status === 404){
+        appState.productPaging = {
+          ...ensureProductPagingState(),
+          mode:'local',
+          page:1,
+          total:Array.isArray(appState.products) ? appState.products.length : 0,
+          totalPages:1,
+          query:nextQuery,
+          loading:false,
+          branchId:Number(branch.id || 0),
+          filters:getActiveProductFilters(),
+          lastError:'backend_404_local_fallback',
+          backendUnavailable:true
+        };
+        filterProducts();
+        updateProductPagerUi();
+        return false;
+      }
       appState.productPaging.loading = false;
       appState.productPaging.lastError = String(err?.message || err || 'error');
       updateProductPagerUi();
@@ -1145,7 +1172,12 @@
 
   function setScreen(screen){
     ensureAppRuntimeState();
-    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){ openAuthModal(''); screen = 'viewer'; }
+    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){
+      appState.ui = appState.ui || {};
+      appState.ui.pendingScreenAfterLogin = screen;
+      openAuthModal('');
+      screen = 'viewer';
+    }
     if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer'){ screen = 'viewer'; }
     cleanupLayoutAutoFit();
     appState.screen = screen;
@@ -1524,6 +1556,19 @@
     syncSelectedProductLocation(product);
   }
 
+  function syncExpandedModalSelection(product){
+    appState.selectedProduct = product || null;
+    applyProductSelectionEffects(product);
+    updateActiveProductCard(product);
+    syncActiveProductCardHint();
+    const rows = document.querySelectorAll('.product-row');
+    rows.forEach(row => {
+      const key = row.getAttribute('data-product-key') || '';
+      row.classList.toggle('active', !!product && key === getProductIdentityKey(product));
+    });
+    setTimeout(updateExpandedSideCards, 20);
+  }
+
   const LOGICAL_SIZE_ORDER = ['XXXS','3XS','XXS','2XS','XS','S','M','L','XL','XXL','2XL','XXXL','3XL','XXXXL','4XL','5XL','6XL','U','UNICA','ÚNICA','ONE SIZE'];
   function getLogicalSizeRank(value){
     const raw = String(value || '').trim().toUpperCase();
@@ -1608,7 +1653,7 @@
     productList.innerHTML = '';
     items.forEach(entry => {
       const row = document.createElement('div');
-      row.className = 'product-row' + ((entry.type==='product' && (appState.selectedProduct?.sku === entry.data.sku) && (appState.selectedProduct?.variante === entry.data.variante)) ? ' active' : '');
+      row.className = 'product-row' + ((entry.type==='product' && getProductIdentityKey(appState.selectedProduct) === getProductIdentityKey(entry.data)) ? ' active' : '');
       if(entry.type === 'group'){
         const g = entry.data;
         const first = g.items[0];
@@ -1624,6 +1669,7 @@
         row.addEventListener('click', () => selectProduct(first));
       } else {
         const p = entry.data;
+        row.setAttribute('data-product-key', getProductIdentityKey(p));
         row.innerHTML = `
           <div><b>${p.sku}</b></div>
           <div>${p.nombre}</div>
@@ -1739,8 +1785,7 @@
     el.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      selectProduct(product);
-      updateExpandedSideCards();
+      syncExpandedModalSelection(product);
     };
     el.classList.add('visible');
   }
@@ -1772,12 +1817,10 @@
       const idx = getExpandedCarouselIndex(items);
       if(e.key === 'ArrowLeft'){
         e.preventDefault();
-        selectProduct(items[(idx - 1 + items.length) % items.length]);
-        updateExpandedSideCards();
+        syncExpandedModalSelection(items[(idx - 1 + items.length) % items.length]);
       }else if(e.key === 'ArrowRight'){
         e.preventDefault();
-        selectProduct(items[(idx + 1) % items.length]);
-        updateExpandedSideCards();
+        syncExpandedModalSelection(items[(idx + 1) % items.length]);
       }
     });
     window.addEventListener('resize', () => setTimeout(updateExpandedSideCards, 40));
@@ -1978,6 +2021,10 @@
   }
 
   function selectProduct(p){
+    if(document.body.classList.contains('search-card-modal-open')){
+      syncExpandedModalSelection(p);
+      return;
+    }
     appState.selectedProduct = p;
     applyProductSelectionEffects(p);
     updateActiveProductCard(p);
@@ -8465,6 +8512,7 @@ function zoomLayout(factor, center){
 
   function continueAsViewer(){
     if(authBusy) return;
+    if(appState.ui) appState.ui.pendingScreenAfterLogin = '';
     appState.auth = { loggedIn:false, user:'', role:'viewer', company:'', companyCode:'', viewerGuest:true };
     updateAuthUi();
     applyRoleUi();
@@ -8497,8 +8545,10 @@ function zoomLayout(factor, center){
       updateAuthUi();
       applyRoleUi();
 
+      const targetScreen = String(appState.ui?.pendingScreenAfterLogin || '').trim() || (appState.auth?.role === 'viewer' ? 'viewer' : 'admin');
+      if(appState.ui) appState.ui.pendingScreenAfterLogin = '';
       closeAuthModal(true);
-      setScreen(appState.auth?.role === 'viewer' ? 'viewer' : 'admin');
+      setScreen(targetScreen);
 
       Promise.allSettled([loadRemoteAppState(), loadAllBranchSheetConfigsFromServer()]).then(() => {
         try{
