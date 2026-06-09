@@ -488,78 +488,14 @@
   }
 
   function ensureProductFilterBar(){
-    if(!productToolbar) return null;
-    let bar = document.getElementById('productFilterBar');
-    if(bar) return bar;
-    bar = document.createElement('div');
-    bar.id = 'productFilterBar';
-    bar.className = 'product-filter-bar';
-    bar.innerHTML = `
-      <div class="product-filter-grid">
-        <label><span>Marca</span><select id="filterBrand"></select></label>
-        <label><span>Categoría</span><select id="filterCategory"></select></label>
-        <label><span>Zona</span><select id="filterZone"></select></label>
-        <label><span>Almacén</span><select id="filterWarehouse"></select></label>
-        <label><span>Rack</span><select id="filterRack"></select></label>
-        <label><span>Imagen</span><select id="filterImageState"><option value="">Todas</option><option value="with_image">Con imagen</option><option value="without_image">Sin imagen</option></select></label>
-        <label><span>Ubicación</span><select id="filterLocationState"><option value="">Todas</option><option value="complete">Completa</option><option value="incomplete">Incompleta</option></select></label>
-        <label><span>Stock</span><select id="filterStockState"><option value="">Todos</option><option value="with_stock">Con stock</option><option value="without_stock">Sin stock</option></select></label>
-      </div>
-      <div class="product-filter-actions">
-        <span class="chip" id="productFilterSummary" data-active="0">Sin filtros</span>
-        <button class="seg-btn" id="resetProductFilters" type="button">Limpiar filtros</button>
-      </div>
-    `;
-    productToolbar.appendChild(bar);
-    const bindings = [
-      ['filterBrand','brand'],
-      ['filterCategory','category'],
-      ['filterZone','zone'],
-      ['filterWarehouse','warehouse'],
-      ['filterRack','rack'],
-      ['filterImageState','image_state'],
-      ['filterLocationState','location_state'],
-      ['filterStockState','stock_state'],
-    ];
-    bindings.forEach(([id, key]) => {
-      const el = document.getElementById(id);
-      if(!el) return;
-      el.addEventListener('change', () => {
-        appState.productFilters[key] = String(el.value || '');
-        updateFilterSummaryChip();
-        clearTimeout(productSearchDebounce);
-        productSearchDebounce = setTimeout(filterProducts, 60);
-      });
-    });
-    document.getElementById('resetProductFilters')?.addEventListener('click', () => {
-      appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
-      syncProductFilterUi();
-      updateFilterSummaryChip();
-      clearTimeout(productSearchDebounce);
-      productSearchDebounce = setTimeout(filterProducts, 20);
-    });
-    return bar;
+    const existing = document.getElementById('productFilterBar');
+    if(existing) existing.remove();
+    return null;
   }
 
   function syncProductFilterUi(){
+    // Filtros avanzados ocultos en esta versión estable: se conserva solo buscador principal.
     ensureProductFilterBar();
-    const facets = appState.productFacets || {};
-    const sets = [
-      ['filterBrand', 'brand', buildFacetOptionsHtml(facets.brand_options || facets.brands || [], 'Todas')],
-      ['filterCategory', 'category', buildFacetOptionsHtml(facets.category_options || facets.categories || [], 'Todas')],
-      ['filterZone', 'zone', buildFacetOptionsHtml(facets.zone_options || facets.zones || [], 'Todas')],
-      ['filterWarehouse', 'warehouse', buildFacetOptionsHtml(facets.warehouse_options || facets.warehouses || [], 'Todos')],
-      ['filterRack', 'rack', buildFacetOptionsHtml(facets.rack_options || facets.racks || [], 'Todos')],
-      ['filterImageState', 'image_state', null],
-      ['filterLocationState', 'location_state', null],
-      ['filterStockState', 'stock_state', null],
-    ];
-    sets.forEach(([id, key, html]) => {
-      const el = document.getElementById(id);
-      if(!el) return;
-      if(html != null) el.innerHTML = html;
-      el.value = String(appState.productFilters?.[key] || '');
-    });
     updateFilterSummaryChip();
   }
 
@@ -1890,24 +1826,26 @@
   }
 
   function filterProducts(){
-    const rawQ = String(searchInput.value || '');
+    ensureAppRuntimeState();
+    const rawQ = String(searchInput?.value || '').trim();
     const q = norm(rawQ);
-    const activeBranch = getBranchByIndex(getActiveBranchIndex());
-    if(activeBranch?.id && appState.auth?.loggedIn){
-      requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ.trim(), page:1, silent:true }).then((ok) => {
-        if(ok){
-          clearSearchHighlights();
-          if(appState.screen === 'dashboard') renderDashboard();
-          else if(['products','viewer'].includes(appState.screen)) renderMapView();
-          else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
-        }
-      });
-      return;
-    }
+    // En esta versión estable el buscador trabaja localmente para evitar fallos por endpoints remotos incompletos.
+    appState.productPaging = {
+      ...ensureProductPagingState(),
+      mode:'local',
+      page:1,
+      query:rawQ,
+      loading:false,
+      lastError:''
+    };
+    const source = Array.isArray(appState.products) ? appState.products.slice() : [];
     if(!q){
-      appState.filtered = appState.products.slice();
+      appState.filtered = source.filter(p => productMatchesLocalFilters(p));
       clearSearchHighlights();
+      const selected = appState.selectedProduct && appState.filtered.find(p => getProductIdentityKey(p) === getProductIdentityKey(appState.selectedProduct));
+      appState.selectedProduct = selected || appState.filtered[0] || null;
       updateActiveProductCard(appState.selectedProduct || null);
+      syncActiveProductCardHint();
       renderProducts(appState.filtered);
       if(appState.screen === 'dashboard') renderDashboard();
       else if(['products','viewer'].includes(appState.screen)) renderMapView();
@@ -1916,7 +1854,10 @@
     }
     const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
     const compactQuery = q.replace(/\s+/g, ' ').trim();
-    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
+    const index = Array.isArray(appState.searchIndex) && appState.searchIndex.length
+      ? appState.searchIndex
+      : buildProductSearchIndex(source);
+    const scored = index.map(entry => {
       const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
       const phraseInFamily = familyText.includes(compactQuery);
       const phraseInNameVariant = nameVariant.includes(compactQuery);
@@ -1925,29 +1866,29 @@
       if (exactSku === q) score += 260;
       if (familyText === q || nameOnly === q) score += 220;
       if (nameVariant === q) score += 180;
-      if (phraseInFamily) score += 160;
-      if (phraseInNameVariant) score += 130;
-      if (phraseInFull) score += 90;
-      if (exactRack === q || exactRackStore === q) score += 85;
-      if (exactUbic === q || exactAlm === q) score += 85;
+      if (phraseInFamily) score += 170;
+      if (phraseInNameVariant) score += 140;
+      if (phraseInFull) score += 95;
+      if (exactRack === q || exactRackStore === q) score += 90;
+      if (exactUbic === q || exactAlm === q) score += 90;
       let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
       tokens.forEach(t => {
         let matched = false;
-        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
-        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
-        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
+        if (familyText.includes(t)) { familyMatches += 1; score += 30; matched = true; if (nameOnly.includes(t)) score += 12; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 14; }
+        if (variantText.includes(t)) { variantMatches += 1; score += 20; matched = true; if (exactSku.startsWith(t)) score += 20; }
+        if (locationText.includes(t)) { locationMatches += 1; score += 10; matched = true; }
         if (matched) matchedTokens += 1;
       });
       const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
-      if (allTokensPresent) score += 34 + tokens.length * 6;
+      if (allTokensPresent) score += 36 + tokens.length * 7;
       const contentMatches = familyMatches + variantMatches;
-      const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
+      const strongPhrase = phraseInFamily || phraseInNameVariant || phraseInFull || exactSku === q || exactUbic === q || exactAlm === q;
       let passes = false;
       if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
       else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
       else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
       return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
-    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
+    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 60 : tokens.length === 2 ? 34 : 10))
       .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
     appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
     const primary = appState.filtered[0] || null;
@@ -8563,8 +8504,11 @@ function zoomLayout(factor, center){
     }, 90);
   });
   menuItems.forEach(item => { item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; }; });
-  btnSearch.addEventListener('click', filterProducts);
-  searchInput.addEventListener('input', debounce(filterProducts, 120));
+  if(btnSearch) btnSearch.addEventListener('click', (e)=>{ e.preventDefault(); filterProducts(); });
+  if(searchInput){
+    searchInput.addEventListener('input', debounce(filterProducts, 90));
+    searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
+  }
   if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = !appState.ui.productGroupMode; $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
