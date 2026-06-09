@@ -167,6 +167,7 @@
     if(!Array.isArray(branch.sheetMapRows)) branch.sheetMapRows = [];
     if(!Array.isArray(branch.sheetHeaders)) branch.sheetHeaders = [];
     if(!branch.sheetStatusText) branch.sheetStatusText = '';
+    if(typeof branch.productsApiUnavailable !== 'boolean') branch.productsApiUnavailable = false;
     return branch;
   }
 
@@ -411,7 +412,10 @@
     return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if(!res.ok || data?.ok === false){
-        throw new Error(data?.error || `HTTP ${res.status}`);
+        const err = new Error(data?.error || `HTTP ${res.status}`);
+        err.status = Number(res.status || 0);
+        err.payload = data;
+        throw err;
       }
       return data;
     });
@@ -528,7 +532,7 @@
   async function fetchBranchProductsPage(branchIndex, { query = '', page = 1, limit = null, filters = null } = {}){
     const paging = ensureProductPagingState();
     const branch = getBranchByIndex(branchIndex);
-    if(!branch?.id) return null;
+    if(!branch?.id || branch?.productsApiUnavailable) return null;
     const pageSize = Number(limit || paging.limit || 120);
     const params = new URLSearchParams();
     if(query) params.set('q', query);
@@ -583,6 +587,24 @@
     }catch(err){
       appState.productPaging.loading = false;
       appState.productPaging.lastError = String(err?.message || err || 'error');
+      const status = Number(err?.status || 0);
+      if(status === 404){
+        branch.productsApiUnavailable = true;
+        appState.productPaging = {
+          ...appState.productPaging,
+          mode:'local',
+          page:1,
+          total:Array.isArray(appState.filtered) && appState.filtered.length ? appState.filtered.length : (Array.isArray(appState.products) ? appState.products.length : 0),
+          totalPages:1,
+          query:nextQuery,
+          loading:false,
+          branchId:Number(branch.id || 0),
+          lastError:''
+        };
+        filterProducts();
+        updateProductPagerUi();
+        return true;
+      }
       updateProductPagerUi();
       return false;
     }
@@ -1612,14 +1634,17 @@
     updateActiveProductCard(product);
     syncActiveProductCardHint();
     updateProductListActiveState();
-    if(appState.screen === 'viewer'){
-      requestAnimationFrame(() => renderMapView());
-    } else if(appState.screen === 'dashboard'){
-      requestAnimationFrame(() => renderDashboard());
+    const modalOpen = document.body.classList.contains('search-card-modal-open');
+    if(!modalOpen){
+      if(appState.screen === 'viewer'){
+        requestAnimationFrame(() => renderMapView());
+      } else if(appState.screen === 'dashboard'){
+        requestAnimationFrame(() => renderDashboard());
+      }
     }
     requestAnimationFrame(() => {
       updateExpandedSideCards();
-      setTimeout(() => { expandedCardNavLocked = false; }, 120);
+      setTimeout(() => { expandedCardNavLocked = false; }, modalOpen ? 170 : 120);
     });
   }
 
