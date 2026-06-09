@@ -14,7 +14,6 @@
   const productList = $('#productList');
   const countProducts = $('#countProducts');
   const searchBranchHost = $('#searchBranchHost');
-  const searchPanel = $('.search-panel');
   const productSummary = $('#productSummary');
   const productToolbar = $('.product-toolbar');
   const activeProductName = $('#activeProductName');
@@ -58,7 +57,6 @@
   const detailWrap = $('#detailWrap');
   const detailStatus = $('#detailStatus');
   const detailChip = $('#detailChip');
-  const viewerModeSwitch = $('#viewerModeSwitch');
 
   const appState = {
     screen: 'admin',
@@ -110,7 +108,7 @@
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
-    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product' },
+    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
     productFilters: {
@@ -126,7 +124,7 @@
     productFacets: { brands:[], categories:[], warehouses:[], zones:[], racks:[] },
     productSummaryData: null,
     searchIndex: [],
-    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', backendUnavailable:false },
+    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'' },
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
       racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
@@ -174,8 +172,8 @@
 
   function ensureAppRuntimeState(){
     ensureProductPagingState();
-    if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product' };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product', ...appState.ui };
+    if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!appState.admin || typeof appState.admin !== 'object') appState.admin = { branches:[], users:[], company:{} };
@@ -197,52 +195,6 @@
     if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
     if(!appState.productFacets || typeof appState.productFacets !== 'object') appState.productFacets = { brands:[], categories:[], warehouses:[], zones:[], racks:[] };
     return appState;
-  }
-
-  function getViewerMode(){
-    ensureAppRuntimeState();
-    return String(appState.ui?.viewerMode || '').toLowerCase() === 'location' ? 'location' : 'product';
-  }
-
-  function setProductFilterBarVisibility(visible = false){
-    const bar = document.getElementById('productFilterBar');
-    if(bar) bar.style.display = visible ? '' : 'none';
-  }
-
-  function restoreActiveProductCardHome(){
-    const card = document.getElementById('activeProductCard');
-    const shell = document.querySelector('.search-shell');
-    const inputWrap = document.querySelector('.search-input-wrap');
-    if(!card || !shell) return;
-    if(card.parentNode === shell) return;
-    if(inputWrap && inputWrap.nextSibling) shell.insertBefore(card, inputWrap.nextSibling);
-    else shell.appendChild(card);
-  }
-
-  function mountActiveProductCardTo(host){
-    const card = document.getElementById('activeProductCard');
-    if(!card || !host) return;
-    if(card.parentNode !== host) host.appendChild(card);
-  }
-
-  function renderViewerModeSwitch(){
-    if(!viewerModeSwitch) return;
-    if(appState.screen !== 'viewer'){
-      viewerModeSwitch.classList.remove('active');
-      viewerModeSwitch.innerHTML = '';
-      return;
-    }
-    const mode = getViewerMode();
-    viewerModeSwitch.classList.add('active');
-    viewerModeSwitch.innerHTML = `
-      <button class="mode-btn ${mode === 'product' ? 'active' : ''}" type="button" data-viewer-mode="product">Modo producto</button>
-      <button class="mode-btn ${mode === 'location' ? 'active' : ''}" type="button" data-viewer-mode="location">Modo ubicación</button>`;
-    viewerModeSwitch.querySelectorAll('[data-viewer-mode]').forEach(btn => btn.addEventListener('click', () => {
-      const next = btn.getAttribute('data-viewer-mode') || 'product';
-      if(next === getViewerMode()) return;
-      appState.ui.viewerMode = next === 'location' ? 'location' : 'product';
-      setScreen('viewer');
-    }));
   }
 
   function showToast(message, type='success', timeout=2600){
@@ -459,10 +411,7 @@
     return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if(!res.ok || data?.ok === false){
-        const err = new Error(data?.error || `HTTP ${res.status}`);
-        err.status = res.status;
-        err.payload = data;
-        throw err;
+        throw new Error(data?.error || `HTTP ${res.status}`);
       }
       return data;
     });
@@ -594,7 +543,6 @@
 
   function syncProductFilterUi(){
     ensureProductFilterBar();
-    setProductFilterBarVisibility(false);
     const facets = appState.productFacets || {};
     const sets = [
       ['filterBrand', 'brand', buildFacetOptionsHtml(facets.brand_options || facets.brands || [], 'Todas')],
@@ -634,15 +582,10 @@
       const data = await apiGetJson(`/api/branches/${branch.id}/products-summary`);
       appState.productSummaryData = data?.summary || null;
       if(data?.facets) appState.productFacets = data.facets;
-      appState.productPaging.backendUnavailable = false;
       syncProductFilterUi();
       updateProductAnalyticsSummary();
       return data;
     }catch(_err){
-      if(_err?.status === 404){
-        appState.productPaging.backendUnavailable = true;
-        appState.productPaging.mode = 'local';
-      }
       return null;
     }
   }
@@ -685,8 +628,7 @@
         loading:false,
         branchId:Number(branch.id || 0),
         filters:activeFilters,
-        lastError:'',
-        backendUnavailable:false
+        lastError:''
       };
       setProductDataset(items, { keepOrder:true });
       appState.filtered = appState.products.filter(p => productMatchesLocalFilters(p));
@@ -705,85 +647,9 @@
     }catch(err){
       appState.productPaging.loading = false;
       appState.productPaging.lastError = String(err?.message || err || 'error');
-      if(err?.status === 404 || /404/.test(String(err?.message || ''))){
-        appState.productPaging.mode = 'local';
-        appState.productPaging.backendUnavailable = true;
-      }
       updateProductPagerUi();
       return false;
     }
-  }
-
-  function rerenderAfterProductSearch(){
-    if(appState.screen === 'dashboard') renderDashboard();
-    else if(appState.screen === 'viewer'){
-      if(getViewerMode() === 'product') renderViewerProductScreen();
-      else renderMapView();
-    }
-    else if(['products','reports'].includes(appState.screen)) renderMapView();
-    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
-  }
-
-  function runLocalProductSearch(rawQuery = ''){
-    const q = norm(rawQuery);
-    if(!q){
-      appState.filtered = appState.products.slice();
-      clearSearchHighlights();
-      updateActiveProductCard(appState.selectedProduct || null);
-      renderProducts(appState.filtered);
-      rerenderAfterProductSearch();
-      return;
-    }
-    const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
-    const compactQuery = q.replace(/\s+/g, ' ').trim();
-    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
-      const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
-      const phraseInFamily = familyText.includes(compactQuery);
-      const phraseInNameVariant = nameVariant.includes(compactQuery);
-      const phraseInFull = haystack.includes(compactQuery);
-      let score = 0;
-      if (exactSku === q) score += 260;
-      if (familyText === q || nameOnly === q) score += 220;
-      if (nameVariant === q) score += 180;
-      if (phraseInFamily) score += 160;
-      if (phraseInNameVariant) score += 130;
-      if (phraseInFull) score += 90;
-      if (exactRack === q || exactRackStore === q) score += 85;
-      if (exactUbic === q || exactAlm === q) score += 85;
-      let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
-      tokens.forEach(t => {
-        let matched = false;
-        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
-        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
-        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
-        if (matched) matchedTokens += 1;
-      });
-      const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
-      if (allTokensPresent) score += 34 + tokens.length * 6;
-      const contentMatches = familyMatches + variantMatches;
-      const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
-      let passes = false;
-      if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
-      else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
-      else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
-      return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
-    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
-      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
-    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
-    const primary = appState.filtered[0] || null;
-    if(primary){
-      appState.selectedProduct = primary;
-      appState.selectedRack = primary.rack || primary.rackStore || appState.selectedRack;
-      appState.selectedRackLayoutId = primary.rack || primary.rackStore || appState.selectedRackLayoutId;
-    }
-    const rackIds = [];
-    appState.filtered.slice(0, 250).forEach(p => { if(p.rack) rackIds.push(p.rack); if(p.rackStore) rackIds.push(p.rackStore); });
-    setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
-    if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
-    else { updateActiveProductCard(null); clearSearchHighlights(); }
-    syncActiveProductCardHint();
-    renderProducts(appState.filtered);
-    rerenderAfterProductSearch();
   }
 
   function getHistoryBucket(type){
@@ -1343,56 +1209,28 @@
     appState.screen = screen;
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     renderViewerMenu();
-    renderViewerModeSwitch();
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
-    const isViewer = screen === 'viewer';
-    const viewerMode = getViewerMode();
     appRoot.classList.toggle('sheet-swap-layout', isSheetLayout);
     appRoot.classList.toggle('sheet-expanded', isSheetLayout && !!appState.ui.sheetExpanded);
-    appRoot.classList.toggle('viewer-mode-product', isViewer && viewerMode === 'product');
-    appRoot.classList.toggle('viewer-mode-location', isViewer && viewerMode === 'location');
-    restoreActiveProductCardHome();
-    setProductFilterBarVisibility(false);
-    if(searchPanel) searchPanel.style.display = '';
-    contentPanel.style.display = '';
-    detailPanel.style.display = '';
-    contentPanel.classList.remove('full-span');
-    contentPanel.style.gridColumn = '';
-    contentPanel.style.gridRow = '';
-    detailPanel.style.gridColumn = '';
-    detailPanel.style.gridRow = '';
-
     if(showSearch){
-      if(isSheetLayout){
-        detailPanel.style.display = 'none';
-        appRoot.style.gridTemplateColumns = compactViewport ? '' : '';
-      } else if(isViewer){
-        if(viewerMode === 'product'){
-          if(searchPanel) searchPanel.style.display = '';
-          contentPanel.style.display = '';
-          detailPanel.style.display = 'none';
-          appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed')
-            ? 'var(--sidebar-w-collapsed) minmax(420px,0.88fr) minmax(520px,1.12fr)'
-            : 'var(--sidebar-w) minmax(420px,0.88fr) minmax(520px,1.12fr)');
-        } else {
-          if(searchPanel) searchPanel.style.display = 'none';
-          contentPanel.style.display = '';
-          detailPanel.style.display = '';
-          appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed')
-            ? 'var(--sidebar-w-collapsed) minmax(0,1fr) clamp(320px,28vw,420px)'
-            : 'var(--sidebar-w) minmax(0,1fr) clamp(320px,28vw,420px)');
-        }
-      } else {
-        if(searchPanel) searchPanel.style.display = '';
-        detailPanel.style.display = 'none';
-        appRoot.style.gridTemplateColumns = compactViewport ? '' : '';
+      document.querySelector('.search-panel').style.display='';
+      const isViewer = screen === 'viewer';
+      detailPanel.style.display = (isSheetLayout || isViewer) ? 'none' : '';
+      contentPanel.classList.remove('full-span');
+      contentPanel.style.gridColumn = '';
+      contentPanel.style.gridRow = '';
+      if(detailPanel){
+        detailPanel.style.gridColumn = '';
+        detailPanel.style.gridRow = '';
       }
+      appRoot.style.gridTemplateColumns = compactViewport ? '' : (isViewer ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 680px minmax(0,1fr)' : 'var(--sidebar-w) 680px minmax(0,1fr)') : '');
+      if(isViewer && detailPanel) detailPanel.style.display = 'none';
     }else{
       appRoot.classList.remove('sheet-swap-layout');
       appRoot.classList.remove('sheet-expanded');
-      if(searchPanel) searchPanel.style.display='none';
+      document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
@@ -1412,7 +1250,6 @@
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
       else if(screen === 'dashboard') renderDashboard();
-      else if(screen === 'viewer' && getViewerMode() === 'product') renderViewerProductScreen();
       else renderMapView();
     }catch(err){
       console.error('Error al cambiar de pantalla:', err);
@@ -1673,17 +1510,13 @@
     updateActiveProductCard(product);
     syncActiveProductCardHint();
     if(opts.switchScreen !== false){
-      appState.ui.viewerMode = 'location';
       setScreen('viewer');
     } else if(['products','viewer','dashboard'].includes(appState.screen)) {
-      if(appState.screen === 'viewer' && getViewerMode() === 'product') renderViewerProductScreen();
-      else renderMapView();
+      renderMapView();
     }
     setTimeout(() => {
-      if(appState.screen === 'viewer'){
-        if(getViewerMode() === 'product') renderViewerProductScreen();
-        else renderMapView();
-      } else if(appState.screen === 'dashboard') renderDashboard();
+      if(appState.screen === 'viewer') renderMapView();
+      else if(appState.screen === 'dashboard') renderDashboard();
       renderProducts(appState.filtered);
     }, 10);
     return true;
@@ -2058,20 +1891,81 @@
 
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
+    const q = norm(rawQ);
     const activeBranch = getBranchByIndex(getActiveBranchIndex());
-    const canUseBackend = !!(activeBranch?.id && appState.auth?.loggedIn && appState.productPaging?.mode !== 'local' && !appState.productPaging?.backendUnavailable);
-    if(canUseBackend){
+    if(activeBranch?.id && appState.auth?.loggedIn){
       requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ.trim(), page:1, silent:true }).then((ok) => {
         if(ok){
           clearSearchHighlights();
-          rerenderAfterProductSearch();
-        } else {
-          runLocalProductSearch(rawQ);
+          if(appState.screen === 'dashboard') renderDashboard();
+          else if(['products','viewer'].includes(appState.screen)) renderMapView();
+          else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
         }
       });
       return;
     }
-    runLocalProductSearch(rawQ);
+    if(!q){
+      appState.filtered = appState.products.slice();
+      clearSearchHighlights();
+      updateActiveProductCard(appState.selectedProduct || null);
+      renderProducts(appState.filtered);
+      if(appState.screen === 'dashboard') renderDashboard();
+      else if(['products','viewer'].includes(appState.screen)) renderMapView();
+      else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      return;
+    }
+    const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
+    const compactQuery = q.replace(/\s+/g, ' ').trim();
+    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
+      const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
+      const phraseInFamily = familyText.includes(compactQuery);
+      const phraseInNameVariant = nameVariant.includes(compactQuery);
+      const phraseInFull = haystack.includes(compactQuery);
+      let score = 0;
+      if (exactSku === q) score += 260;
+      if (familyText === q || nameOnly === q) score += 220;
+      if (nameVariant === q) score += 180;
+      if (phraseInFamily) score += 160;
+      if (phraseInNameVariant) score += 130;
+      if (phraseInFull) score += 90;
+      if (exactRack === q || exactRackStore === q) score += 85;
+      if (exactUbic === q || exactAlm === q) score += 85;
+      let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
+      tokens.forEach(t => {
+        let matched = false;
+        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
+        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
+        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
+        if (matched) matchedTokens += 1;
+      });
+      const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
+      if (allTokensPresent) score += 34 + tokens.length * 6;
+      const contentMatches = familyMatches + variantMatches;
+      const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
+      let passes = false;
+      if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
+      else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
+      else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
+      return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
+    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
+      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
+    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
+    const primary = appState.filtered[0] || null;
+    if(primary){
+      appState.selectedProduct = primary;
+      appState.selectedRack = primary.rack || primary.rackStore || appState.selectedRack;
+      appState.selectedRackLayoutId = primary.rack || primary.rackStore || appState.selectedRackLayoutId;
+    }
+    const rackIds = [];
+    appState.filtered.slice(0, 250).forEach(p => { if(p.rack) rackIds.push(p.rack); if(p.rackStore) rackIds.push(p.rackStore); });
+    setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
+    if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
+    else { updateActiveProductCard(null); clearSearchHighlights(); }
+    syncActiveProductCardHint();
+    renderProducts(appState.filtered);
+    if(appState.screen === 'dashboard') renderDashboard();
+    else if(['products','viewer'].includes(appState.screen)) renderMapView();
+    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
   }
 
   function selectProduct(p){
@@ -2082,12 +1976,8 @@
     if(appState.screen === 'dashboard'){
       renderDashboard();
     } else if(['products','reports','viewer'].includes(appState.screen)){
-      if(appState.screen === 'viewer' && getViewerMode() === 'product'){
-        renderViewerProductScreen();
-      } else {
-        renderMapView();
-        renderRackDetail(p.rack || p.rackStore, p);
-      }
+      renderMapView();
+      renderRackDetail(p.rack || p.rackStore, p);
     } else if (appState.screen === 'layout') {
       renderLayoutEditor();
       renderLayoutInspector();
@@ -4574,57 +4464,6 @@ function getSheetBranchOpenMap(){
       if(rack?.zoneId) appState.selectedZoneId = rack.zoneId;
       renderDashboard();
     }));
-  }
-
-  function renderViewerProductScreen(){
-    const activeBranchIndex = getActiveLayoutBranchIndex();
-    const branch = (appState.admin?.branches || [])[activeBranchIndex] || getActiveSheetBranch() || null;
-    const product = appState.selectedProduct || appState.filtered?.[0] || appState.products?.[0] || null;
-    if(product && appState.selectedProduct !== product) appState.selectedProduct = product;
-    renderViewerBranchHost(activeBranchIndex);
-    contentTitle.textContent = 'Modo producto';
-    contentSubtitle.textContent = 'Consulta productos en lista y revisa la ficha visual del producto activo a la derecha.';
-    setTags(['lista normal', 'ficha visual', 'selección rápida']);
-    contentWrap.innerHTML = `
-      <div class="viewer-product-shell">
-        <div class="viewer-product-head">
-          <div>
-            <b>${escapeHtml(product?.nombre || 'Producto seleccionado')}</b>
-            <span class="muted tiny">Sucursal: ${escapeHtml(branch?.name || '—')} • SKU: ${escapeHtml(product?.sku || '—')}</span>
-          </div>
-          <span class="chip">${(getCurrentProductsTotal ? getCurrentProductsTotal() : (appState.products||[]).length).toLocaleString('es-PE')} registros</span>
-        </div>
-        <div class="viewer-product-card-host" id="viewerProductCardHost"></div>
-        <div class="viewer-product-metrics">
-          <div class="metric-tile">
-            <span class="metric-label">Ubicación principal</span>
-            <span class="metric-value">${escapeHtml(product?.ubicacion || '—')}</span>
-            <span class="metric-note">Rack ${escapeHtml(product?.rack || '—')} • Zona ${escapeHtml(product?.zona || '—')}</span>
-          </div>
-          <div class="metric-tile">
-            <span class="metric-label">Ubicación en almacén</span>
-            <span class="metric-value">${escapeHtml(product?.almacen || '—')}</span>
-            <span class="metric-note">Rack ${escapeHtml(product?.rackStore || '—')} • Zona ${escapeHtml(product?.zonaStore || '—')}</span>
-          </div>
-          <div class="metric-tile">
-            <span class="metric-label">Variante activa</span>
-            <span class="metric-value">${escapeHtml(product?.variante || '—')}</span>
-            <span class="metric-note">Talla ${escapeHtml(getProductSizeValue(product) || '—')} • Color ${escapeHtml(getProductColorValue(product) || '—')}</span>
-          </div>
-        </div>
-      </div>`;
-    detailTitle.textContent = 'Viewer';
-    detailSubtitle.textContent = 'Modo producto';
-    detailWrap.innerHTML = '';
-    detailStatus.textContent = 'Oculto en modo producto';
-    detailChip.textContent = 'producto';
-    contentStatus.textContent = product ? `Producto activo: ${product.sku || '—'}` : 'Selecciona un producto de la lista';
-    contentFootRight.textContent = branch?.name ? `Sucursal ${branch.name}` : 'Viewer';
-    const host = document.getElementById('viewerProductCardHost');
-    mountActiveProductCardTo(host);
-    if(product) updateActiveProductCard(product);
-    syncActiveProductCardHint();
-    setProductFilterBarVisibility(false);
   }
 
   function renderMapView(){
@@ -8804,8 +8643,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   }
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
-  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); appState.ui.viewerMode = 'location'; focusSelectedProductInViewer({ switchScreen:true }); };
-  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); appState.ui.viewerMode = 'location'; focusSelectedProductInViewer({ switchScreen:true }); };
+  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
