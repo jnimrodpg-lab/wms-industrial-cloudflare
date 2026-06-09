@@ -14,6 +14,7 @@
   const productList = $('#productList');
   const countProducts = $('#countProducts');
   const searchBranchHost = $('#searchBranchHost');
+  const searchPanel = $('.search-panel');
   const productSummary = $('#productSummary');
   const productToolbar = $('.product-toolbar');
   const activeProductName = $('#activeProductName');
@@ -57,6 +58,7 @@
   const detailWrap = $('#detailWrap');
   const detailStatus = $('#detailStatus');
   const detailChip = $('#detailChip');
+  const viewerModeSwitch = $('#viewerModeSwitch');
 
   const appState = {
     screen: 'admin',
@@ -108,7 +110,7 @@
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
-    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
+    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product' },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
     productFilters: {
@@ -172,8 +174,8 @@
 
   function ensureAppRuntimeState(){
     ensureProductPagingState();
-    if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], ...appState.ui };
+    if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product' };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], viewerMode:'product', ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!appState.admin || typeof appState.admin !== 'object') appState.admin = { branches:[], users:[], company:{} };
@@ -195,6 +197,52 @@
     if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
     if(!appState.productFacets || typeof appState.productFacets !== 'object') appState.productFacets = { brands:[], categories:[], warehouses:[], zones:[], racks:[] };
     return appState;
+  }
+
+  function getViewerMode(){
+    ensureAppRuntimeState();
+    return String(appState.ui?.viewerMode || '').toLowerCase() === 'location' ? 'location' : 'product';
+  }
+
+  function setProductFilterBarVisibility(visible = false){
+    const bar = document.getElementById('productFilterBar');
+    if(bar) bar.style.display = visible ? '' : 'none';
+  }
+
+  function restoreActiveProductCardHome(){
+    const card = document.getElementById('activeProductCard');
+    const shell = document.querySelector('.search-shell');
+    const inputWrap = document.querySelector('.search-input-wrap');
+    if(!card || !shell) return;
+    if(card.parentNode === shell) return;
+    if(inputWrap && inputWrap.nextSibling) shell.insertBefore(card, inputWrap.nextSibling);
+    else shell.appendChild(card);
+  }
+
+  function mountActiveProductCardTo(host){
+    const card = document.getElementById('activeProductCard');
+    if(!card || !host) return;
+    if(card.parentNode !== host) host.appendChild(card);
+  }
+
+  function renderViewerModeSwitch(){
+    if(!viewerModeSwitch) return;
+    if(appState.screen !== 'viewer'){
+      viewerModeSwitch.classList.remove('active');
+      viewerModeSwitch.innerHTML = '';
+      return;
+    }
+    const mode = getViewerMode();
+    viewerModeSwitch.classList.add('active');
+    viewerModeSwitch.innerHTML = `
+      <button class="mode-btn ${mode === 'product' ? 'active' : ''}" type="button" data-viewer-mode="product">Modo producto</button>
+      <button class="mode-btn ${mode === 'location' ? 'active' : ''}" type="button" data-viewer-mode="location">Modo ubicación</button>`;
+    viewerModeSwitch.querySelectorAll('[data-viewer-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const next = btn.getAttribute('data-viewer-mode') || 'product';
+      if(next === getViewerMode()) return;
+      appState.ui.viewerMode = next === 'location' ? 'location' : 'product';
+      setScreen('viewer');
+    }));
   }
 
   function showToast(message, type='success', timeout=2600){
@@ -543,6 +591,7 @@
 
   function syncProductFilterUi(){
     ensureProductFilterBar();
+    setProductFilterBarVisibility(false);
     const facets = appState.productFacets || {};
     const sets = [
       ['filterBrand', 'brand', buildFacetOptionsHtml(facets.brand_options || facets.brands || [], 'Todas')],
@@ -1209,28 +1258,56 @@
     appState.screen = screen;
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     renderViewerMenu();
+    renderViewerModeSwitch();
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
+    const isViewer = screen === 'viewer';
+    const viewerMode = getViewerMode();
     appRoot.classList.toggle('sheet-swap-layout', isSheetLayout);
     appRoot.classList.toggle('sheet-expanded', isSheetLayout && !!appState.ui.sheetExpanded);
+    appRoot.classList.toggle('viewer-mode-product', isViewer && viewerMode === 'product');
+    appRoot.classList.toggle('viewer-mode-location', isViewer && viewerMode === 'location');
+    restoreActiveProductCardHome();
+    setProductFilterBarVisibility(false);
+    if(searchPanel) searchPanel.style.display = '';
+    contentPanel.style.display = '';
+    detailPanel.style.display = '';
+    contentPanel.classList.remove('full-span');
+    contentPanel.style.gridColumn = '';
+    contentPanel.style.gridRow = '';
+    detailPanel.style.gridColumn = '';
+    detailPanel.style.gridRow = '';
+
     if(showSearch){
-      document.querySelector('.search-panel').style.display='';
-      const isViewer = screen === 'viewer';
-      detailPanel.style.display = (isSheetLayout || isViewer) ? 'none' : '';
-      contentPanel.classList.remove('full-span');
-      contentPanel.style.gridColumn = '';
-      contentPanel.style.gridRow = '';
-      if(detailPanel){
-        detailPanel.style.gridColumn = '';
-        detailPanel.style.gridRow = '';
+      if(isSheetLayout){
+        detailPanel.style.display = 'none';
+        appRoot.style.gridTemplateColumns = compactViewport ? '' : '';
+      } else if(isViewer){
+        if(viewerMode === 'product'){
+          if(searchPanel) searchPanel.style.display = '';
+          contentPanel.style.display = '';
+          detailPanel.style.display = 'none';
+          appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed')
+            ? 'var(--sidebar-w-collapsed) minmax(420px,0.88fr) minmax(520px,1.12fr)'
+            : 'var(--sidebar-w) minmax(420px,0.88fr) minmax(520px,1.12fr)');
+        } else {
+          if(searchPanel) searchPanel.style.display = 'none';
+          contentPanel.style.display = '';
+          detailPanel.style.display = '';
+          appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed')
+            ? 'var(--sidebar-w-collapsed) minmax(0,1fr) clamp(320px,28vw,420px)'
+            : 'var(--sidebar-w) minmax(0,1fr) clamp(320px,28vw,420px)');
+        }
+      } else {
+        if(searchPanel) searchPanel.style.display = '';
+        detailPanel.style.display = 'none';
+        appRoot.style.gridTemplateColumns = compactViewport ? '' : '';
       }
-      appRoot.style.gridTemplateColumns = compactViewport ? '' : (isViewer ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 680px minmax(0,1fr)' : 'var(--sidebar-w) 680px minmax(0,1fr)') : '');
-      if(isViewer && detailPanel) detailPanel.style.display = 'none';
     }else{
       appRoot.classList.remove('sheet-swap-layout');
       appRoot.classList.remove('sheet-expanded');
-      document.querySelector('.search-panel').style.display='none';
+      if(searchPanel) searchPanel.style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
@@ -1250,6 +1327,7 @@
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
       else if(screen === 'dashboard') renderDashboard();
+      else if(screen === 'viewer' && getViewerMode() === 'product') renderViewerProductScreen();
       else renderMapView();
     }catch(err){
       console.error('Error al cambiar de pantalla:', err);
@@ -1510,13 +1588,17 @@
     updateActiveProductCard(product);
     syncActiveProductCardHint();
     if(opts.switchScreen !== false){
+      appState.ui.viewerMode = 'location';
       setScreen('viewer');
     } else if(['products','viewer','dashboard'].includes(appState.screen)) {
-      renderMapView();
+      if(appState.screen === 'viewer' && getViewerMode() === 'product') renderViewerProductScreen();
+      else renderMapView();
     }
     setTimeout(() => {
-      if(appState.screen === 'viewer') renderMapView();
-      else if(appState.screen === 'dashboard') renderDashboard();
+      if(appState.screen === 'viewer'){
+        if(getViewerMode() === 'product') renderViewerProductScreen();
+        else renderMapView();
+      } else if(appState.screen === 'dashboard') renderDashboard();
       renderProducts(appState.filtered);
     }, 10);
     return true;
@@ -1976,8 +2058,12 @@
     if(appState.screen === 'dashboard'){
       renderDashboard();
     } else if(['products','reports','viewer'].includes(appState.screen)){
-      renderMapView();
-      renderRackDetail(p.rack || p.rackStore, p);
+      if(appState.screen === 'viewer' && getViewerMode() === 'product'){
+        renderViewerProductScreen();
+      } else {
+        renderMapView();
+        renderRackDetail(p.rack || p.rackStore, p);
+      }
     } else if (appState.screen === 'layout') {
       renderLayoutEditor();
       renderLayoutInspector();
@@ -3167,8 +3253,10 @@
     ensureBranchLayouts(); saveBranchLayouts(); applyBrand();
   }
   function applyBrand(){
-    const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = appState.admin.company || 'WMS Industrial';
-    const brandSub = document.querySelector('.brand-text div'); if(brandSub) brandSub.textContent = 'WAREHOUSE';
+    const companyInfo = appState.admin?.company;
+    const companyName = typeof companyInfo === 'string' ? companyInfo : (companyInfo?.name || companyInfo?.company || 'WMS Industrial');
+    const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = companyName || 'WMS Industrial';
+    const brandSub = document.querySelector('.brand-text .muted'); if(brandSub) brandSub.textContent = 'Interfaz renovada • visual premium';
     const box = document.querySelector('.brand-box');
     if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
   }
@@ -4462,6 +4550,57 @@ function getSheetBranchOpenMap(){
       if(rack?.zoneId) appState.selectedZoneId = rack.zoneId;
       renderDashboard();
     }));
+  }
+
+  function renderViewerProductScreen(){
+    const activeBranchIndex = getActiveLayoutBranchIndex();
+    const branch = (appState.admin?.branches || [])[activeBranchIndex] || getActiveSheetBranch() || null;
+    const product = appState.selectedProduct || appState.filtered?.[0] || appState.products?.[0] || null;
+    if(product && appState.selectedProduct !== product) appState.selectedProduct = product;
+    renderViewerBranchHost(activeBranchIndex);
+    contentTitle.textContent = 'Modo producto';
+    contentSubtitle.textContent = 'Consulta productos en lista y revisa la ficha visual del producto activo a la derecha.';
+    setTags(['lista normal', 'ficha visual', 'selección rápida']);
+    contentWrap.innerHTML = `
+      <div class="viewer-product-shell">
+        <div class="viewer-product-head">
+          <div>
+            <b>${escapeHtml(product?.nombre || 'Producto seleccionado')}</b>
+            <span class="muted tiny">Sucursal: ${escapeHtml(branch?.name || '—')} • SKU: ${escapeHtml(product?.sku || '—')}</span>
+          </div>
+          <span class="chip">${(getCurrentProductsTotal ? getCurrentProductsTotal() : (appState.products||[]).length).toLocaleString('es-PE')} registros</span>
+        </div>
+        <div class="viewer-product-card-host" id="viewerProductCardHost"></div>
+        <div class="viewer-product-metrics">
+          <div class="metric-tile">
+            <span class="metric-label">Ubicación principal</span>
+            <span class="metric-value">${escapeHtml(product?.ubicacion || '—')}</span>
+            <span class="metric-note">Rack ${escapeHtml(product?.rack || '—')} • Zona ${escapeHtml(product?.zona || '—')}</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Ubicación en almacén</span>
+            <span class="metric-value">${escapeHtml(product?.almacen || '—')}</span>
+            <span class="metric-note">Rack ${escapeHtml(product?.rackStore || '—')} • Zona ${escapeHtml(product?.zonaStore || '—')}</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Variante activa</span>
+            <span class="metric-value">${escapeHtml(product?.variante || '—')}</span>
+            <span class="metric-note">Talla ${escapeHtml(getProductSizeValue(product) || '—')} • Color ${escapeHtml(getProductColorValue(product) || '—')}</span>
+          </div>
+        </div>
+      </div>`;
+    detailTitle.textContent = 'Viewer';
+    detailSubtitle.textContent = 'Modo producto';
+    detailWrap.innerHTML = '';
+    detailStatus.textContent = 'Oculto en modo producto';
+    detailChip.textContent = 'producto';
+    contentStatus.textContent = product ? `Producto activo: ${product.sku || '—'}` : 'Selecciona un producto de la lista';
+    contentFootRight.textContent = branch?.name ? `Sucursal ${branch.name}` : 'Viewer';
+    const host = document.getElementById('viewerProductCardHost');
+    mountActiveProductCardTo(host);
+    if(product) updateActiveProductCard(product);
+    syncActiveProductCardHint();
+    setProductFilterBarVisibility(false);
   }
 
   function renderMapView(){
@@ -8641,8 +8780,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   }
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
-  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
-  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
+  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); appState.ui.viewerMode = 'location'; focusSelectedProductInViewer({ switchScreen:true }); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); appState.ui.viewerMode = 'location'; focusSelectedProductInViewer({ switchScreen:true }); };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
