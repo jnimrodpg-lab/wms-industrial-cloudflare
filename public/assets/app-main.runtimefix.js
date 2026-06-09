@@ -126,7 +126,7 @@
     productFacets: { brands:[], categories:[], warehouses:[], zones:[], racks:[] },
     productSummaryData: null,
     searchIndex: [],
-    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'' },
+    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', backendUnavailable:false },
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
       racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
@@ -459,7 +459,10 @@
     return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if(!res.ok || data?.ok === false){
-        throw new Error(data?.error || `HTTP ${res.status}`);
+        const err = new Error(data?.error || `HTTP ${res.status}`);
+        err.status = res.status;
+        err.payload = data;
+        throw err;
       }
       return data;
     });
@@ -631,10 +634,15 @@
       const data = await apiGetJson(`/api/branches/${branch.id}/products-summary`);
       appState.productSummaryData = data?.summary || null;
       if(data?.facets) appState.productFacets = data.facets;
+      appState.productPaging.backendUnavailable = false;
       syncProductFilterUi();
       updateProductAnalyticsSummary();
       return data;
     }catch(_err){
+      if(_err?.status === 404){
+        appState.productPaging.backendUnavailable = true;
+        appState.productPaging.mode = 'local';
+      }
       return null;
     }
   }
@@ -677,7 +685,8 @@
         loading:false,
         branchId:Number(branch.id || 0),
         filters:activeFilters,
-        lastError:''
+        lastError:'',
+        backendUnavailable:false
       };
       setProductDataset(items, { keepOrder:true });
       appState.filtered = appState.products.filter(p => productMatchesLocalFilters(p));
@@ -696,9 +705,85 @@
     }catch(err){
       appState.productPaging.loading = false;
       appState.productPaging.lastError = String(err?.message || err || 'error');
+      if(err?.status === 404 || /404/.test(String(err?.message || ''))){
+        appState.productPaging.mode = 'local';
+        appState.productPaging.backendUnavailable = true;
+      }
       updateProductPagerUi();
       return false;
     }
+  }
+
+  function rerenderAfterProductSearch(){
+    if(appState.screen === 'dashboard') renderDashboard();
+    else if(appState.screen === 'viewer'){
+      if(getViewerMode() === 'product') renderViewerProductScreen();
+      else renderMapView();
+    }
+    else if(['products','reports'].includes(appState.screen)) renderMapView();
+    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+  }
+
+  function runLocalProductSearch(rawQuery = ''){
+    const q = norm(rawQuery);
+    if(!q){
+      appState.filtered = appState.products.slice();
+      clearSearchHighlights();
+      updateActiveProductCard(appState.selectedProduct || null);
+      renderProducts(appState.filtered);
+      rerenderAfterProductSearch();
+      return;
+    }
+    const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
+    const compactQuery = q.replace(/\s+/g, ' ').trim();
+    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
+      const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
+      const phraseInFamily = familyText.includes(compactQuery);
+      const phraseInNameVariant = nameVariant.includes(compactQuery);
+      const phraseInFull = haystack.includes(compactQuery);
+      let score = 0;
+      if (exactSku === q) score += 260;
+      if (familyText === q || nameOnly === q) score += 220;
+      if (nameVariant === q) score += 180;
+      if (phraseInFamily) score += 160;
+      if (phraseInNameVariant) score += 130;
+      if (phraseInFull) score += 90;
+      if (exactRack === q || exactRackStore === q) score += 85;
+      if (exactUbic === q || exactAlm === q) score += 85;
+      let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
+      tokens.forEach(t => {
+        let matched = false;
+        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
+        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
+        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
+        if (matched) matchedTokens += 1;
+      });
+      const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
+      if (allTokensPresent) score += 34 + tokens.length * 6;
+      const contentMatches = familyMatches + variantMatches;
+      const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
+      let passes = false;
+      if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
+      else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
+      else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
+      return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
+    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
+      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
+    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
+    const primary = appState.filtered[0] || null;
+    if(primary){
+      appState.selectedProduct = primary;
+      appState.selectedRack = primary.rack || primary.rackStore || appState.selectedRack;
+      appState.selectedRackLayoutId = primary.rack || primary.rackStore || appState.selectedRackLayoutId;
+    }
+    const rackIds = [];
+    appState.filtered.slice(0, 250).forEach(p => { if(p.rack) rackIds.push(p.rack); if(p.rackStore) rackIds.push(p.rackStore); });
+    setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
+    if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
+    else { updateActiveProductCard(null); clearSearchHighlights(); }
+    syncActiveProductCardHint();
+    renderProducts(appState.filtered);
+    rerenderAfterProductSearch();
   }
 
   function getHistoryBucket(type){
@@ -1973,81 +2058,20 @@
 
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
-    const q = norm(rawQ);
     const activeBranch = getBranchByIndex(getActiveBranchIndex());
-    if(activeBranch?.id && appState.auth?.loggedIn){
+    const canUseBackend = !!(activeBranch?.id && appState.auth?.loggedIn && appState.productPaging?.mode !== 'local' && !appState.productPaging?.backendUnavailable);
+    if(canUseBackend){
       requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ.trim(), page:1, silent:true }).then((ok) => {
         if(ok){
           clearSearchHighlights();
-          if(appState.screen === 'dashboard') renderDashboard();
-          else if(['products','viewer'].includes(appState.screen)) renderMapView();
-          else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+          rerenderAfterProductSearch();
+        } else {
+          runLocalProductSearch(rawQ);
         }
       });
       return;
     }
-    if(!q){
-      appState.filtered = appState.products.slice();
-      clearSearchHighlights();
-      updateActiveProductCard(appState.selectedProduct || null);
-      renderProducts(appState.filtered);
-      if(appState.screen === 'dashboard') renderDashboard();
-      else if(['products','viewer'].includes(appState.screen)) renderMapView();
-      else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
-      return;
-    }
-    const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
-    const compactQuery = q.replace(/\s+/g, ' ').trim();
-    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
-      const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
-      const phraseInFamily = familyText.includes(compactQuery);
-      const phraseInNameVariant = nameVariant.includes(compactQuery);
-      const phraseInFull = haystack.includes(compactQuery);
-      let score = 0;
-      if (exactSku === q) score += 260;
-      if (familyText === q || nameOnly === q) score += 220;
-      if (nameVariant === q) score += 180;
-      if (phraseInFamily) score += 160;
-      if (phraseInNameVariant) score += 130;
-      if (phraseInFull) score += 90;
-      if (exactRack === q || exactRackStore === q) score += 85;
-      if (exactUbic === q || exactAlm === q) score += 85;
-      let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
-      tokens.forEach(t => {
-        let matched = false;
-        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
-        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
-        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
-        if (matched) matchedTokens += 1;
-      });
-      const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
-      if (allTokensPresent) score += 34 + tokens.length * 6;
-      const contentMatches = familyMatches + variantMatches;
-      const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
-      let passes = false;
-      if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
-      else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
-      else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
-      return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
-    }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
-      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
-    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
-    const primary = appState.filtered[0] || null;
-    if(primary){
-      appState.selectedProduct = primary;
-      appState.selectedRack = primary.rack || primary.rackStore || appState.selectedRack;
-      appState.selectedRackLayoutId = primary.rack || primary.rackStore || appState.selectedRackLayoutId;
-    }
-    const rackIds = [];
-    appState.filtered.slice(0, 250).forEach(p => { if(p.rack) rackIds.push(p.rack); if(p.rackStore) rackIds.push(p.rackStore); });
-    setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
-    if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
-    else { updateActiveProductCard(null); clearSearchHighlights(); }
-    syncActiveProductCardHint();
-    renderProducts(appState.filtered);
-    if(appState.screen === 'dashboard') renderDashboard();
-    else if(['products','viewer'].includes(appState.screen)) renderMapView();
-    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+    runLocalProductSearch(rawQ);
   }
 
   function selectProduct(p){
