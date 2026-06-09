@@ -76,12 +76,21 @@
           </div>
           <div class="search-card is-clickable" id="activeProductCard" role="button" tabindex="0" aria-label="Expandir tarjeta del producto">
             <div class="search-card-expand-close" id="activeProductCardClose" aria-label="Cerrar detalle expandido">✕</div>
-            <div class="product-photo empty" id="activeProductImageWrap">
-              <img id="activeProductImage" alt="Imagen del producto" style="display:none" />
+            <div class="search-card-media-col">
+              <div class="product-photo empty" id="activeProductImageWrap">
+                <img id="activeProductImage" alt="Imagen del producto" style="display:none" />
+              </div>
+              <div class="search-card-gallery" id="activeProductGallery"></div>
+              <div class="search-card-gallery-nav">
+                <button class="gallery-nav-btn" id="activeProductGalleryPrev" type="button" aria-label="Imagen anterior">‹</button>
+                <span class="gallery-counter" id="activeProductGalleryCounter">01 / 01</span>
+                <button class="gallery-nav-btn" id="activeProductGalleryNext" type="button" aria-label="Imagen siguiente">›</button>
+              </div>
             </div>
             <div class="search-card-body">
               <div class="search-card-title-row">
                 <div>
+                  <div class="search-card-kicker">Producto</div>
                   <div class="search-card-title" id="activeProductName">—</div>
                   <div class="search-card-sku" id="activeProductSku">SKU —</div>
                 </div>
@@ -97,14 +106,14 @@
                 </div>
               </div>
               <div>
-                <div class="muted tiny" style="margin-bottom:8px" id="activeProductMeta">Selecciona un producto para enfocarlo rápido.</div>
+                <div class="muted tiny search-card-variant-copy" id="activeProductMeta">Selecciona un producto para enfocarlo rápido.</div>
                 <div class="variant-groups">
                   <div class="variant-group">
-                    <div class="variant-group-label">Tallas</div>
+                    <div class="variant-group-label">Talla</div>
                     <div class="variant-strip" id="activeSizeStrip"></div>
                   </div>
                   <div class="variant-group">
-                    <div class="variant-group-label">Colores</div>
+                    <div class="variant-group-label">Color</div>
                     <div class="variant-strip" id="activeColorStrip"></div>
                   </div>
                 </div>
@@ -229,7 +238,7 @@ function escapeHtml(str){
       </div>
     </div>
   </div>
-<script src="/assets/app-main.runtimefix.js?v=20260609d"></script>
+<script src="/assets/app-main.runtimefix.js?v=20260610d"></script>
 
 
   
