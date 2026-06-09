@@ -162,7 +162,8 @@
     .search-card.is-clickable:hover{border-color:rgba(91,185,140,.24);box-shadow:0 18px 44px rgba(0,0,0,.26)}
     .search-card-overlay{position:fixed;inset:0;background:rgba(3,8,15,.66);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .24s ease;z-index:1100}
     .search-card-overlay.active{opacity:1;pointer-events:auto}
-    .search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:24px;z-index:1101;border-color:rgba(91,185,140,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(91,185,140,.08) inset;cursor:default;grid-template-columns:minmax(374px,46.2%) minmax(0,53.8%);align-items:stretch}
+.search-card.search-card-expanded{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.985);width:min(75vw,1180px);max-width:75vw;height:min(75vh,860px);max-height:75vh;overflow:auto;padding:24px;z-index:1101;border-color:rgba(91,185,140,.28);box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(91,185,140,.08) inset;cursor:default;grid-template-columns:minmax(374px,46.2%) minmax(0,53.8%);align-items:stretch;opacity:.96;transition:transform .18s ease, opacity .18s ease, box-shadow .18s ease;will-change:transform,opacity}
+    .search-card.search-card-expanded.is-open{transform:translate(-50%,-50%) scale(1);opacity:1}
     .search-card.search-card-expanded .product-photo{min-height:58vh;max-height:none;height:100%;display:flex;align-items:center;justify-content:center;padding:0;background:transparent;border-radius:24px;overflow:hidden}
     .search-card.search-card-expanded .search-card-title{font-size:26px}
     .search-card.search-card-expanded .search-card-sku{font-size:13px}
@@ -173,7 +174,7 @@
     .search-card-expand-hint{position:absolute;right:14px;bottom:12px;font-size:11px;font-weight:700;color:rgba(236,255,246,.72);padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(5,14,24,.58);pointer-events:none;z-index:3}
     .search-card-expand-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(4,12,20,.76);color:var(--text);font-size:18px;font-weight:800;display:none;align-items:center;justify-content:center;cursor:pointer;z-index:4}
     .search-card.search-card-expanded .search-card-expand-close{display:inline-flex}
-    .search-card-side-nav{position:fixed;top:50%;width:min(18.7vw,273px);height:min(68vh,720px);padding:18px;border-radius:28px;background:linear-gradient(180deg,rgba(12,24,38,.9),rgba(7,16,28,.94));border:1px solid rgba(155,235,199,.12);box-shadow:0 24px 56px rgba(0,0,0,.36);backdrop-filter:blur(12px);display:none;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;overflow:hidden;cursor:pointer;z-index:30000;opacity:.78;transition:transform .22s ease,opacity .22s ease,box-shadow .22s ease}
+.search-card-side-nav{position:fixed;top:50%;width:min(18.7vw,273px);height:min(68vh,720px);padding:18px;border-radius:28px;background:linear-gradient(180deg,rgba(12,24,38,.9),rgba(7,16,28,.94));border:1px solid rgba(155,235,199,.12);box-shadow:0 24px 56px rgba(0,0,0,.36);backdrop-filter:blur(12px);display:none;grid-template-rows:auto minmax(0,1fr) auto;gap:14px;overflow:hidden;cursor:pointer;z-index:30000;opacity:.78;transition:transform .18s ease,opacity .18s ease,box-shadow .18s ease;will-change:transform,opacity}
     .search-card-side-nav.visible{display:grid}
     .search-card-side-nav.left{left:calc(50% - min(37.5vw,590px) - min(14vw,220px));transform:translateY(-50%) translateX(-20px) scale(.88)}
     .search-card-side-nav.right{right:calc(50% - min(37.5vw,590px) - min(14vw,220px));transform:translateY(-50%) translateX(20px) scale(.88)}
@@ -1511,3 +1512,6 @@ body.theme-light .sheet-branch-card{
 .product-filter-bar{display:none!important}
 .product-toolbar{padding:10px 16px!important}
 .product-toolbar #productSummary{flex:1 1 auto}
+
+.search-card-placeholder{visibility:hidden;pointer-events:none}
+.search-card-actions-row .search-card-action{position:relative;z-index:3}

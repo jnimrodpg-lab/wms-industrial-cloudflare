@@ -1553,6 +1553,7 @@
         const first = g.items[0];
         const variantes = Array.from(new Set(g.items.map(p => (p.variante || '').trim()).filter(Boolean)));
         const ubicaciones = Array.from(new Set(g.items.map(p => (p.ubicacion || '').trim()).filter(Boolean)));
+        row.setAttribute('data-product-key', getProductIdentityKey(first));
         row.innerHTML = `
           <div><b>${escapeHtml(first.sku || '—')}</b></div>
           <div>${escapeHtml(g.nombre)}</div>
@@ -1563,6 +1564,7 @@
         row.addEventListener('click', () => selectProduct(first));
       } else {
         const p = entry.data;
+        row.setAttribute('data-product-key', getProductIdentityKey(p));
         row.innerHTML = `
           <div><b>${p.sku}</b></div>
           <div>${p.nombre}</div>
@@ -1585,6 +1587,7 @@
     const pageInfo = paging.mode === 'backend' ? ` • página ${paging.page || 1}/${paging.totalPages || 1}` : '';
     productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${totalRecords.toLocaleString('es-PE')} registros` + modeInfo + pageInfo;
     updateProductPagerUi();
+    updateProductListActiveState();
   }
 
 
@@ -1593,6 +1596,32 @@
   let activeExpandedSearchCardParent = null;
   let activeExpandedSearchCardNextSibling = null;
   let activeExpandedSideCardsBound = false;
+  let expandedCardNavLocked = false;
+
+  function updateProductListActiveState(){
+    const selectedKey = getProductIdentityKey(appState?.selectedProduct);
+    const rows = productList ? productList.querySelectorAll('.product-row[data-product-key]') : [];
+    rows.forEach(row => row.classList.toggle('active', row.getAttribute('data-product-key') === selectedKey));
+  }
+
+  function navigateExpandedProduct(product){
+    if(!product || expandedCardNavLocked) return;
+    expandedCardNavLocked = true;
+    appState.selectedProduct = product;
+    applyProductSelectionEffects(product);
+    updateActiveProductCard(product);
+    syncActiveProductCardHint();
+    updateProductListActiveState();
+    if(appState.screen === 'viewer'){
+      requestAnimationFrame(() => renderMapView());
+    } else if(appState.screen === 'dashboard'){
+      requestAnimationFrame(() => renderDashboard());
+    }
+    requestAnimationFrame(() => {
+      updateExpandedSideCards();
+      setTimeout(() => { expandedCardNavLocked = false; }, 120);
+    });
+  }
 
   function getProductIdentityKey(p){
     return [p?.sku || '', p?.nombre || '', p?.variante || '', p?.ubicacion || '', p?.almacen || ''].join('¦');
@@ -1671,8 +1700,7 @@
     el.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      selectProduct(product);
-      updateExpandedSideCards();
+      navigateExpandedProduct(product);
     };
     el.classList.add('visible');
   }
@@ -1702,14 +1730,13 @@
       const items = getExpandedCarouselItems();
       if(items.length <= 1) return;
       const idx = getExpandedCarouselIndex(items);
+      if(expandedCardNavLocked) return;
       if(e.key === 'ArrowLeft'){
         e.preventDefault();
-        selectProduct(items[(idx - 1 + items.length) % items.length]);
-        updateExpandedSideCards();
+        navigateExpandedProduct(items[(idx - 1 + items.length) % items.length]);
       }else if(e.key === 'ArrowRight'){
         e.preventDefault();
-        selectProduct(items[(idx + 1) % items.length]);
-        updateExpandedSideCards();
+        navigateExpandedProduct(items[(idx + 1) % items.length]);
       }
     });
     window.addEventListener('resize', () => setTimeout(updateExpandedSideCards, 40));
@@ -1737,17 +1764,23 @@
       activeExpandedSearchCardParent.insertBefore(activeExpandedSearchCardPlaceholder, activeExpandedSearchCardNextSibling);
     }
     document.body.appendChild(card);
-    card.classList.add('search-card-expanded');
+    card.classList.add('search-card-expanded','is-animating');
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden','false');
     document.body.classList.add('search-card-modal-open');
     bindExpandedSideCardKeys();
-    setTimeout(updateExpandedSideCards, 40);
+    requestAnimationFrame(() => {
+      card.classList.add('is-open');
+      setTimeout(updateExpandedSideCards, 60);
+      setTimeout(() => card.classList.remove('is-animating'), 220);
+    });
   }
   function closeActiveProductCard(){
     const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
     const overlay = document.getElementById('searchCardOverlay');
     if(card){
+      card.classList.remove('is-open');
+      card.classList.add('is-animating');
       card.classList.remove('search-card-expanded');
       if(activeExpandedSearchCardParent){
         if(activeExpandedSearchCardPlaceholder && activeExpandedSearchCardPlaceholder.parentNode === activeExpandedSearchCardParent){
@@ -1766,6 +1799,7 @@
     }
     document.body.classList.remove('search-card-modal-open');
     hideExpandedSideCards();
+    setTimeout(() => card && card.classList.remove('is-animating'), 180);
     activeExpandedSearchCard = null;
     activeExpandedSearchCardPlaceholder = null;
     activeExpandedSearchCardParent = null;
@@ -8587,8 +8621,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   }
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
-  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
-  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
+  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.preventDefault(); e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.preventDefault(); e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
