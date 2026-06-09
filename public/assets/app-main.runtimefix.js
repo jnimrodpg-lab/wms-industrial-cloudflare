@@ -1391,6 +1391,12 @@
     });
   }
 
+  function toCssImageUrl(url){
+    const value = String(url || '').trim();
+    if(!value) return 'none';
+    return `url("${value.replace(/"/g, '\"')}")`;
+  }
+
   function getProductImageUrls(product){
     if(!product) return [];
     const raw = [product.imagen, product.image, product.imagen2, product.image2, product.foto2, product.img2].filter(Boolean).map(v => String(v).trim());
@@ -1447,17 +1453,27 @@
   function showActiveProductImageAt(index = 0){
     if(!activeProductImageWrap || !activeProductImage) return;
     const urls = Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.filter(Boolean) : [];
+    const mediaCol = activeProductImageWrap.closest('.search-card-media-col');
     if(!urls.length){
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
       activeProductImageWrap.classList.add('empty');
+      if(mediaCol){
+        mediaCol.style.setProperty('--product-bg-image', 'none');
+        mediaCol.classList.remove('has-backdrop-image');
+      }
       renderActiveProductGallery();
       return;
     }
     activeImageCycleIndex = Math.max(0, Math.min(Number(index) || 0, urls.length - 1));
-    activeProductImage.src = urls[activeImageCycleIndex];
+    const currentUrl = urls[activeImageCycleIndex];
+    activeProductImage.src = currentUrl;
     activeProductImage.style.display = 'block';
     activeProductImageWrap.classList.remove('empty');
+    if(mediaCol){
+      mediaCol.style.setProperty('--product-bg-image', toCssImageUrl(currentUrl));
+      mediaCol.classList.add('has-backdrop-image');
+    }
     renderActiveProductGallery();
   }
 
@@ -1779,8 +1795,18 @@
       sizes.innerHTML = sizeItems.map(size => `<span class="side-size-chip">${escapeHtml(size)}</span>`).join('');
     }
     if(img){
-      if(urls && urls[0]){ img.src = urls[0]; img.style.display = ''; }
-      else { img.removeAttribute('src'); img.style.display = 'none'; }
+      if(urls && urls[0]){ 
+        img.src = urls[0]; 
+        img.style.display = ''; 
+        el.style.setProperty('--side-card-bg', toCssImageUrl(urls[0]));
+        el.classList.add('has-side-image');
+      }
+      else { 
+        img.removeAttribute('src'); 
+        img.style.display = 'none'; 
+        el.style.setProperty('--side-card-bg', 'none');
+        el.classList.remove('has-side-image');
+      }
     }
     el.onclick = (e) => {
       e.preventDefault();
@@ -3609,20 +3635,20 @@
     appState.activeBranchIndex = branchIndex;
     const branch = (appState.admin?.branches || [])[branchIndex];
     if(!branch) return false;
-    if(branch.id && appState.auth?.loggedIn){
-      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
-      if(ok) return true;
-    }
     if(loadBranchProducts(branchIndex)) {
-      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'', backendUnavailable:true };
       updateProductPagerUi();
       return true;
     }
     if(Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length){
       applyBranchProducts(branch.sheetPreviewProducts, branchIndex);
-      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'', backendUnavailable:true };
       updateProductPagerUi();
       return true;
+    }
+    if(branch.id && appState.auth?.loggedIn && !ensureProductPagingState().backendUnavailable){
+      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
+      if(ok) return true;
     }
     const hasLink = String(branch.sheetUrl||'').trim() && String(branch.sheetName||'').trim();
     if(hasLink){
