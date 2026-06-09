@@ -207,36 +207,47 @@ function initDb() {
       FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE
     );
 
-
-    CREATE TABLE IF NOT EXISTS bsale_integrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL UNIQUE,
-      country TEXT NOT NULL DEFAULT 'PE',
-      api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io',
-      access_token TEXT,
-      enabled INTEGER NOT NULL DEFAULT 0,
-      last_sync_at TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS bsale_office_map (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL,
-      branch_id INTEGER NOT NULL,
-      bsale_office_id TEXT,
-      bsale_office_name TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(company_id, branch_id),
-      FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE CASCADE,
-      FOREIGN KEY(branch_id) REFERENCES branches(id) ON DELETE CASCADE
-    );
-
     CREATE TABLE IF NOT EXISTS system_meta (
       key TEXT PRIMARY KEY,
       value TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      branch_id INTEGER NOT NULL,
+      product_key TEXT NOT NULL,
+      sku TEXT DEFAULT '',
+      barcode TEXT DEFAULT '',
+      name TEXT DEFAULT '',
+      variant TEXT DEFAULT '',
+      brand TEXT DEFAULT '',
+      category TEXT DEFAULT '',
+      color TEXT DEFAULT '',
+      size TEXT DEFAULT '',
+      zone TEXT DEFAULT '',
+      rack TEXT DEFAULT '',
+      level TEXT DEFAULT '',
+      slot TEXT DEFAULT '',
+      location TEXT DEFAULT '',
+      warehouse TEXT DEFAULT '',
+      stock REAL DEFAULT 0,
+      price REAL DEFAULT 0,
+      image_url TEXT DEFAULT '',
+      payload_json TEXT NOT NULL,
+      search_text TEXT DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(branch_id, product_key),
+      FOREIGN KEY(branch_id) REFERENCES branches(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_products_branch_name ON products(branch_id, name);
+    CREATE INDEX IF NOT EXISTS idx_products_branch_sku ON products(branch_id, sku);
+    CREATE INDEX IF NOT EXISTS idx_products_branch_barcode ON products(branch_id, barcode);
+    CREATE INDEX IF NOT EXISTS idx_products_branch_rack ON products(branch_id, rack);
+    CREATE INDEX IF NOT EXISTS idx_products_branch_warehouse ON products(branch_id, warehouse);
+    CREATE INDEX IF NOT EXISTS idx_products_branch_zone ON products(branch_id, zone);
   `);
 
   db.prepare(`
@@ -258,13 +269,13 @@ function initDb() {
   if (!sheetCols.includes('last_sheet_count')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_sheet_count INTEGER NOT NULL DEFAULT 0");
   if (!sheetCols.includes('sheet_headers_json')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN sheet_headers_json TEXT");
   if (!sheetCols.includes('sheet_header_index')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN sheet_header_index INTEGER NOT NULL DEFAULT 0");
+  if (!sheetCols.includes('last_imported_at')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_imported_at TEXT");
+  if (!sheetCols.includes('last_import_source')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_source TEXT");
+  if (!sheetCols.includes('last_import_status')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_status TEXT");
+  if (!sheetCols.includes('last_import_error')) db.exec("ALTER TABLE branch_sheet_config ADD COLUMN last_import_error TEXT");
   const adminCols = db.prepare("PRAGMA table_info(admin_config)").all().map(r=>r.name);
   if (!adminCols.includes('company_id')) db.exec("ALTER TABLE admin_config ADD COLUMN company_id INTEGER");
   const appCols = db.prepare("PRAGMA table_info(app_state_blobs)").all().map(r=>r.name);
-  const bsaleCols = db.prepare("PRAGMA table_info(bsale_integrations)").all().map(r=>r.name);
-  if (!bsaleCols.includes('company_id')) db.exec("CREATE TABLE IF NOT EXISTS bsale_integrations (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL UNIQUE, country TEXT NOT NULL DEFAULT 'PE', api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io', access_token TEXT, enabled INTEGER NOT NULL DEFAULT 0, last_sync_at TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
-  const bsaleMapCols = db.prepare("PRAGMA table_info(bsale_office_map)").all().map(r=>r.name);
-  if (!bsaleMapCols.includes('branch_id')) db.exec("CREATE TABLE IF NOT EXISTS bsale_office_map (id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER NOT NULL, branch_id INTEGER NOT NULL, bsale_office_id TEXT, bsale_office_name TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(company_id, branch_id))");
   if (!appCols.includes('company_id')) {
     db.exec("ALTER TABLE app_state_blobs RENAME TO app_state_blobs_legacy");
     db.exec(`CREATE TABLE IF NOT EXISTS app_state_blobs (
@@ -383,17 +394,12 @@ function buildAdminStateFromDb(companyId = 1, savedAdmin = null) {
       sheetMapRows: safeJsonParse(sheet.sheet_map_json, Array.isArray(savedBranch.sheetMapRows) ? savedBranch.sheetMapRows : null),
     };
   });
-  const bsale = {
-    ...getBsaleConfig(companyId),
-    officeMappings: getBsaleOfficeMappings(companyId),
-  };
   return {
     company: savedAdmin?.company || companyRow.name || 'WMS Industrial',
     companyCode: companyRow.code || savedAdmin?.companyCode || '',
     logo: savedAdmin?.logo || '',
     branches: adminBranches,
     activeBranch: Number(savedAdmin?.activeBranch || 0),
-    bsale,
   };
 }
 
@@ -484,6 +490,257 @@ function createCompanyBundle({ companyName, username, password, role='admin', co
     return { companyId, code, userId: Number(info.lastInsertRowid) };
   });
   return tx();
+}
+
+
+function textValue(value) {
+  if (value == null) return '';
+  return String(value).trim();
+}
+function numberValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+function buildProductKey(product, index = 0) {
+  const sku = textValue(product?.sku).toLowerCase();
+  const barcode = textValue(product?.barcode).toLowerCase();
+  const name = textValue(product?.name || product?.nombre).toLowerCase();
+  const variant = textValue(product?.variant || product?.variante).toLowerCase();
+  const location = textValue(product?.location || product?.ubicacion).toLowerCase();
+  if (sku) return `sku:${sku}`;
+  if (barcode) return `barcode:${barcode}`;
+  return `row:${name}|${variant}|${location}|${index}`;
+}
+function normalizeImportedProduct(raw = {}, index = 0) {
+  const product = {
+    sku: textValue(raw.sku || raw.SKU),
+    barcode: textValue(raw.barcode || raw.barras || raw.Barras || raw.codigo_barras),
+    name: textValue(raw.name || raw.nombre || raw['Nombre'] || raw['Nombre Bsale']),
+    variant: textValue(raw.variant || raw.variante || raw['Variante']),
+    brand: textValue(raw.brand || raw.marca || raw['Marca']),
+    category: textValue(raw.category || raw.categoria || raw['Categoría'] || raw['Categoria']),
+    color: textValue(raw.color || raw['Color']),
+    size: textValue(raw.size || raw.talla || raw['Talla']),
+    zone: textValue(raw.zone || raw.zona || raw['Zona']),
+    rack: textValue(raw.rack || raw.estante || raw['Estante']),
+    level: textValue(raw.level || raw.nivel || raw['Nivel']),
+    slot: textValue(raw.slot || raw['Slot']),
+    location: textValue(raw.location || raw.ubicacion || raw['Ubicación'] || raw['Ubicacion']),
+    warehouse: textValue(raw.warehouse || raw.almacen || raw['Almacén'] || raw['Almacen']),
+    stock: numberValue(raw.stock || raw['Stock']),
+    price: numberValue(raw.price || raw['Precio']),
+    image_url: textValue(raw.image_url || raw.imageUrl || raw.imagen || raw['Imagen'] || raw['URL imagen'] || raw['Url imagen']),
+  };
+  const searchText = [
+    product.sku, product.barcode, product.name, product.variant, product.brand, product.category,
+    product.color, product.size, product.zone, product.rack, product.level, product.slot,
+    product.location, product.warehouse
+  ].join(' ').toLowerCase();
+  return {
+    ...raw,
+    ...product,
+    product_key: buildProductKey(product, index),
+    search_text: searchText,
+  };
+}
+function syncBranchProducts(branchId, importedProducts) {
+  const rows = Array.isArray(importedProducts) ? importedProducts.slice(0, 12000).map((row, index) => normalizeImportedProduct(row, index)) : [];
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM products WHERE branch_id = ?').run(branchId);
+    if (!rows.length) return 0;
+    const insert = db.prepare(`
+      INSERT INTO products (
+        branch_id, product_key, sku, barcode, name, variant, brand, category, color, size,
+        zone, rack, level, slot, location, warehouse, stock, price, image_url, payload_json, search_text,
+        created_at, updated_at
+      ) VALUES (
+        @branch_id, @product_key, @sku, @barcode, @name, @variant, @brand, @category, @color, @size,
+        @zone, @rack, @level, @slot, @location, @warehouse, @stock, @price, @image_url, @payload_json, @search_text,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    `);
+    for (const row of rows) {
+      insert.run({
+        branch_id: branchId,
+        product_key: row.product_key,
+        sku: row.sku,
+        barcode: row.barcode,
+        name: row.name,
+        variant: row.variant,
+        brand: row.brand,
+        category: row.category,
+        color: row.color,
+        size: row.size,
+        zone: row.zone,
+        rack: row.rack,
+        level: row.level,
+        slot: row.slot,
+        location: row.location,
+        warehouse: row.warehouse,
+        stock: row.stock,
+        price: row.price,
+        image_url: row.image_url,
+        payload_json: JSON.stringify(row),
+        search_text: row.search_text,
+      });
+    }
+    return rows.length;
+  });
+  return tx();
+}
+function bootstrapProductsFromConfigs() {
+  const rows = db.prepare('SELECT branch_id, imported_products_json FROM branch_sheet_config').all();
+  for (const row of rows) {
+    const existing = db.prepare('SELECT COUNT(*) AS total FROM products WHERE branch_id = ?').get(row.branch_id)?.total || 0;
+    if (existing > 0) continue;
+    const importedProducts = safeJsonParse(row.imported_products_json, []);
+    if (Array.isArray(importedProducts) && importedProducts.length) {
+      syncBranchProducts(row.branch_id, importedProducts);
+    }
+  }
+}
+function buildProductWhereClause({ branchId = null, query = '', filters = {} } = {}) {
+  const clauses = [];
+  const params = [];
+  if (branchId != null) {
+    clauses.push('branch_id = ?');
+    params.push(Number(branchId));
+  }
+  const q = String(query || '').trim().toLowerCase();
+  if (q) {
+    clauses.push('(search_text LIKE ? OR name LIKE ? OR sku LIKE ? OR barcode LIKE ?)');
+    const like = `%${q}%`;
+    params.push(like, like, like, like);
+  }
+  const exactFilters = {
+    warehouse: 'warehouse',
+    zone: 'zone',
+    rack: 'rack',
+    brand: 'brand',
+    category: 'category',
+  };
+  for (const [inputKey, column] of Object.entries(exactFilters)) {
+    const value = textValue(filters?.[inputKey]);
+    if (!value) continue;
+    clauses.push(`${column} = ?`);
+    params.push(value);
+  }
+  const imageState = textValue(filters?.image_state);
+  if (imageState === 'with_image') clauses.push("TRIM(COALESCE(image_url, '')) <> ''");
+  if (imageState === 'without_image') clauses.push("TRIM(COALESCE(image_url, '')) = ''");
+  const locationState = textValue(filters?.location_state);
+  if (locationState === 'complete') clauses.push("TRIM(COALESCE(location, '')) <> ''");
+  if (locationState === 'incomplete') clauses.push("TRIM(COALESCE(location, '')) = ''");
+  const stockState = textValue(filters?.stock_state);
+  if (stockState === 'with_stock') clauses.push('stock > 0');
+  if (stockState === 'without_stock') clauses.push('stock <= 0');
+  return {
+    whereSql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    params,
+  };
+}
+
+function getPagination(req, { defaultLimit = 120, maxLimit = 250 } = {}) {
+  const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+  const limit = Math.max(1, Math.min(maxLimit, parseInt(req.query.limit || String(defaultLimit), 10) || defaultLimit));
+  const offset = (page - 1) * limit;
+  return { page, limit, offset };
+}
+function getSearchFilters(req) {
+  return {
+    warehouse: req.query.warehouse,
+    zone: req.query.zone,
+    rack: req.query.rack,
+    brand: req.query.brand,
+    category: req.query.category,
+    image_state: req.query.image_state,
+    location_state: req.query.location_state,
+    stock_state: req.query.stock_state,
+  };
+}
+function getRackCodeFromLocation(value) {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return '';
+  const match = raw.match(/^([A-Z0-9]+-E\d+)/);
+  return match ? match[1] : '';
+}
+function serializeProductRow(row) {
+  const payload = safeJsonParse(row?.payload_json, {}) || {};
+  const rackStore = textValue(payload.rackStore || payload.rack_store || getRackCodeFromLocation(payload.almacen || row?.warehouse || ''));
+  return {
+    id: row.id,
+    branch_id: row.branch_id,
+    sku: textValue(payload.sku || row.sku),
+    barras: textValue(payload.barras || payload.barcode || row.barcode),
+    barcode: textValue(payload.barcode || payload.barras || row.barcode),
+    nombre: textValue(payload.nombre || payload.name || row.name),
+    name: textValue(payload.name || payload.nombre || row.name),
+    variante: textValue(payload.variante || payload.variant || row.variant),
+    variant: textValue(payload.variant || payload.variante || row.variant),
+    marca: textValue(payload.marca || payload.brand || row.brand),
+    brand: textValue(payload.brand || payload.marca || row.brand),
+    categoria: textValue(payload.categoria || payload.category || row.category),
+    category: textValue(payload.category || payload.categoria || row.category),
+    color: textValue(payload.color || row.color),
+    talla: textValue(payload.talla || payload.size || row.size),
+    size: textValue(payload.size || payload.talla || row.size),
+    zona: textValue(payload.zona || payload.zone || row.zone),
+    zone: textValue(payload.zone || payload.zona || row.zone),
+    rack: textValue(payload.rack || payload.estante || row.rack),
+    level: textValue(payload.level || payload.nivel || row.level),
+    nivel: textValue(payload.nivel || payload.level || row.level),
+    slot: textValue(payload.slot || row.slot),
+    ubicacion: textValue(payload.ubicacion || payload.location || row.location),
+    location: textValue(payload.location || payload.ubicacion || row.location),
+    almacen: textValue(payload.almacen || payload.warehouse || row.warehouse),
+    warehouse: textValue(payload.warehouse || payload.almacen || row.warehouse),
+    rackStore,
+    stock: Number(payload.stock != null ? payload.stock : row.stock || 0),
+    price: Number(payload.price != null ? payload.price : row.price || 0),
+    image_url: textValue(payload.image_url || payload.imageUrl || payload.imagen || row.image_url),
+    imagen: textValue(payload.imagen || payload.imageUrl || payload.image_url || row.image_url),
+    payload,
+    updated_at: row.updated_at,
+  };
+}
+function getProductFacetOptions(branchId) {
+  const facetRows = db.prepare(`
+    SELECT 'brand' AS facet_key, brand AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(brand, '')) <> '' GROUP BY brand
+    UNION ALL
+    SELECT 'category' AS facet_key, category AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(category, '')) <> '' GROUP BY category
+    UNION ALL
+    SELECT 'warehouse' AS facet_key, warehouse AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(warehouse, '')) <> '' GROUP BY warehouse
+    UNION ALL
+    SELECT 'zone' AS facet_key, zone AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(zone, '')) <> '' GROUP BY zone
+    UNION ALL
+    SELECT 'rack' AS facet_key, rack AS facet_value, COUNT(*) AS total
+    FROM products WHERE branch_id = ? AND TRIM(COALESCE(rack, '')) <> '' GROUP BY rack
+  `).all(branchId, branchId, branchId, branchId, branchId);
+  const makeFacet = (facetKey) => facetRows
+    .filter(r => r.facet_key === facetKey && textValue(r.facet_value))
+    .map(r => ({ value: textValue(r.facet_value), count: Number(r.total || 0) }))
+    .sort((a,b) => a.value.localeCompare(b.value, 'es', { sensitivity:'base', numeric:true }));
+  const brands = makeFacet('brand');
+  const categories = makeFacet('category');
+  const warehouses = makeFacet('warehouse');
+  const zones = makeFacet('zone');
+  const racks = makeFacet('rack');
+  return {
+    brands: brands.map(item => item.value),
+    categories: categories.map(item => item.value),
+    warehouses: warehouses.map(item => item.value),
+    zones: zones.map(item => item.value),
+    racks: racks.map(item => item.value),
+    brand_options: brands,
+    category_options: categories,
+    warehouse_options: warehouses,
+    zone_options: zones,
+    rack_options: racks,
+  };
 }
 
 function parseSheetId(input) {
@@ -630,53 +887,6 @@ function parseGoogleVizJson(text) {
   return JSON.parse(src.slice(start, end + 1));
 }
 
-function excelColToIndex(col) {
-  const src = String(col || '').trim().toUpperCase();
-  if (!src || !/^[A-Z]+$/.test(src)) return -1;
-  let index = 0;
-  for (let i = 0; i < src.length; i++) {
-    index = (index * 26) + (src.charCodeAt(i) - 64);
-  }
-  return index - 1;
-}
-
-function indexToExcelCol(index) {
-  let n = Number(index);
-  if (!Number.isInteger(n) || n < 0) return 'A';
-  n += 1;
-  let out = '';
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    out = String.fromCharCode(65 + rem) + out;
-    n = Math.floor((n - 1) / 26);
-  }
-  return out;
-}
-
-const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
-const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
-
-function buildGoogleSheetQueryUrl({ id, gid = '', sheet = '', out = 'json', headers = null, range = DEFAULT_SHEET_FETCH_RANGE }) {
-  const params = new URLSearchParams();
-  params.set('tqx', `out:${out}`);
-  if (headers !== null && headers !== undefined) params.set('headers', String(headers));
-  if (range) params.set('range', range);
-  if (gid) params.set('gid', String(gid));
-  else if (sheet) params.set('sheet', String(sheet));
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
-}
-
-function buildGoogleSheetCsvUrl({ id, gid = '', sheet = '', range = DEFAULT_SHEET_FETCH_RANGE }) {
-  if (gid) {
-    const params = new URLSearchParams();
-    params.set('format', 'csv');
-    params.set('gid', String(gid));
-    if (range) params.set('range', range);
-    return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
-  }
-  return buildGoogleSheetQueryUrl({ id, sheet, out: 'csv', range });
-}
-
 function requireAuth(req, res, next) {
   if (req.session && req.session.isAuthenticated) return next();
   return res.status(401).json({ ok: false, error: 'No autorizado' });
@@ -689,104 +899,6 @@ function getBranchById(id) {
 
 function getOwnedBranch(req, branchId) {
   return db.prepare('SELECT * FROM branches WHERE id = ? AND company_id = ? AND active = 1').get(branchId, getSessionCompanyId(req));
-}
-
-function getBsaleConfig(companyId) {
-  const row = db.prepare('SELECT company_id, country, api_base_url, access_token, enabled, last_sync_at, updated_at FROM bsale_integrations WHERE company_id = ?').get(companyId);
-  return row ? {
-    company_id: Number(row.company_id),
-    country: String(row.country || 'PE').toUpperCase(),
-    apiBaseUrl: String(row.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-    accessToken: String(row.access_token || '').trim(),
-    enabled: !!Number(row.enabled || 0),
-    lastSyncAt: row.last_sync_at || null,
-    updatedAt: row.updated_at || null,
-  } : { company_id: Number(companyId || 0), country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', enabled:false, lastSyncAt:null, updatedAt:null };
-}
-
-function saveBsaleConfig(companyId, cfg = {}) {
-  const clean = {
-    country: String(cfg.country || 'PE').toUpperCase(),
-    apiBaseUrl: String(cfg.apiBaseUrl || cfg.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-    accessToken: String(cfg.accessToken || cfg.access_token || '').trim(),
-    enabled: cfg.enabled ? 1 : 0,
-  };
-  db.prepare(`
-    INSERT INTO bsale_integrations (company_id, country, api_base_url, access_token, enabled, updated_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(company_id) DO UPDATE SET
-      country = excluded.country,
-      api_base_url = excluded.api_base_url,
-      access_token = excluded.access_token,
-      enabled = excluded.enabled,
-      updated_at = CURRENT_TIMESTAMP
-  `).run(companyId, clean.country, clean.apiBaseUrl, clean.accessToken, clean.enabled);
-  return getBsaleConfig(companyId);
-}
-
-function getBsaleOfficeMappings(companyId) {
-  const rows = db.prepare('SELECT branch_id, bsale_office_id, bsale_office_name FROM bsale_office_map WHERE company_id = ?').all(companyId);
-  const map = {};
-  rows.forEach(row => {
-    map[String(row.branch_id)] = row.bsale_office_id ? String(row.bsale_office_id) : '';
-  });
-  return map;
-}
-
-function saveBsaleOfficeMappings(companyId, officeMappings = {}) {
-  const branches = db.prepare('SELECT id FROM branches WHERE company_id = ? AND active = 1').all(companyId);
-  const stmt = db.prepare(`
-    INSERT INTO bsale_office_map (company_id, branch_id, bsale_office_id, bsale_office_name, updated_at)
-    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(company_id, branch_id) DO UPDATE SET
-      bsale_office_id = excluded.bsale_office_id,
-      bsale_office_name = excluded.bsale_office_name,
-      updated_at = CURRENT_TIMESTAMP
-  `);
-  branches.forEach(branch => {
-    const key = String(branch.id);
-    const officeId = officeMappings && Object.prototype.hasOwnProperty.call(officeMappings, key) ? String(officeMappings[key] || '') : '';
-    stmt.run(companyId, branch.id, officeId, null);
-  });
-  return getBsaleOfficeMappings(companyId);
-}
-
-async function bsaleRequest(config, path, params = {}) {
-  const baseUrl = String(config?.apiBaseUrl || 'https://api.bsale.io').replace(/\/$/, '');
-  const url = new URL(baseUrl + path);
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim() !== '') url.searchParams.set(key, String(value));
-  });
-  const res = await fetch(url.toString(), {
-    headers: {
-      'access_token': String(config?.accessToken || ''),
-      'Content-Type': 'application/json'
-    }
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) {
-    const detail = data?.error || data?.message || data?.raw || `Bsale ${res.status}`;
-    throw new Error(typeof detail === 'string' ? detail : `Bsale ${res.status}`);
-  }
-  return data;
-}
-
-async function fetchBsaleOffices(config) {
-  const data = await bsaleRequest(config, '/v1/offices.json', { limit: 50, state: 0 });
-  return Array.isArray(data?.items) ? data.items.map(item => ({ id: item.id, name: item.name || `Oficina ${item.id}`, address: item.address || '', city: item.city || '' })) : [];
-}
-
-async function fetchBsaleStock(config, { officeId, variantId, code, barcode } = {}) {
-  const params = { officeid: officeId || undefined, expand: '[variant,office]' };
-  if (variantId) params.variantid = variantId;
-  else if (code) params.code = code;
-  else if (barcode) params.barcode = barcode;
-  else throw new Error('Envía un identificador de producto para consultar stock.');
-  const data = await bsaleRequest(config, '/v1/stocks.json', params);
-  const items = Array.isArray(data?.items) ? data.items : [];
-  return items[0] || null;
 }
 
 function cleanupDuplicateBranches() {
@@ -1004,108 +1116,6 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-
-app.get('/api/bsale/config', requireAdmin, (req, res) => {
-  const companyId = getSessionCompanyId(req);
-  const config = getBsaleConfig(companyId);
-  res.json({ ok:true, config, mappings: getBsaleOfficeMappings(companyId) });
-});
-
-app.post('/api/bsale/config', requireAdmin, (req, res) => {
-  const companyId = getSessionCompanyId(req);
-  const config = saveBsaleConfig(companyId, req.body || {});
-  res.json({ ok:true, config });
-});
-
-app.post('/api/bsale/test', requireAdmin, async (req, res) => {
-  try {
-    const draft = {
-      country: String(req.body?.country || 'PE').toUpperCase(),
-      apiBaseUrl: String(req.body?.apiBaseUrl || req.body?.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-      accessToken: String(req.body?.accessToken || req.body?.access_token || '').trim(),
-      enabled: true,
-    };
-    if (!draft.accessToken) return res.status(400).json({ ok:false, error:'Ingresa el token de Bsale.' });
-    const offices = await fetchBsaleOffices(draft);
-    res.json({ ok:true, officeCount: offices.length, offices: offices.slice(0, 10) });
-  } catch (err) {
-    res.status(400).json({ ok:false, error: err.message || 'No se pudo conectar con Bsale.' });
-  }
-});
-
-app.post('/api/bsale/offices', requireAdmin, async (req, res) => {
-  try {
-    const companyId = getSessionCompanyId(req);
-    const draft = {
-      country: String(req.body?.country || getBsaleConfig(companyId).country || 'PE').toUpperCase(),
-      apiBaseUrl: String(req.body?.apiBaseUrl || req.body?.api_base_url || getBsaleConfig(companyId).apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-      accessToken: String(req.body?.accessToken || req.body?.access_token || getBsaleConfig(companyId).accessToken || '').trim(),
-      enabled: true,
-    };
-    if (!draft.accessToken) return res.status(400).json({ ok:false, error:'Ingresa el token de Bsale.' });
-    const offices = await fetchBsaleOffices(draft);
-    res.json({ ok:true, offices, mappings: getBsaleOfficeMappings(companyId) });
-  } catch (err) {
-    res.status(400).json({ ok:false, error: err.message || 'No se pudieron cargar las oficinas de Bsale.' });
-  }
-});
-
-app.post('/api/bsale/mappings', requireAdmin, (req, res) => {
-  const companyId = getSessionCompanyId(req);
-  const mappings = req.body?.officeMappings && typeof req.body.officeMappings === 'object' ? req.body.officeMappings : {};
-  res.json({ ok:true, mappings: saveBsaleOfficeMappings(companyId, mappings) });
-});
-
-app.get('/api/bsale/stock', requireAuth, async (req, res) => {
-  try {
-    const companyId = getSessionCompanyId(req);
-    const config = getBsaleConfig(companyId);
-    if (!config.enabled || !config.accessToken) return res.json({ ok:true, stock:null, disabled:true });
-    const branchId = Number(req.query.branchId || 0);
-    const branch = getOwnedBranch(req, branchId);
-    if (!branch) return res.status(404).json({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.' });
-    const officeId = getBsaleOfficeMappings(companyId)[String(branch.id)] || '';
-    if (!officeId) return res.json({ ok:true, stock:null, unmapped:true });
-    const variantId = String(req.query.variantId || req.query.variantid || '').trim();
-    const barcode = String(req.query.barcode || '').trim();
-    const code = String(req.query.code || '').trim();
-    if (!variantId && !barcode && !code) return res.json({ ok:true, stock:null, missingIdentifier:true, officeId });
-    const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
-    res.json({ ok:true, stock, officeId });
-  } catch (err) {
-    res.status(400).json({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.' });
-  }
-});
-
-app.post('/api/bsale/stock/batch', requireAuth, async (req, res) => {
-  try {
-    const companyId = getSessionCompanyId(req);
-    const config = getBsaleConfig(companyId);
-    if (!config.enabled || !config.accessToken) return res.json({ ok:true, results:[], disabled:true });
-    const branchId = Number(req.body?.branchId || 0);
-    const branch = getOwnedBranch(req, branchId);
-    if (!branch) return res.status(404).json({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.' });
-    const officeId = getBsaleOfficeMappings(companyId)[String(branch.id)] || '';
-    if (!officeId) return res.json({ ok:true, results:[], unmapped:true });
-    const products = Array.isArray(req.body?.products) ? req.body.products : [];
-    const results = await Promise.all(products.map(async (item, idx) => {
-      const variantId = String(item?.variantId || item?.variantid || '').trim();
-      const barcode = String(item?.barcode || '').trim();
-      const code = String(item?.code || '').trim();
-      if (!variantId && !barcode && !code) return { idx:Number(item?.idx ?? idx), stock:null, missingIdentifier:true };
-      try {
-        const stock = await fetchBsaleStock(config, { officeId, variantId, code, barcode });
-        return { idx:Number(item?.idx ?? idx), stock };
-      } catch (err) {
-        return { idx:Number(item?.idx ?? idx), stock:null, error:true, message: err.message || 'error' };
-      }
-    }));
-    res.json({ ok:true, officeId, results });
-  } catch (err) {
-    res.status(400).json({ ok:false, error: err.message || 'No se pudo consultar stock batch en Bsale.' });
-  }
-});
-
 app.get('/api/branches', requireAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM branches WHERE active = 1 AND company_id = ? ORDER BY id ASC').all(getSessionCompanyId(req));
   res.json({ branches: rows.map(normalizeBranch) });
@@ -1212,8 +1222,8 @@ app.get('/api/branches/:id/sheet', requireAuth, (req, res) => {
   ensureBranchScaffolding(branchId);
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
-  const row = db.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId);
-  const config = row || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet', sheet_map_json: null, imported_products_json: '[]', last_sheet_count: 0, sheet_headers_json: '[]', sheet_header_index: 0 };
+  const row = db.prepare('SELECT sheet_id, sheet_name, source_type, updated_at, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId);
+  const config = row || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet', sheet_map_json: null, imported_products_json: '[]', last_sheet_count: 0, sheet_headers_json: '[]', sheet_header_index: 0, last_imported_at: null, last_import_source: '', last_import_status: '', last_import_error: '' };
   res.json({ ok: true, config: { ...config, sheet_map_rows: safeJsonParse(config.sheet_map_json, null), imported_products: safeJsonParse(config.imported_products_json, []), sheet_headers: safeJsonParse(config.sheet_headers_json, []), sheet_header_index: Number(config.sheet_header_index || 0) } });
 });
 
@@ -1224,7 +1234,7 @@ app.post('/api/branches/:id/sheet', requireAdmin, (req, res) => {
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
   const body = req.body || {};
-  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
+  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
   const sheet_id = has('sheet_id') ? String(body.sheet_id || '') : String(current.sheet_id || '');
   const sheet_name = has('sheet_name') ? String(body.sheet_name || 'Productos') : String(current.sheet_name || 'Productos');
@@ -1234,22 +1244,33 @@ app.post('/api/branches/:id/sheet', requireAdmin, (req, res) => {
   const last_sheet_count = has('last_sheet_count') ? Number(body.last_sheet_count || 0) : Number(current.last_sheet_count || 0);
   const sheet_headers = has('sheet_headers') ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
   const sheet_header_index = has('sheet_header_index') ? Number(body.sheet_header_index || 0) : Number(current.sheet_header_index || 0);
+  const importedProductsSafe = Array.isArray(imported_products) ? imported_products.slice(0,12000) : [];
+  const explicitImport = has('imported_products');
+  const nextImportStatus = explicitImport ? (importedProductsSafe.length ? 'success' : 'empty') : String(current.last_import_status || '');
+  const nextImportError = explicitImport ? '' : String(current.last_import_error || '');
+  const nextImportSource = explicitImport ? String(body.import_source || 'manual-sheet-import') : String(current.last_import_source || '');
+  const nextImportedAt = explicitImport ? new Date().toISOString() : (current.last_imported_at || null);
   db.prepare(`
     UPDATE branch_sheet_config
-    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, last_imported_at = ?, last_import_source = ?, last_import_status = ?, last_import_error = ?, updated_at = CURRENT_TIMESTAMP
     WHERE branch_id = ?
   `).run(
     sheet_id,
     sheet_name,
     source_type,
     JSON.stringify(sheet_map_rows),
-    JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0,12000) : []),
+    JSON.stringify(importedProductsSafe),
     last_sheet_count,
     JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
     sheet_header_index,
+    nextImportedAt,
+    nextImportSource,
+    nextImportStatus,
+    nextImportError,
     branchId
   );
-  res.json({ ok: true });
+  const syncedCount = syncBranchProducts(branchId, importedProductsSafe);
+  res.json({ ok: true, synced_products: syncedCount, import_report: { imported_at: nextImportedAt, source: nextImportSource, status: nextImportStatus, error: nextImportError } });
 });
 
 
@@ -1260,7 +1281,7 @@ app.post('/api/branches/:id/sheet-metadata', requireAdmin, (req, res) => {
   const branch = getOwnedBranch(req, branchId);
   if (!branch) return res.status(404).json({ error: 'Sucursal no encontrada' });
   const body = req.body || {};
-  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
+  const current = db.prepare('SELECT sheet_id, sheet_name, source_type, sheet_map_json, imported_products_json, last_sheet_count, sheet_headers_json, sheet_header_index, last_imported_at, last_import_source, last_import_status, last_import_error FROM branch_sheet_config WHERE branch_id = ?').get(branchId) || {};
   const sheet_id = String(body.sheet_id != null ? body.sheet_id : (current.sheet_id || ''));
   const sheet_name = String(body.sheet_name != null ? body.sheet_name : (current.sheet_name || 'Productos'));
   const source_type = String(body.source_type != null ? body.source_type : (current.source_type || 'google_sheet'));
@@ -1269,22 +1290,28 @@ app.post('/api/branches/:id/sheet-metadata', requireAdmin, (req, res) => {
   const last_sheet_count = Number(current.last_sheet_count || (Array.isArray(imported_products) ? imported_products.length : 0) || 0);
   const sheet_headers = Array.isArray(body.sheet_headers) ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
   const sheet_header_index = Number(body.sheet_header_index != null ? body.sheet_header_index : (current.sheet_header_index || 0));
+  const importedProductsSafe = Array.isArray(imported_products) ? imported_products.slice(0,12000) : [];
   db.prepare(`
     UPDATE branch_sheet_config
-    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, updated_at = CURRENT_TIMESTAMP
+    SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?, last_sheet_count = ?, sheet_headers_json = ?, sheet_header_index = ?, last_imported_at = ?, last_import_source = ?, last_import_status = ?, last_import_error = ?, updated_at = CURRENT_TIMESTAMP
     WHERE branch_id = ?
   `).run(
     sheet_id,
     sheet_name,
     source_type,
     JSON.stringify(sheet_map_rows),
-    JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0,12000) : []),
+    JSON.stringify(importedProductsSafe),
     last_sheet_count,
     JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
     sheet_header_index,
+    current.last_imported_at || null,
+    current.last_import_source || '',
+    current.last_import_status || '',
+    current.last_import_error || '',
     branchId
   );
-  res.json({ ok: true, preserved_products: Array.isArray(imported_products) ? imported_products.length : 0 });
+  const syncedCount = syncBranchProducts(branchId, importedProductsSafe);
+  res.json({ ok: true, preserved_products: importedProductsSafe.length, synced_products: syncedCount, import_report: { imported_at: current.last_imported_at || null, source: current.last_import_source || '', status: current.last_import_status || '', error: current.last_import_error || '' } });
 });
 
 app.post('/api/branches/:id/view-link', requireAdmin, (req, res) => {
@@ -1362,8 +1389,8 @@ app.get('/api/sheets/probe', async (req, res) => {
     // --- Intento 1: gviz JSON (respeta celdas combinadas y encabezados reales) ---
     try {
       const jsonUrl = gid
-        ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
-        : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
+        ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+        : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
       const r = await fetchWithTimeout(jsonUrl, 9000);
       if (r.ok) {
         const parsed = parseGoogleVizJson(await r.text());
@@ -1382,8 +1409,8 @@ app.get('/api/sheets/probe', async (req, res) => {
 
     // --- Intento 2: CSV como fallback ---
     const tryUrls = [];
-    if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
-    tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
+    if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
 
     let rows = [];
     for (const csvUrl of tryUrls) {
@@ -1449,8 +1476,8 @@ app.get('/api/sheets/rows', async (req, res) => {
     // filas 1 con valores repetidos que confunden al parser CSV.
     try {
       const jsonUrl = gid
-        ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
-        : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
+        ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+        : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
       const r = await fetchWithTimeout(jsonUrl, timeout);
       if (r.ok) {
         const parsed = parseGoogleVizJson(await r.text());
@@ -1480,8 +1507,8 @@ app.get('/api/sheets/rows', async (req, res) => {
     // ── INTENTO 2: CSV via export con gid ──
     // ── INTENTO 3: CSV via gviz tq ──
     const tryUrls = [];
-    if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
-    tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
+    if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+    tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
 
     let rows = [];
     let source = gid ? 'csv-gid' : 'csv-sheet';
@@ -1533,6 +1560,103 @@ app.get('/api/sheets/rows', async (req, res) => {
     res.status(400).json({ error: err.message || 'No se pudo leer la hoja' });
   }
 });
+
+app.get('/api/branches/:id/products', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const { page, limit, offset } = getPagination(req, { defaultLimit: 120, maxLimit: 250 });
+    const query = String(req.query.q || '').trim();
+    const filters = getSearchFilters(req);
+    const { whereSql, params } = buildProductWhereClause({ branchId, query, filters });
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM products ${whereSql}`).get(...params)?.total || 0;
+    const rows = db.prepare(`
+      SELECT * FROM products
+      ${whereSql}
+      ORDER BY name COLLATE NOCASE ASC, variant COLLATE NOCASE ASC, sku COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    res.json({
+      ok: true,
+      branch: normalizeBranch(branch),
+      page,
+      limit,
+      total,
+      total_pages: Math.max(1, Math.ceil(total / limit)),
+      items: rows.map(serializeProductRow),
+      facets: getProductFacetOptions(branchId),
+      query,
+      filters,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudieron listar los productos' });
+  }
+});
+
+app.get('/api/products/search', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.query.branch_id || req.query.branchId || 0);
+    if (!branchId) return res.status(400).json({ ok: false, error: 'branch_id es obligatorio' });
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const { page, limit, offset } = getPagination(req, { defaultLimit: 120, maxLimit: 250 });
+    const query = String(req.query.q || '').trim();
+    const filters = getSearchFilters(req);
+    const { whereSql, params } = buildProductWhereClause({ branchId, query, filters });
+    const total = db.prepare(`SELECT COUNT(*) AS total FROM products ${whereSql}`).get(...params)?.total || 0;
+    const rows = db.prepare(`
+      SELECT * FROM products
+      ${whereSql}
+      ORDER BY name COLLATE NOCASE ASC, variant COLLATE NOCASE ASC, sku COLLATE NOCASE ASC, id ASC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    res.json({ ok: true, page, limit, total, total_pages: Math.max(1, Math.ceil(total / limit)), items: rows.map(serializeProductRow), query, filters });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo buscar productos' });
+  }
+});
+
+app.get('/api/branches/:id/products-summary', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const summary = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN TRIM(COALESCE(image_url, '')) <> '' THEN 1 ELSE 0 END) AS with_image,
+        SUM(CASE WHEN TRIM(COALESCE(image_url, '')) = '' THEN 1 ELSE 0 END) AS without_image,
+        SUM(CASE WHEN TRIM(COALESCE(location, '')) <> '' THEN 1 ELSE 0 END) AS with_location,
+        SUM(CASE WHEN TRIM(COALESCE(location, '')) = '' THEN 1 ELSE 0 END) AS without_location,
+        SUM(CASE WHEN stock > 0 THEN 1 ELSE 0 END) AS with_stock,
+        SUM(CASE WHEN stock <= 0 THEN 1 ELSE 0 END) AS without_stock,
+        MAX(updated_at) AS last_product_update
+      FROM products
+      WHERE branch_id = ?
+    `).get(branchId) || {};
+    res.json({ ok: true, branch: normalizeBranch(branch), summary, facets: getProductFacetOptions(branchId) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo obtener el resumen' });
+  }
+});
+
+app.get('/api/branches/:id/import-report', requireAuth, (req, res) => {
+  try {
+    const branchId = Number(req.params.id);
+    const branch = getOwnedBranch(req, branchId);
+    if (!branch) return res.status(404).json({ ok: false, error: 'Sucursal no encontrada' });
+    const report = db.prepare(`
+      SELECT sheet_id, sheet_name, last_sheet_count, updated_at, last_imported_at, last_import_source, last_import_status, last_import_error
+      FROM branch_sheet_config
+      WHERE branch_id = ?
+    `).get(branchId) || {};
+    res.json({ ok: true, branch: normalizeBranch(branch), report });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message || 'No se pudo obtener el reporte de importación' });
+  }
+});
+
 app.get('/api/debug/persistence', requireAuth, (req, res) => {
   try {
     const companyId = getSessionCompanyId(req);

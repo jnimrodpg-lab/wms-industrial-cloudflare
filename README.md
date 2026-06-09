@@ -1,44 +1,60 @@
-# WMS Industrial listo para publicación
+# WMS Branch Viewer App
 
-Esta versión está preparada para ejecutarse localmente o desplegarse en un servicio Node.js como Render.
+Versión optimizada sin cambiar la base tecnológica principal.
 
-## Qué incluye
-- Persistencia local con SQLite en `data/wms.sqlite`
-- Login de administrador
-- Guardado de layouts
-- Guardado de modelos de rack
-- Frontend servido desde `public/`
+## Mejoras aplicadas
 
-## Credenciales iniciales
-- Usuario: `admin`
-- Contraseña: `admin123`
+- Persistencia reforzada con tabla `products` en SQLite.
+- Sincronización automática de productos importados desde `branch_sheet_config` hacia `products`.
+- Nuevos índices para acelerar búsquedas por sucursal, SKU, código de barras, rack, almacén y zona.
+- Nuevos endpoints para búsqueda paginada:
+  - `GET /api/branches/:id/products`
+  - `GET /api/products/search`
+  - `GET /api/branches/:id/products-summary`
+- Extracción del CSS principal a `public/assets/app.css` para mejorar orden y cacheo.
+- Extracción del JS principal a `public/assets/app-main.js` para reducir el peso del `index.html` y preparar modularización futura.
 
 ## Ejecutar localmente
+
 ```bash
 npm install
-npm start
+npm run dev
 ```
-Luego abre `http://localhost:3000`
 
-## Variables de entorno
-Copia `.env.example` y define al menos:
-- `SESSION_SECRET`
-- `PORT` (opcional)
-- `NODE_ENV=production` en despliegue
+App: `http://localhost:3000`
 
-## Publicar en Render
-1. Sube este proyecto a GitHub.
-2. Crea un nuevo servicio Web en Render.
-3. Usa:
-   - Build Command: `npm install`
-   - Start Command: `npm start`
-4. Agrega un disco persistente montado en `/opt/render/project/src/data`
-5. Configura `SESSION_SECRET` como variable de entorno.
+## Despliegue gratis
 
-## Estructura importante
-- `server.js`: backend Express + API + SQLite
-- `public/index.html`: frontend principal
-- `data/wms.sqlite`: base de datos actual
+### Opción actual
+- Render o un VPS/local con Node.js + SQLite.
 
-## Nota
-No se incluye `node_modules` en este ZIP. Ejecuta `npm install` después de descargarlo.
+### Evolución sugerida
+- Frontend en Cloudflare Pages.
+- API/DB en Cloudflare Workers + D1.
+
+## Notas
+
+- No se modificó la lógica funcional del editor de layout ni del editor de racks.
+- La app sigue siendo compatible con el flujo actual basado en Google Sheets.
+- `localStorage` puede seguir usándose como apoyo visual, pero la base persistente ya queda mejor preparada en SQLite.
+
+
+## Fase 2 aplicada
+
+Se añadió una segunda capa de optimización enfocada en rendimiento de búsqueda y carga:
+
+- Endpoints paginados para productos por sucursal.
+- Endpoint de búsqueda por API (`/api/products/search`).
+- Endpoint de resumen por sucursal (`/api/branches/:id/products-summary`).
+- Serialización de productos desde SQLite al formato que ya usa el frontend.
+- El frontend ahora intenta cargar productos por API antes de usar caché local.
+- Búsqueda del listado conectada al backend cuando hay sesión activa.
+- Paginación visible en la barra del listado.
+- Caché local reducida a un respaldo ligero, ya no como fuente principal del catálogo.
+
+### Resultado esperado
+
+- Menos carga inicial del navegador.
+- Menos lag al buscar.
+- Menos dependencia de `localStorage` para productos.
+- Mejor base para seguir agregando filtros reales por backend.

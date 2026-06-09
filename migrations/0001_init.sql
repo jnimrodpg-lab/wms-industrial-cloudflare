@@ -91,24 +91,3 @@ CREATE TABLE IF NOT EXISTS sessions_store (
   expires_at INTEGER NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS bsale_integrations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  company_id INTEGER NOT NULL UNIQUE,
-  country TEXT NOT NULL DEFAULT 'PE',
-  api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io',
-  access_token TEXT,
-  enabled INTEGER NOT NULL DEFAULT 0,
-  last_sync_at TEXT,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS bsale_office_map (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  company_id INTEGER NOT NULL,
-  branch_id INTEGER NOT NULL,
-  bsale_office_id TEXT,
-  bsale_office_name TEXT,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(company_id, branch_id)
-);

@@ -128,87 +128,6 @@ export async function onRequest(context) {
       return withJson({ ok: true, build: BUILD_MARK }, 200, [clearSessionCookie()]);
     }
 
-    if (path === '/bsale/config' && request.method === 'GET') {
-      const session = await requireAdmin(request, env.DB);
-      if (session.error) return session.error;
-      const config = await getBsaleConfig(env.DB, session.company_id);
-      return withJson({ ok:true, config, mappings: await getBsaleOfficeMappings(env.DB, session.company_id), build: BUILD_MARK });
-    }
-
-    if (path === '/bsale/config' && request.method === 'POST') {
-      const session = await requireAdmin(request, env.DB);
-      if (session.error) return session.error;
-      const body = await readJson(request);
-      const config = await saveBsaleConfig(env.DB, session.company_id, body || {});
-      return withJson({ ok:true, config, build: BUILD_MARK });
-    }
-
-    if (path === '/bsale/test' && request.method === 'POST') {
-      const session = await requireAdmin(request, env.DB);
-      if (session.error) return session.error;
-      try {
-        const body = await readJson(request);
-        const draft = {
-          country: String(body.country || 'PE').toUpperCase(),
-          apiBaseUrl: String(body.apiBaseUrl || body.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-          accessToken: String(body.accessToken || body.access_token || '').trim(),
-          enabled: true,
-        };
-        if (!draft.accessToken) return withJson({ ok:false, error:'Ingresa el token de Bsale.', build: BUILD_MARK }, 400);
-        const offices = await fetchBsaleOffices(draft);
-        return withJson({ ok:true, officeCount: offices.length, offices: offices.slice(0,10), build: BUILD_MARK });
-      } catch (err) {
-        return withJson({ ok:false, error: err.message || 'No se pudo conectar con Bsale.', build: BUILD_MARK }, 400);
-      }
-    }
-
-    if (path === '/bsale/offices' && request.method === 'POST') {
-      const session = await requireAdmin(request, env.DB);
-      if (session.error) return session.error;
-      try {
-        const body = await readJson(request);
-        const current = await getBsaleConfig(env.DB, session.company_id);
-        const draft = {
-          country: String(body.country || current.country || 'PE').toUpperCase(),
-          apiBaseUrl: String(body.apiBaseUrl || body.api_base_url || current.apiBaseUrl || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-          accessToken: String(body.accessToken || body.access_token || current.accessToken || '').trim(),
-          enabled: true,
-        };
-        if (!draft.accessToken) return withJson({ ok:false, error:'Ingresa el token de Bsale.', build: BUILD_MARK }, 400);
-        const offices = await fetchBsaleOffices(draft);
-        return withJson({ ok:true, offices, mappings: await getBsaleOfficeMappings(env.DB, session.company_id), build: BUILD_MARK });
-      } catch (err) {
-        return withJson({ ok:false, error: err.message || 'No se pudieron cargar las oficinas de Bsale.', build: BUILD_MARK }, 400);
-      }
-    }
-
-    if (path === '/bsale/mappings' && request.method === 'POST') {
-      const session = await requireAdmin(request, env.DB);
-      if (session.error) return session.error;
-      const body = await readJson(request);
-      const mappings = body.officeMappings && typeof body.officeMappings === 'object' ? body.officeMappings : {};
-      return withJson({ ok:true, mappings: await saveBsaleOfficeMappings(env.DB, session.company_id, mappings), build: BUILD_MARK });
-    }
-
-    if (path === '/bsale/stock' && request.method === 'GET') {
-      const session = await requireAuth(request, env.DB);
-      if (session.error) return session.error;
-      try {
-        const config = await getBsaleConfig(env.DB, session.company_id);
-        if (!config.enabled || !config.accessToken) return withJson({ ok:true, stock:null, disabled:true, build: BUILD_MARK });
-        const branchId = Number(url.searchParams.get('branchId') || 0);
-        const branch = await getOwnedBranch(env.DB, session.company_id, branchId);
-        if (!branch) return withJson({ ok:false, error:'Sucursal no encontrada para consultar stock Bsale.', build: BUILD_MARK }, 404);
-        const mappings = await getBsaleOfficeMappings(env.DB, session.company_id);
-        const officeId = mappings[String(branch.id)] || '';
-        if (!officeId) return withJson({ ok:true, stock:null, unmapped:true, build: BUILD_MARK });
-        const stock = await fetchBsaleStock(config, { officeId, variantId: url.searchParams.get('variantId') || url.searchParams.get('variantid') || '', code: url.searchParams.get('code') || '', barcode: url.searchParams.get('barcode') || '' });
-        return withJson({ ok:true, stock, officeId, build: BUILD_MARK });
-      } catch (err) {
-        return withJson({ ok:false, error: err.message || 'No se pudo consultar stock en Bsale.', build: BUILD_MARK }, 400);
-      }
-    }
-
     if (path === '/app-state' && request.method === 'GET') {
       const session = await getSession(request, env.DB, true);
       const companyId = session?.company_id || 1;
@@ -787,27 +706,6 @@ async function ensureSchema(db, env) {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
 
-    db.prepare(`CREATE TABLE IF NOT EXISTS bsale_integrations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL UNIQUE,
-      country TEXT NOT NULL DEFAULT 'PE',
-      api_base_url TEXT NOT NULL DEFAULT 'https://api.bsale.io',
-      access_token TEXT,
-      enabled INTEGER NOT NULL DEFAULT 0,
-      last_sync_at TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`),
-
-    db.prepare(`CREATE TABLE IF NOT EXISTS bsale_office_map (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      company_id INTEGER NOT NULL,
-      branch_id INTEGER NOT NULL,
-      bsale_office_id TEXT,
-      bsale_office_name TEXT,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(company_id, branch_id)
-    )`),
-
     db.prepare(`CREATE TABLE IF NOT EXISTS system_meta (
       key TEXT PRIMARY KEY,
       value TEXT,
@@ -1101,17 +999,12 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
     });
   }
 
-  const bsale = {
-    ...(await getBsaleConfig(db, companyId)),
-    officeMappings: await getBsaleOfficeMappings(db, companyId)
-  };
   return {
     company: savedAdmin?.company || companyRow.name || DEFAULT_COMPANY_NAME,
     companyCode: companyRow.code || savedAdmin?.companyCode || DEFAULT_COMPANY_CODE,
     logo: savedAdmin?.logo || '',
     branches: adminBranches,
-    activeBranch: Number(savedAdmin?.activeBranch || 0),
-    bsale
+    activeBranch: Number(savedAdmin?.activeBranch || 0)
   };
 }
 
@@ -1126,107 +1019,6 @@ async function getUserByUsername(db, username) {
 async function getBranchById(db, id) {
   const row = await first(db.prepare('SELECT * FROM branches WHERE id = ?').bind(id));
   return normalizeBranch(row);
-}
-
-async function getBsaleConfig(db, companyId) {
-  const row = await first(db.prepare('SELECT company_id, country, api_base_url, access_token, enabled, last_sync_at, updated_at FROM bsale_integrations WHERE company_id = ?').bind(companyId));
-  return row ? {
-    company_id: Number(row.company_id),
-    country: String(row.country || 'PE').toUpperCase(),
-    apiBaseUrl: String(row.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-    accessToken: String(row.access_token || '').trim(),
-    enabled: !!Number(row.enabled || 0),
-    lastSyncAt: row.last_sync_at || null,
-    updatedAt: row.updated_at || null,
-  } : { company_id: Number(companyId || 0), country:'PE', apiBaseUrl:'https://api.bsale.io', accessToken:'', enabled:false, lastSyncAt:null, updatedAt:null };
-}
-
-async function saveBsaleConfig(db, companyId, cfg = {}) {
-  const clean = {
-    country: String(cfg.country || 'PE').toUpperCase(),
-    apiBaseUrl: String(cfg.apiBaseUrl || cfg.api_base_url || 'https://api.bsale.io').trim() || 'https://api.bsale.io',
-    accessToken: String(cfg.accessToken || cfg.access_token || '').trim(),
-    enabled: cfg.enabled ? 1 : 0,
-  };
-  await db.prepare(`
-    INSERT INTO bsale_integrations (company_id, country, api_base_url, access_token, enabled, updated_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(company_id) DO UPDATE SET
-      country = excluded.country,
-      api_base_url = excluded.api_base_url,
-      access_token = excluded.access_token,
-      enabled = excluded.enabled,
-      updated_at = CURRENT_TIMESTAMP
-  `).bind(companyId, clean.country, clean.apiBaseUrl, clean.accessToken, clean.enabled).run();
-  return await getBsaleConfig(db, companyId);
-}
-
-async function getBsaleOfficeMappings(db, companyId) {
-  const rows = await all(db.prepare('SELECT branch_id, bsale_office_id, bsale_office_name FROM bsale_office_map WHERE company_id = ?').bind(companyId));
-  const map = {};
-  rows.forEach(row => {
-    map[String(row.branch_id)] = row.bsale_office_id ? String(row.bsale_office_id) : '';
-  });
-  return map;
-}
-
-async function saveBsaleOfficeMappings(db, companyId, officeMappings = {}) {
-  const branches = await all(db.prepare('SELECT id FROM branches WHERE company_id = ? AND active = 1').bind(companyId));
-  const mappings = officeMappings && typeof officeMappings === 'object' ? officeMappings : {};
-  for (const branch of branches) {
-    const key = String(branch.id);
-    const officeId = Object.prototype.hasOwnProperty.call(mappings, key) ? String(mappings[key] || '') : '';
-    await db.prepare(`
-      INSERT INTO bsale_office_map (company_id, branch_id, bsale_office_id, bsale_office_name, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(company_id, branch_id) DO UPDATE SET
-        bsale_office_id = excluded.bsale_office_id,
-        bsale_office_name = excluded.bsale_office_name,
-        updated_at = CURRENT_TIMESTAMP
-    `).bind(companyId, branch.id, officeId, null).run();
-  }
-  return await getBsaleOfficeMappings(db, companyId);
-}
-
-
-async function bsaleRequest(config, path, params = {}) {
-  const baseUrl = String(config?.apiBaseUrl || 'https://api.bsale.io').replace(/\/$/, '');
-  const url = new URL(baseUrl + path);
-  Object.entries(params || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && String(value).trim() !== '') url.searchParams.set(key, String(value));
-  });
-  const res = await fetch(url.toString(), {
-    headers: {
-      'access_token': String(config?.accessToken || ''),
-      'Content-Type': 'application/json'
-    }
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
-  if (!res.ok) {
-    const detail = data?.error || data?.message || data?.raw || `Bsale ${res.status}`;
-    throw new Error(typeof detail === 'string' ? detail : `Bsale ${res.status}`);
-  }
-  return data;
-}
-
-async function fetchBsaleOffices(config) {
-  const data = await bsaleRequest(config, '/v1/offices.json', { limit: 50, state: 0 });
-  return Array.isArray(data?.items)
-    ? data.items.map(item => ({ id: item.id, name: item.name || `Oficina ${item.id}`, address: item.address || '', city: item.city || '' }))
-    : [];
-}
-
-async function fetchBsaleStock(config, { officeId, variantId, code, barcode } = {}) {
-  const params = { officeid: officeId || undefined, expand: '[variant,office]' };
-  if (variantId) params.variantid = variantId;
-  else if (code) params.code = code;
-  else if (barcode) params.barcode = barcode;
-  else throw new Error('Envía un identificador de producto para consultar stock.');
-  const data = await bsaleRequest(config, '/v1/stocks.json', params);
-  const items = Array.isArray(data?.items) ? data.items : [];
-  return items[0] || null;
 }
 
 async function getOwnedBranch(db, companyId, id) {
@@ -1434,8 +1226,8 @@ async function handleSheetProbe(url) {
   const gid = await resolveSheetGid(id, sheet);
   try {
     const jsonUrl = gid
-      ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
-      : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
+      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
 
     const r = await fetch(jsonUrl);
     if (r.ok) {
@@ -1479,8 +1271,8 @@ async function handleSheetRows(url) {
 
 async function getSheetRowsPayloadFromCsv(id, sheet, gid, limit = 200, headerOnly = false) {
   const tryUrls = [];
-  if (gid) tryUrls.push(buildGoogleSheetCsvUrl({ id, gid }));
-  tryUrls.push(buildGoogleSheetCsvUrl({ id, sheet }));
+  if (gid) tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${encodeURIComponent(gid)}`);
+  tryUrls.push(`https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}`);
 
   let rows = [];
   let source = gid ? 'csv-gid' : 'csv-sheet';
@@ -1540,8 +1332,8 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
 
   try {
     const jsonUrl = gid
-      ? buildGoogleSheetQueryUrl({ id, gid, out: 'json', headers: 1 })
-      : buildGoogleSheetQueryUrl({ id, sheet, out: 'json', headers: 1 });
+      ? `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&gid=${encodeURIComponent(gid)}&headers=1`
+      : `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}&headers=1`;
 
     const r = await fetch(jsonUrl);
     if (r.ok) {
@@ -1605,54 +1397,6 @@ function parseGoogleVizJson(text) {
   if (!m) return null;
   return safeJsonParse(m[1], null);
 }
-
-function excelColToIndex(col) {
-  const src = String(col || '').trim().toUpperCase();
-  if (!src || !/^[A-Z]+$/.test(src)) return -1;
-  let index = 0;
-  for (let i = 0; i < src.length; i++) {
-    index = (index * 26) + (src.charCodeAt(i) - 64);
-  }
-  return index - 1;
-}
-
-function indexToExcelCol(index) {
-  let n = Number(index);
-  if (!Number.isInteger(n) || n < 0) return 'A';
-  n += 1;
-  let out = '';
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    out = String.fromCharCode(65 + rem) + out;
-    n = Math.floor((n - 1) / 26);
-  }
-  return out;
-}
-
-const MAX_SHEET_FETCH_COL_INDEX = excelColToIndex('ZZZ');
-const DEFAULT_SHEET_FETCH_RANGE = `A1:${indexToExcelCol(MAX_SHEET_FETCH_COL_INDEX)}`;
-
-function buildGoogleSheetQueryUrl({ id, gid = '', sheet = '', out = 'json', headers = null, range = DEFAULT_SHEET_FETCH_RANGE }) {
-  const params = new URLSearchParams();
-  params.set('tqx', `out:${out}`);
-  if (headers !== null && headers !== undefined) params.set('headers', String(headers));
-  if (range) params.set('range', range);
-  if (gid) params.set('gid', String(gid));
-  else if (sheet) params.set('sheet', String(sheet));
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?${params.toString()}`;
-}
-
-function buildGoogleSheetCsvUrl({ id, gid = '', sheet = '', range = DEFAULT_SHEET_FETCH_RANGE }) {
-  if (gid) {
-    const params = new URLSearchParams();
-    params.set('format', 'csv');
-    params.set('gid', String(gid));
-    if (range) params.set('range', range);
-    return `https://docs.google.com/spreadsheets/d/${id}/export?${params.toString()}`;
-  }
-  return buildGoogleSheetQueryUrl({ id, sheet, out: 'csv', range });
-}
-
 
 function parseCsv(text) {
   const rows = [];

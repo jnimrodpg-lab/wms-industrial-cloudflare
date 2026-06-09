@@ -1,4 +1,3 @@
-
 (() => {
   const $ = (s,el=document)=>el.querySelector(s);
   const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
@@ -16,6 +15,7 @@
   const countProducts = $('#countProducts');
   const searchBranchHost = $('#searchBranchHost');
   const productSummary = $('#productSummary');
+  const productToolbar = $('.product-toolbar');
   const activeProductName = $('#activeProductName');
   const activeProductSku = $('#activeProductSku');
   const activeProductMeta = $('#activeProductMeta');
@@ -25,6 +25,8 @@
   const activeProductImage = $('#activeProductImage');
   const activeSizeStrip = $('#activeSizeStrip');
   const activeColorStrip = $('#activeColorStrip');
+  const btnFocusProductMap = $('#btnFocusProductMap');
+  const btnOpenViewerFromProduct = $('#btnOpenViewerFromProduct');
   let activeImageCycleTimer = null;
   let activeImageCycleUrls = [];
   const sheetStatusChip = $('#sheetStatusChip');
@@ -108,7 +110,24 @@
     admin: loadAdminState(),
     ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
-    sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' }
+    sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
+    productFilters: {
+      brand:'',
+      category:'',
+      warehouse:'',
+      zone:'',
+      rack:'',
+      image_state:'',
+      location_state:'',
+      stock_state:''
+    },
+    productFacets: { brands:[], categories:[], warehouses:[], zones:[], racks:[] },
+    productSummaryData: null,
+    searchIndex: [],
+    history: {
+      layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
+      racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
+    }
   };
 
   const storedRackModels = loadRackModels();
@@ -116,6 +135,171 @@
 
   let html5QrScanner = null;
   let scannerRunning = false;
+
+  const appModalBackdrop = document.getElementById('appModalBackdrop');
+  const appModalTitle = document.getElementById('appModalTitle');
+  const appModalBody = document.getElementById('appModalBody');
+  const appModalActions = document.getElementById('appModalActions');
+  const appModalClose = document.getElementById('appModalClose');
+  const toastStack = document.getElementById('toastStack');
+  const configImportInput = document.getElementById('configImportInput');
+  let modalResolver = null;
+
+  function showToast(message, type='success', timeout=2600){
+    if(!toastStack) return;
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = String(message || '').trim() || 'Listo';
+    toastStack.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateY(6px)'; }, Math.max(500, timeout-260));
+    setTimeout(()=> el.remove(), timeout);
+  }
+
+  function closeAppModal(result=false){
+    if(appModalBackdrop) appModalBackdrop.classList.remove('show');
+    if(modalResolver){ const r = modalResolver; modalResolver=null; r(result); }
+  }
+
+  function openAppModal({title='Aviso', message='', actions=[]}={}){
+    if(!appModalBackdrop) return Promise.resolve(false);
+    appModalTitle.textContent = title;
+    appModalBody.innerHTML = Array.isArray(message) ? message.map(line => `<div>${escapeHtml(String(line))}</div>`).join('') : `<div>${escapeHtml(String(message))}</div>`;
+    appModalActions.innerHTML = '';
+    return new Promise(resolve => {
+      modalResolver = resolve;
+      const finalActions = actions.length ? actions : [{label:'Cerrar', value:true, cls:'secondary'}];
+      finalActions.forEach(action => {
+        const btn = document.createElement('button');
+        btn.type='button';
+        btn.className = `btn ${action.cls || 'secondary'}`.trim();
+        btn.textContent = action.label || 'Aceptar';
+        btn.onclick = ()=> closeAppModal(action.value);
+        appModalActions.appendChild(btn);
+      });
+      appModalBackdrop.classList.add('show');
+    });
+  }
+
+  if(appModalClose) appModalClose.onclick = ()=> closeAppModal(false);
+  if(appModalBackdrop) appModalBackdrop.addEventListener('click', e=>{ if(e.target === appModalBackdrop) closeAppModal(false); });
+
+  const __nativeAlert = window.alert ? window.alert.bind(window) : null;
+  let alertQueue = Promise.resolve();
+  let lastAlertMessage = '';
+  let lastAlertAt = 0;
+  window.alert = function(message='Aviso'){
+    const msg = String(message || '').trim() || 'Aviso';
+    const now = Date.now();
+    if(msg === lastAlertMessage && (now - lastAlertAt) < 900) return Promise.resolve(true);
+    lastAlertMessage = msg;
+    lastAlertAt = now;
+    alertQueue = alertQueue.then(()=> openAppModal({ title:'Aviso', message:msg, actions:[{label:'Aceptar', value:true, cls:'primary'}] })).catch(()=>true);
+    return alertQueue;
+  };
+
+  function branchLabel(branch, index){ return String(branch?.name || `Sucursal ${Number(index)+1}`); }
+
+  function exportAdminConfig(){
+    try{
+      const payload = { exportedAt:new Date().toISOString(), version:'fase3', admin:sanitizedAdminState(), branchLayouts:loadBranchLayouts(), models:appState.models };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `wms-config-${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 800);
+      showToast('Configuración exportada.', 'success');
+    }catch(err){ showToast(err.message || 'No se pudo exportar la configuración.', 'error', 3600); }
+  }
+
+  function triggerImportConfig(){ if(configImportInput) configImportInput.click(); }
+
+  async function handleConfigImportFile(file){
+    if(!file) return;
+    try{
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const ok = await openAppModal({ title:'Importar configuración', message:'Esto reemplazará la configuración local actual de empresa, sucursales, layouts y racks. ¿Deseas continuar?', actions:[{label:'Cancelar', value:false, cls:'secondary'},{label:'Importar', value:true, cls:'primary'}] });
+      if(!ok) return;
+      if(data.admin) appState.admin = normalizeAdminState(data.admin);
+      if(Array.isArray(data.branchLayouts)) appState.branchLayouts = normalizeBranchLayouts(data.branchLayouts);
+      if(Array.isArray(data.models) && data.models.length) appState.models = data.models.map(m => ({ ...m }));
+      saveAdminState();
+      saveBranchLayouts();
+      saveRackModels(appState.models);
+      renderApp();
+      showToast('Configuración importada correctamente.', 'success');
+    }catch(err){ showToast(err.message || 'No se pudo importar el archivo.', 'error', 3600); }
+    finally{ if(configImportInput) configImportInput.value=''; }
+  }
+
+  if(configImportInput) configImportInput.addEventListener('change', e => handleConfigImportFile(e.target.files?.[0]));
+
+  function validateBranchSheetSetup(branch){
+    const issues = [];
+    const url = String(branch?.sheetUrl || '').trim();
+    const sheetName = String(branch?.sheetName || '').trim();
+    if(!url) issues.push('Falta la URL o ID del Sheet.');
+    if(!sheetName) issues.push('Falta el nombre de la hoja.');
+    const headers = Array.isArray(branch?.sheetHeaders) ? branch.sheetHeaders.filter(Boolean) : [];
+    if(!headers.length) issues.push('Primero debes leer la fila 1.');
+    const rows = Array.isArray(branch?.sheetMapRows) ? branch.sheetMapRows : [];
+    const required = ['sku','nombre','ubicacion'];
+    required.forEach(field => {
+      const found = rows.find(row => row.field === field && String(row.header || '').trim());
+      if(!found) issues.push(`Falta mapear el campo ${field.toUpperCase()}.`);
+    });
+    return issues;
+  }
+
+  function copyBranchSheetConfig(fromIndex, toIndex){
+    const from = appState.admin.branches[fromIndex];
+    const to = appState.admin.branches[toIndex];
+    if(!from || !to || fromIndex===toIndex) return;
+    ensureBranchSheetFields();
+    to.sheetMapRows = JSON.parse(JSON.stringify(from.sheetMapRows || defaultSheetMapRows()));
+    to.sheetHeaders = Array.isArray(from.sheetHeaders) ? from.sheetHeaders.slice() : [];
+    to.sheetHeaderIndex = Number(from.sheetHeaderIndex || 0);
+    to.sheetConnected = !!to.sheetHeaders.length;
+    to.sheetStatusText = `Mapeo copiado desde ${branchLabel(from, fromIndex)}.`;
+    markBranchDirty(toIndex);
+    saveAdminState();
+    renderSheetScreen();
+    showToast(`Configuración copiada a ${branchLabel(to, toIndex)}.`, 'success');
+  }
+
+  async function clearBranchImportedData(index, mode='products'){
+    const branch = appState.admin.branches[index];
+    if(!branch) return;
+    const isActiveBranch = Number(appState.activeBranchIndex) === Number(index) || Number(appState.viewerBranchIndex) === Number(index) || Number(appState.admin?.activeBranch) === Number(index);
+    if(mode === 'cache'){
+      if(isActiveBranch){
+        appState.searchIndex = buildProductSearchIndex(appState.products || []);
+        appState.filtered = Array.isArray(appState.products) ? appState.products.slice() : [];
+        renderProducts(appState.filtered || []);
+        renderMapView();
+      }
+      branch.sheetStatusText = 'Búsqueda reconstruida para esta sucursal.';
+      saveAdminState();
+      renderSheetScreen();
+      showToast(branch.sheetStatusText, 'success', 2800);
+      return;
+    }
+    clearImportedProductsForBranch(index, { resetUi:isActiveBranch, clearHeaders:false });
+    branch.sheetStatusText = 'Productos importados eliminados. El mapeo se conservó.';
+    setBranchMetaStatus(branch, branch.sheetHeaders?.length ? BRANCH_STATUS.MAPPED : BRANCH_STATUS.LINKED, { productCount:0, headerCount:getSheetBranchHeaderCount(branch) });
+    if(isActiveBranch){
+      setProductDataset([]);
+      appState.filtered = [];
+      appState.searchIndex = [];
+      appState.selectedProduct = null;
+      renderProducts([]);
+      renderMapView();
+    }
+    saveAdminState();
+    renderSheetScreen();
+    showToast(branch.sheetStatusText, 'warn', 3200);
+  }
 
   const DEFAULT_ZONE_COLOR = '#ffd84d';
   const DEFAULT_ZONE_SIZE = { w:580, h:420 };
@@ -129,6 +313,363 @@
     ERROR:'ERROR',
     LOADING:'LOADING'
   };
+
+  function sortProductsStable(list){
+    const arr = Array.isArray(list) ? list.slice() : [];
+    return arr.sort((a,b)=> String(a?.nombre||'').localeCompare(String(b?.nombre||''), 'es', { sensitivity:'base' }) || String(a?.variante||'').localeCompare(String(b?.variante||''), 'es', { sensitivity:'base' }) || String(a?.sku||'').localeCompare(String(b?.sku||''), 'es', { sensitivity:'base' }));
+  }
+  function buildProductSearchIndex(products){
+    return (Array.isArray(products) ? products : []).map((p, idx) => {
+      const familyText = norm([p.marca, p.codigo, p.cod, p.modelo, p.nombre].filter(Boolean).join(' '));
+      const variantText = norm([getProductSizeValue(p), getProductColorValue(p), p.variante, p.sku, p.barras].filter(Boolean).join(' '));
+      const locationText = norm([p.ubicacion, p.almacen, p.rack, p.rackStore].filter(Boolean).join(' '));
+      const nameOnly = norm(p.nombre || '');
+      const nameVariant = norm(`${p.nombre || ''} ${p.variante || ''}`);
+      return {
+        p,
+        idx,
+        familyText,
+        variantText,
+        locationText,
+        haystack: [familyText, variantText, locationText].filter(Boolean).join(' '),
+        nameOnly,
+        nameVariant,
+        exactSku: norm(p.sku || ''),
+        exactRack: norm(p.rack || ''),
+        exactRackStore: norm(p.rackStore || ''),
+        exactUbic: norm(p.ubicacion || ''),
+        exactAlm: norm(p.almacen || '')
+      };
+    });
+  }
+  function setProductDataset(list, options = {}){
+    const next = options.keepOrder ? (Array.isArray(list) ? list.slice() : []) : sortProductsStable(list);
+    appState.products = next;
+    appState.filtered = next.slice();
+    appState.searchIndex = buildProductSearchIndex(next);
+  }
+
+  function apiGetJson(url){
+    return fetch(url, { credentials:'include', cache:'no-store' }).then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok || data?.ok === false){
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      return data;
+    });
+  }
+  function getBranchByIndex(branchIndex){
+    return (appState.admin?.branches || [])[Number(branchIndex)] || null;
+  }
+  function getCurrentProductsTotal(){
+    return Number(appState?.productPaging?.total || 0) || (Array.isArray(appState.products) ? appState.products.length : 0);
+  }
+  function ensureProductPagerUi(){
+    if(!productToolbar || document.getElementById('productPager')) return;
+    const pager = document.createElement('div');
+    pager.className = 'product-pager';
+    pager.id = 'productPager';
+    pager.innerHTML = `
+      <button class="pager-btn" id="productPrevPage" type="button">←</button>
+      <div class="pager-info" id="productPageInfo">Página 1 / 1</div>
+      <button class="pager-btn" id="productNextPage" type="button">→</button>
+      <span class="pager-mode" id="productModeChip">local</span>
+    `;
+    productToolbar.appendChild(pager);
+    const prev = document.getElementById('productPrevPage');
+    const next = document.getElementById('productNextPage');
+    prev?.addEventListener('click', () => {
+      if((appState.productPaging?.page || 1) <= 1) return;
+      requestProductsPage({ page: (appState.productPaging.page || 1) - 1 });
+    });
+    next?.addEventListener('click', () => {
+      if((appState.productPaging?.page || 1) >= (appState.productPaging?.totalPages || 1)) return;
+      requestProductsPage({ page: (appState.productPaging.page || 1) + 1 });
+    });
+  }
+  function updateProductPagerUi(){
+    const info = document.getElementById('productPageInfo');
+    const prev = document.getElementById('productPrevPage');
+    const next = document.getElementById('productNextPage');
+    const chip = document.getElementById('productModeChip');
+    const total = Number(appState.productPaging?.total || 0);
+    if(info) info.textContent = `Página ${appState.productPaging.page || 1} / ${appState.productPaging.totalPages || 1} • ${total.toLocaleString('es-PE')} registros`;
+    if(prev) prev.disabled = (appState.productPaging.page || 1) <= 1 || !!appState.productPaging.loading;
+    if(next) next.disabled = (appState.productPaging.page || 1) >= (appState.productPaging.totalPages || 1) || !!appState.productPaging.loading;
+    if(chip) chip.textContent = appState.productPaging.mode === 'backend' ? 'api' : 'local';
+  }
+
+  function getActiveProductFilters(){
+    return { ...(appState.productFilters || {}) };
+  }
+
+  function getNormalizedProductFilterEntries(filters = null){
+    const src = filters || appState.productFilters || {};
+    return Object.entries(src).map(([key, value]) => [key, String(value || '').trim()]).filter(([, value]) => value);
+  }
+
+  function updateFilterSummaryChip(){
+    const chip = document.getElementById('productFilterSummary');
+    if(!chip) return;
+    const activeCount = getNormalizedProductFilterEntries().length;
+    chip.textContent = activeCount ? `${activeCount} filtro${activeCount === 1 ? '' : 's'} activo${activeCount === 1 ? '' : 's'}` : 'Sin filtros';
+    chip.dataset.active = activeCount ? '1' : '0';
+  }
+
+  function buildFacetOptionsHtml(items = [], label = 'Todos'){
+    const normalized = Array.isArray(items)
+      ? items.map(item => typeof item === 'string' ? { value:item, count:null } : item).filter(item => String(item?.value || '').trim())
+      : [];
+    return [`<option value="">${label}</option>`].concat(normalized.map(item => {
+      const value = escapeHtml(item.value || '');
+      const suffix = item.count != null ? ` (${Number(item.count || 0).toLocaleString('es-PE')})` : '';
+      return `<option value="${value}">${value}${suffix}</option>`;
+    })).join('');
+  }
+
+  function ensureProductFilterBar(){
+    if(!productToolbar) return null;
+    let bar = document.getElementById('productFilterBar');
+    if(bar) return bar;
+    bar = document.createElement('div');
+    bar.id = 'productFilterBar';
+    bar.className = 'product-filter-bar';
+    bar.innerHTML = `
+      <div class="product-filter-grid">
+        <label><span>Marca</span><select id="filterBrand"></select></label>
+        <label><span>Categoría</span><select id="filterCategory"></select></label>
+        <label><span>Zona</span><select id="filterZone"></select></label>
+        <label><span>Almacén</span><select id="filterWarehouse"></select></label>
+        <label><span>Rack</span><select id="filterRack"></select></label>
+        <label><span>Imagen</span><select id="filterImageState"><option value="">Todas</option><option value="with_image">Con imagen</option><option value="without_image">Sin imagen</option></select></label>
+        <label><span>Ubicación</span><select id="filterLocationState"><option value="">Todas</option><option value="complete">Completa</option><option value="incomplete">Incompleta</option></select></label>
+        <label><span>Stock</span><select id="filterStockState"><option value="">Todos</option><option value="with_stock">Con stock</option><option value="without_stock">Sin stock</option></select></label>
+      </div>
+      <div class="product-filter-actions">
+        <span class="chip" id="productFilterSummary" data-active="0">Sin filtros</span>
+        <button class="seg-btn" id="resetProductFilters" type="button">Limpiar filtros</button>
+      </div>
+    `;
+    productToolbar.appendChild(bar);
+    const bindings = [
+      ['filterBrand','brand'],
+      ['filterCategory','category'],
+      ['filterZone','zone'],
+      ['filterWarehouse','warehouse'],
+      ['filterRack','rack'],
+      ['filterImageState','image_state'],
+      ['filterLocationState','location_state'],
+      ['filterStockState','stock_state'],
+    ];
+    bindings.forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.addEventListener('change', () => {
+        appState.productFilters[key] = String(el.value || '');
+        updateFilterSummaryChip();
+        clearTimeout(productSearchDebounce);
+        productSearchDebounce = setTimeout(filterProducts, 60);
+      });
+    });
+    document.getElementById('resetProductFilters')?.addEventListener('click', () => {
+      appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
+      syncProductFilterUi();
+      updateFilterSummaryChip();
+      clearTimeout(productSearchDebounce);
+      productSearchDebounce = setTimeout(filterProducts, 20);
+    });
+    return bar;
+  }
+
+  function syncProductFilterUi(){
+    ensureProductFilterBar();
+    const facets = appState.productFacets || {};
+    const sets = [
+      ['filterBrand', 'brand', buildFacetOptionsHtml(facets.brand_options || facets.brands || [], 'Todas')],
+      ['filterCategory', 'category', buildFacetOptionsHtml(facets.category_options || facets.categories || [], 'Todas')],
+      ['filterZone', 'zone', buildFacetOptionsHtml(facets.zone_options || facets.zones || [], 'Todas')],
+      ['filterWarehouse', 'warehouse', buildFacetOptionsHtml(facets.warehouse_options || facets.warehouses || [], 'Todos')],
+      ['filterRack', 'rack', buildFacetOptionsHtml(facets.rack_options || facets.racks || [], 'Todos')],
+      ['filterImageState', 'image_state', null],
+      ['filterLocationState', 'location_state', null],
+      ['filterStockState', 'stock_state', null],
+    ];
+    sets.forEach(([id, key, html]) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(html != null) el.innerHTML = html;
+      el.value = String(appState.productFilters?.[key] || '');
+    });
+    updateFilterSummaryChip();
+  }
+
+  function updateProductAnalyticsSummary(){
+    const summary = appState.productSummaryData || null;
+    const foot = document.getElementById('contentFootRight');
+    if(!summary){ if(foot) foot.textContent = '—'; return; }
+    const pieces = [];
+    if(Number(summary.with_location || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_location || 0).toLocaleString('es-PE')} con ubicación`);
+    if(Number(summary.with_image || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_image || 0).toLocaleString('es-PE')} con imagen`);
+    if(Number(summary.with_stock || 0) || Number(summary.total || 0)) pieces.push(`${Number(summary.with_stock || 0).toLocaleString('es-PE')} con stock`);
+    if(foot) foot.textContent = pieces.length ? pieces.join(' • ') : '—';
+  }
+
+  async function fetchProductsSummary(branchIndex = null){
+    const targetBranchIndex = Number.isFinite(branchIndex) ? Number(branchIndex) : getActiveBranchIndex();
+    const branch = getBranchByIndex(targetBranchIndex);
+    if(!branch?.id) return null;
+    try{
+      const data = await apiGetJson(`/api/branches/${branch.id}/products-summary`);
+      appState.productSummaryData = data?.summary || null;
+      if(data?.facets) appState.productFacets = data.facets;
+      syncProductFilterUi();
+      updateProductAnalyticsSummary();
+      return data;
+    }catch(_err){
+      return null;
+    }
+  }
+  async function fetchBranchProductsPage(branchIndex, { query = '', page = 1, limit = null, filters = null } = {}){
+    const branch = getBranchByIndex(branchIndex);
+    if(!branch?.id) return null;
+    const pageSize = Number(limit || appState.productPaging.limit || 120);
+    const params = new URLSearchParams();
+    if(query) params.set('q', query);
+    params.set('page', String(page));
+    params.set('limit', String(pageSize));
+    getNormalizedProductFilterEntries(filters).forEach(([key, value]) => params.set(key, value));
+    return apiGetJson(`/api/branches/${branch.id}/products?${params.toString()}`);
+  }
+  async function requestProductsPage({ branchIndex = null, query = null, page = null, silent = false } = {}){
+    const targetBranchIndex = Number.isFinite(branchIndex) ? Number(branchIndex) : getActiveBranchIndex();
+    const nextQuery = query != null ? String(query || '').trim() : String(appState.productPaging?.query || '').trim();
+    const nextPage = Math.max(1, Number(page || appState.productPaging?.page || 1));
+    const branch = getBranchByIndex(targetBranchIndex);
+    if(!branch?.id) return false;
+    try{
+      appState.productPaging.loading = true;
+      appState.productPaging.branchId = Number(branch.id || 0);
+      updateProductPagerUi();
+      const activeFilters = getActiveProductFilters();
+      const data = await fetchBranchProductsPage(targetBranchIndex, { query: nextQuery, page: nextPage, filters: activeFilters });
+      const items = Array.isArray(data?.items) ? data.items : [];
+      if(data?.facets) appState.productFacets = data.facets;
+      appState.productPaging = {
+        ...appState.productPaging,
+        mode:'backend',
+        page:Number(data?.page || nextPage || 1),
+        limit:Number(data?.limit || appState.productPaging.limit || 120),
+        total:Number(data?.total || items.length || 0),
+        totalPages:Number(data?.total_pages || 1),
+        query:nextQuery,
+        loading:false,
+        branchId:Number(branch.id || 0),
+        filters:activeFilters,
+        lastError:''
+      };
+      setProductDataset(items, { keepOrder:true });
+      appState.filtered = appState.products.filter(p => productMatchesLocalFilters(p));
+      countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
+      syncProductFilterUi();
+      renderProducts(appState.filtered);
+      const selectedKey = getProductIdentityKey(appState.selectedProduct);
+      const selectedStillVisible = items.find(p => getProductIdentityKey(p) === selectedKey);
+      if(selectedStillVisible) updateActiveProductCard(selectedStillVisible);
+      else if(items[0]) selectProduct(items[0]);
+      else updateActiveProductCard(null);
+      if(!silent) syncActiveProductCardHint();
+      if(!silent || !appState.productSummaryData) fetchProductsSummary(targetBranchIndex);
+      updateProductPagerUi();
+      return true;
+    }catch(err){
+      appState.productPaging.loading = false;
+      appState.productPaging.lastError = String(err?.message || err || 'error');
+      updateProductPagerUi();
+      return false;
+    }
+  }
+
+  function getHistoryBucket(type){
+    if(!appState.history) appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
+    return appState.history[type];
+  }
+  function snapshotForType(type){
+    if(type === 'layout') return clone(appState.layout || defaultLayout());
+    if(type === 'racks') return clone(appState.models || []);
+    return null;
+  }
+  function recordHistorySnapshot(type, snapshot = null){
+    const bucket = getHistoryBucket(type);
+    if(!bucket || bucket.isApplying) return;
+    const snap = snapshot == null ? snapshotForType(type) : clone(snapshot);
+    const serialized = JSON.stringify(snap);
+    const last = bucket.undoStack[bucket.undoStack.length - 1];
+    if(last === serialized) return;
+    bucket.undoStack.push(serialized);
+    if(bucket.undoStack.length > (bucket.max || 80)) bucket.undoStack.shift();
+    bucket.redoStack = [];
+    updateUndoRedoUi();
+  }
+  function applyHistoryState(type, payload){
+    if(type === 'layout'){
+      appState.layout = clone(payload || defaultLayout());
+      ensureLayoutMeta();
+      normalizeLayoutSectionState();
+      appState.selectedZoneId = appState.layout?.zones?.[0]?.id || '';
+      appState.selectedRackLayoutId = appState.layout?.racks?.[0]?.id || '';
+      appState.selectedVertex = { zoneId:'', idx:-1 };
+      appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
+      persistActiveLayout();
+      if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      else if(appState.screen === 'viewer' || appState.screen === 'products') renderMapView();
+    } else if(type === 'racks'){
+      appState.models = clone(Array.isArray(payload) ? payload : []);
+      if(!appState.models.length){ updateUndoRedoUi(); return; }
+      if(!appState.models.some(m => m.id === appState.selectedModelId)) appState.selectedModelId = appState.models[0].id;
+      saveRackModels();
+      if(appState.screen === 'racks') renderRackModels(); else renderRackModelPreview();
+    }
+    updateUndoRedoUi();
+  }
+  function undoHistory(type){
+    const bucket = getHistoryBucket(type);
+    if(!bucket || !bucket.undoStack.length) return;
+    const current = JSON.stringify(snapshotForType(type));
+    const previous = bucket.undoStack.pop();
+    if(previous === current && bucket.undoStack.length){
+      bucket.redoStack.push(current);
+      const prev2 = bucket.undoStack.pop();
+      if(prev2 == null){ updateUndoRedoUi(); return; }
+      bucket.isApplying = true;
+      try{ applyHistoryState(type, JSON.parse(prev2)); }
+      finally{ bucket.isApplying = false; }
+      return;
+    }
+    bucket.redoStack.push(current);
+    bucket.isApplying = true;
+    try{ applyHistoryState(type, JSON.parse(previous)); }
+    finally{ bucket.isApplying = false; }
+  }
+  function redoHistory(type){
+    const bucket = getHistoryBucket(type);
+    if(!bucket || !bucket.redoStack.length) return;
+    const current = JSON.stringify(snapshotForType(type));
+    const next = bucket.redoStack.pop();
+    bucket.undoStack.push(current);
+    bucket.isApplying = true;
+    try{ applyHistoryState(type, JSON.parse(next)); }
+    finally{ bucket.isApplying = false; }
+  }
+  function updateUndoRedoUi(){
+    ['layout','racks'].forEach(type => {
+      const bucket = getHistoryBucket(type);
+      const undoBtn = document.querySelector(`[data-history-undo="${type}"]`);
+      const redoBtn = document.querySelector(`[data-history-redo="${type}"]`);
+      if(undoBtn) undoBtn.disabled = !bucket.undoStack.length;
+      if(redoBtn) redoBtn.disabled = !bucket.redoStack.length;
+    });
+  }
+  let productSearchDebounce = null;
 
   function loadRackModels(){
     try{
@@ -564,7 +1105,7 @@
   function seedState(){
     ensureBranchLayouts();
     loadLayoutForBranch(getActiveLayoutBranchIndex());
-    appState.products = makeDemoProducts();
+    setProductDataset(makeDemoProducts());
     appState.filtered = appState.products.slice(0, 400);
     appState.selectedProduct = appState.products[0];
     appState.selectedRack = appState.products[0].rack;
@@ -575,12 +1116,34 @@
     return window.innerWidth <= 1280;
   }
 
+  function renderViewerMenu(){
+    const host = document.getElementById('viewerBranchMenu');
+    if(!host) return;
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const activeViewerIndex = Number(appState.viewerBranchIndex ?? -1);
+    host.innerHTML = branches.length ? branches.map((b, i) => {
+      const active = appState.screen === 'viewer' && activeViewerIndex === i;
+      return `<div class="menu-item ${active ? 'active' : ''}" data-screen="viewer" data-viewer-branch-menu="${i}">👁 <span>${escapeHtml(b?.name || ('Sucursal ' + (i + 1)))}</span></div>`;
+    }).join('') : '<div class="menu-item active" data-screen="viewer" data-viewer-branch-menu="-1">👁 <span>Visualizar</span></div>';
+    host.querySelectorAll('[data-viewer-branch-menu]').forEach(item => {
+      item.onclick = async () => {
+        const idx = Number(item.getAttribute('data-viewer-branch-menu'));
+        appState.viewerBranchIndex = idx;
+        setScreen('viewer');
+        if(idx >= 0) await switchViewerBranch(idx);
+        else renderViewerBranchHost(-1);
+        renderViewerMenu();
+      };
+    });
+  }
+
   function setScreen(screen){
-    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){ openAuthModal('Inicia sesión o continúa como visualizador.'); screen = 'viewer'; }
+    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){ openAuthModal(''); screen = 'viewer'; }
     if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer'){ screen = 'viewer'; }
     cleanupLayoutAutoFit();
     appState.screen = screen;
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
+    renderViewerMenu();
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
@@ -639,9 +1202,11 @@
     contentTags.innerHTML = tags.map(t => {
       const item = typeof t === 'string' ? { label:t, active:true } : (t || {});
       const label = escapeHtml(String(item.label || ''));
-      const cls = item.active === false ? 'tag inactive' : 'tag active';
+      const cls = (item.active === false ? 'tag inactive' : 'tag active') + (item.extraClass ? ` ${escapeHtml(String(item.extraClass))}` : '');
       if(item.action){
-        return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}">${label}</button>`;
+        const historyType = item.action === 'history-undo-layout' || item.action === 'history-redo-layout' ? 'layout' : (item.action === 'history-undo-racks' || item.action === 'history-redo-racks' ? 'racks' : '');
+        const historyAttr = item.action.startsWith('history-undo') ? ` data-history-undo="${historyType}"` : (item.action.startsWith('history-redo') ? ` data-history-redo="${historyType}"` : '');
+        return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}"${historyAttr}>${label}</button>`;
       }
       return `<span class="${cls}">${label}</span>`;
     }).join('');
@@ -858,10 +1423,43 @@
       startActiveProductImageCycle(getProductImageUrls(p));
     }
     renderActiveVariantStrip(p);
+    if(document.body.classList.contains('search-card-modal-open')) setTimeout(updateExpandedSideCards, 20);
+  }
+
+  function syncSelectedProductLocation(product){
+    if(!product) return;
+    appState.selectedRack = product.rack || product.rackStore || '';
+    appState.selectedRackLayoutId = product.rack || product.rackStore || '';
+    appState.selectedRackLayoutIds = [product.rack, product.rackStore].filter(Boolean);
+    appState.selectedZoneId = product.zona || product.zonaStore || appState.selectedZoneId || '';
+  }
+
+  function focusSelectedProductInViewer(options = {}){
+    const opts = options || {};
+    const product = opts.product || appState.selectedProduct;
+    if(!product){
+      showToast('Selecciona un producto primero.', 'warning');
+      return false;
+    }
+    syncSelectedProductLocation(product);
+    updateActiveProductCard(product);
+    syncActiveProductCardHint();
+    if(opts.switchScreen !== false){
+      setScreen('viewer');
+    } else if(['products','viewer','dashboard'].includes(appState.screen)) {
+      renderMapView();
+    }
+    setTimeout(() => {
+      if(appState.screen === 'viewer') renderMapView();
+      else if(appState.screen === 'dashboard') renderDashboard();
+      renderProducts(appState.filtered);
+    }, 10);
+    return true;
   }
 
   function applyProductSelectionEffects(product){
     if(!product) return;
+    syncSelectedProductLocation(product);
   }
 
   const LOGICAL_SIZE_ORDER = ['XXXS','3XS','XXS','2XS','XS','S','M','L','XL','XXL','2XL','XXXL','3XL','XXXXL','4XL','5XL','6XL','U','UNICA','ÚNICA','ONE SIZE'];
@@ -879,8 +1477,24 @@
     return 9999;
   }
 
+  function splitAlphaNumericLead(value){
+    const text = String(value || '').trim();
+    if(!text) return { type:2, normalized:'', text:'' };
+    const first = text.charAt(0);
+    const isLetter = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(first);
+    const isDigit = /\d/.test(first);
+    return { type:isLetter ? 0 : (isDigit ? 1 : 2), normalized:norm(text), text };
+  }
+
+  function compareTextLettersFirst(a,b){
+    const aa = splitAlphaNumericLead(a);
+    const bb = splitAlphaNumericLead(b);
+    if(aa.type !== bb.type) return aa.type - bb.type;
+    return aa.text.localeCompare(bb.text, 'es', { sensitivity:'base', numeric:true });
+  }
+
   function compareProductsAZ(a,b){
-    const nameCmp = String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity:'base', numeric:true });
+    const nameCmp = compareTextLettersFirst(a?.nombre || '', b?.nombre || '');
     if(nameCmp) return nameCmp;
     const sizeA = getProductSizeValue(a) || '';
     const sizeB = getProductSizeValue(b) || '';
@@ -897,12 +1511,23 @@
     return String(a?.ubicacion || '').localeCompare(String(b?.ubicacion || ''), 'es', { sensitivity:'base', numeric:true });
   }
 
+  function shouldForceIndividualView(list){
+    const rawQ = String(searchInput?.value || '').trim();
+    if(!rawQ) return false;
+    const items = Array.isArray(list) ? list.filter(Boolean) : [];
+    if(items.length <= 1) return false;
+    const familyKeys = Array.from(new Set(items.map(p => norm(p?.nombre || '') || '__sin_nombre__'))).filter(Boolean);
+    return familyKeys.length === 1;
+  }
+
   function renderProducts(list){
     const frag = document.createDocumentFragment();
-    const maxRows = appState.ui.productGroupMode ? 220 : 450;
+    const forceIndividual = shouldForceIndividualView(list);
+    const groupedMode = !!appState.ui.productGroupMode && !forceIndividual;
+    const maxRows = groupedMode ? 220 : 450;
     const items = [];
     const sortedList = (Array.isArray(list) ? list.slice() : []).sort(compareProductsAZ);
-    if(appState.ui.productGroupMode){
+    if(groupedMode){
       const groups = new Map();
       sortedList.forEach(p => {
         const key = norm(p.nombre || '') || '__sin_nombre__';
@@ -910,7 +1535,7 @@
         groups.get(key).items.push(p);
       });
       Array.from(groups.values())
-        .sort((a,b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity:'base', numeric:true }))
+        .sort((a,b) => compareTextLettersFirst(a.nombre || '', b.nombre || ''))
         .slice(0, maxRows)
         .forEach(g => items.push({ type:'group', data:g }));
     } else {
@@ -946,17 +1571,273 @@
       frag.appendChild(row);
     });
     productList.appendChild(frag);
-    countProducts.textContent = appState.products.length.toLocaleString('es-PE');
+    countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
     const shown = items.length;
-    const modeLabel = appState.ui.productGroupMode ? 'familias' : 'resultados';
-    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${list.length.toLocaleString('es-PE')} registros` + (appState.ui.productGroupMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
+    const modeLabel = groupedMode ? 'familias' : 'resultados';
+    const modeInfo = forceIndividual
+      ? ' • vista por unidad automática para variantes del mismo producto'
+      : (groupedMode ? ' • agrupado por producto / nombre' : (list.length > maxRows ? ' • usa el buscador para acotar' : ''));
+    const totalRecords = getCurrentProductsTotal();
+    const pageInfo = appState.productPaging.mode === 'backend' ? ` • página ${appState.productPaging.page || 1}/${appState.productPaging.totalPages || 1}` : '';
+    productSummary.textContent = `Mostrando ${shown.toLocaleString('es-PE')} ${modeLabel} de ${totalRecords.toLocaleString('es-PE')} registros` + modeInfo + pageInfo;
+    updateProductPagerUi();
+  }
+
+
+  let activeExpandedSearchCard = null;
+  let activeExpandedSearchCardPlaceholder = null;
+  let activeExpandedSearchCardParent = null;
+  let activeExpandedSearchCardNextSibling = null;
+  let activeExpandedSideCardsBound = false;
+
+  function getProductIdentityKey(p){
+    return [p?.sku || '', p?.nombre || '', p?.variante || '', p?.ubicacion || '', p?.almacen || ''].join('¦');
+  }
+  function getExpandedCarouselBaseList(){
+    const source = Array.isArray(appState?.filtered) && appState.filtered.length ? appState.filtered.slice() : (Array.isArray(appState?.products) ? appState.products.slice() : []);
+    return source.sort(compareProductsAZ);
+  }
+  function getExpandedCarouselItems(){
+    const list = getExpandedCarouselBaseList();
+    const forceIndividual = shouldForceIndividualView(list);
+    const groupedMode = !!appState?.ui?.productGroupMode && !forceIndividual;
+    if(!groupedMode) return list;
+    const groups = new Map();
+    list.forEach((p) => {
+      const key = norm(p?.nombre || '') || '__sin_nombre__';
+      if(!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    });
+    return Array.from(groups.values()).map(items => items[0]).filter(Boolean);
+  }
+  function getExpandedCarouselIndex(items){
+    if(!Array.isArray(items) || !items.length) return -1;
+    const selected = appState?.selectedProduct;
+    const selectedKey = getProductIdentityKey(selected);
+    let idx = items.findIndex((p) => getProductIdentityKey(p) === selectedKey);
+    if(idx >= 0) return idx;
+    idx = items.findIndex((p) => (p?.sku || '') === (selected?.sku || '') && (p?.variante || '') === (selected?.variante || ''));
+    if(idx >= 0) return idx;
+    idx = items.findIndex((p) => norm(p?.nombre || '') === norm(selected?.nombre || ''));
+    return idx >= 0 ? idx : 0;
+  }
+  function ensureExpandedSideCard(side){
+    let el = document.getElementById('expandedSideCard-' + side);
+    if(el) return el;
+    el = document.createElement('button');
+    el.type = 'button';
+    el.id = 'expandedSideCard-' + side;
+    el.className = 'search-card-side-nav ' + side;
+    el.setAttribute('aria-label', side === 'left' ? 'Producto anterior' : 'Producto siguiente');
+    el.innerHTML = `
+      <div class="side-nav-kicker">${side === 'left' ? 'Anterior' : 'Siguiente'}</div>
+      <div class="side-nav-media"><img alt="Vista previa del producto" /></div>
+      <div class="side-nav-body">
+        <div class="side-nav-title">—</div>
+        <div class="side-nav-sku">SKU —</div>
+        <div class="side-nav-mini">
+          <div class="side-nav-pill"><span class="side-nav-label">Ubicación</span><span class="side-nav-value">—</span></div>
+          <div class="side-nav-pill"><span class="side-nav-label">Almacén</span><span class="side-nav-value">—</span></div>
+        </div>
+      </div>
+      <div class="side-nav-hint">Haz clic para cambiar de producto</div>
+    `;
+    document.body.appendChild(el);
+    return el;
+  }
+  function fillExpandedSideCard(el, product, side){
+    if(!el) return;
+    if(!product){
+      el.classList.remove('visible');
+      el.onclick = null;
+      return;
+    }
+    const urls = getProductImageUrls(product);
+    const img = el.querySelector('img');
+    const values = el.querySelectorAll('.side-nav-value');
+    el.querySelector('.side-nav-kicker').textContent = side === 'left' ? 'Anterior' : 'Siguiente';
+    el.querySelector('.side-nav-title').textContent = product.nombre || 'Sin nombre';
+    el.querySelector('.side-nav-sku').textContent = `SKU ${product.sku || '—'}`;
+    if(values[0]) values[0].textContent = product.ubicacion || '—';
+    if(values[1]) values[1].textContent = product.almacen || '—';
+    if(img){
+      if(urls && urls[0]){ img.src = urls[0]; img.style.display = ''; }
+      else { img.removeAttribute('src'); img.style.display = 'none'; }
+    }
+    el.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectProduct(product);
+      updateExpandedSideCards();
+    };
+    el.classList.add('visible');
+  }
+  function hideExpandedSideCards(){
+    ['left','right'].forEach(side => {
+      const el = document.getElementById('expandedSideCard-' + side);
+      if(el) el.classList.remove('visible');
+    });
+  }
+  function updateExpandedSideCards(){
+    const main = document.getElementById('activeProductCard');
+    if(!main || !main.classList.contains('search-card-expanded') || window.innerWidth <= 980){ hideExpandedSideCards(); return; }
+    const items = getExpandedCarouselItems();
+    if(items.length <= 1){ hideExpandedSideCards(); return; }
+    const idx = getExpandedCarouselIndex(items);
+    const prev = items[(idx - 1 + items.length) % items.length];
+    const next = items[(idx + 1) % items.length];
+    fillExpandedSideCard(ensureExpandedSideCard('left'), prev, 'left');
+    fillExpandedSideCard(ensureExpandedSideCard('right'), next, 'right');
+  }
+  function bindExpandedSideCardKeys(){
+    if(activeExpandedSideCardsBound) return;
+    activeExpandedSideCardsBound = true;
+    document.addEventListener('keydown', (e) => {
+      const main = document.getElementById('activeProductCard');
+      if(!main || !main.classList.contains('search-card-expanded')) return;
+      const items = getExpandedCarouselItems();
+      if(items.length <= 1) return;
+      const idx = getExpandedCarouselIndex(items);
+      if(e.key === 'ArrowLeft'){
+        e.preventDefault();
+        selectProduct(items[(idx - 1 + items.length) % items.length]);
+        updateExpandedSideCards();
+      }else if(e.key === 'ArrowRight'){
+        e.preventDefault();
+        selectProduct(items[(idx + 1) % items.length]);
+        updateExpandedSideCards();
+      }
+    });
+    window.addEventListener('resize', () => setTimeout(updateExpandedSideCards, 40));
+  }
+  function syncActiveProductCardHint(){
+    const card = document.getElementById('activeProductCard');
+    const hint = card ? card.querySelector('.search-card-expand-hint') : null;
+    if(!hint || !card) return;
+    const hasProduct = !!(appState && appState.selectedProduct && (appState.selectedProduct.nombre || appState.selectedProduct.sku));
+    hint.style.display = hasProduct ? '' : 'none';
+  }
+  function openActiveProductCard(){
+    const card = document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    if(!card || !overlay) return;
+    if(card.classList.contains('search-card-expanded')) return;
+    activeExpandedSearchCard = card;
+    activeExpandedSearchCardParent = card.parentNode;
+    activeExpandedSearchCardNextSibling = card.nextSibling;
+    activeExpandedSearchCardPlaceholder = document.createElement('div');
+    activeExpandedSearchCardPlaceholder.className = 'search-card-placeholder';
+    activeExpandedSearchCardPlaceholder.style.height = card.offsetHeight + 'px';
+    activeExpandedSearchCardPlaceholder.style.borderRadius = '24px';
+    if(activeExpandedSearchCardParent){
+      activeExpandedSearchCardParent.insertBefore(activeExpandedSearchCardPlaceholder, activeExpandedSearchCardNextSibling);
+    }
+    document.body.appendChild(card);
+    card.classList.add('search-card-expanded');
+    overlay.classList.add('active');
+    overlay.setAttribute('aria-hidden','false');
+    document.body.classList.add('search-card-modal-open');
+    bindExpandedSideCardKeys();
+    setTimeout(updateExpandedSideCards, 40);
+  }
+  function closeActiveProductCard(){
+    const card = activeExpandedSearchCard || document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    if(card){
+      card.classList.remove('search-card-expanded');
+      if(activeExpandedSearchCardParent){
+        if(activeExpandedSearchCardPlaceholder && activeExpandedSearchCardPlaceholder.parentNode === activeExpandedSearchCardParent){
+          activeExpandedSearchCardParent.insertBefore(card, activeExpandedSearchCardPlaceholder);
+          activeExpandedSearchCardPlaceholder.remove();
+        }else if(activeExpandedSearchCardNextSibling && activeExpandedSearchCardNextSibling.parentNode === activeExpandedSearchCardParent){
+          activeExpandedSearchCardParent.insertBefore(card, activeExpandedSearchCardNextSibling);
+        }else{
+          activeExpandedSearchCardParent.appendChild(card);
+        }
+      }
+    }
+    if(overlay){
+      overlay.classList.remove('active');
+      overlay.setAttribute('aria-hidden','true');
+    }
+    document.body.classList.remove('search-card-modal-open');
+    hideExpandedSideCards();
+    activeExpandedSearchCard = null;
+    activeExpandedSearchCardPlaceholder = null;
+    activeExpandedSearchCardParent = null;
+    activeExpandedSearchCardNextSibling = null;
+  }
+  function bindActiveProductCardExpansion(){
+    const card = document.getElementById('activeProductCard');
+    const overlay = document.getElementById('searchCardOverlay');
+    const closeBtn = document.getElementById('activeProductCardClose');
+    if(!card || card.dataset.expandBound === '1') return;
+    card.dataset.expandBound = '1';
+    card.addEventListener('click', (e) => {
+      if(e.target && e.target.closest('#activeProductCardClose')) return;
+      if(card.classList.contains('search-card-expanded')) return;
+      openActiveProductCard();
+    });
+    card.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        if(card.classList.contains('search-card-expanded')) closeActiveProductCard();
+        else openActiveProductCard();
+      }
+      if(e.key === 'Escape') closeActiveProductCard();
+    });
+    if(overlay && overlay.dataset.boundCardExpand !== '1'){ overlay.addEventListener('click', closeActiveProductCard); overlay.dataset.boundCardExpand = '1'; }
+    if(closeBtn && closeBtn.dataset.boundCardExpand !== '1'){ closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeActiveProductCard(); }); closeBtn.dataset.boundCardExpand = '1'; }
+    if(document.body.dataset.boundCardExpandEsc !== '1'){ document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeActiveProductCard(); }); document.body.dataset.boundCardExpandEsc = '1'; }
+    syncActiveProductCardHint();
+  }
+
+  function productMatchesLocalFilters(product, filters = null){
+    const p = product || {};
+    const f = filters || appState.productFilters || {};
+    const exactChecks = [
+      ['brand', p.brand || p.marca || ''],
+      ['category', p.category || p.categoria || ''],
+      ['warehouse', p.warehouse || p.almacen || ''],
+      ['zone', p.zone || p.zona || ''],
+      ['rack', p.rack || p.estante || ''],
+    ];
+    for(const [key, rawValue] of exactChecks){
+      const expected = String(f?.[key] || '').trim();
+      if(expected && String(rawValue || '').trim() !== expected) return false;
+    }
+    const imageState = String(f?.image_state || '').trim();
+    const hasImage = !!String(p.image_url || p.imagen || '').trim();
+    if(imageState === 'with_image' && !hasImage) return false;
+    if(imageState === 'without_image' && hasImage) return false;
+    const locationState = String(f?.location_state || '').trim();
+    const hasLocation = !!String(p.location || p.ubicacion || '').trim();
+    if(locationState === 'complete' && !hasLocation) return false;
+    if(locationState === 'incomplete' && hasLocation) return false;
+    const stockState = String(f?.stock_state || '').trim();
+    const stock = Number(p.stock || 0);
+    if(stockState === 'with_stock' && !(stock > 0)) return false;
+    if(stockState === 'without_stock' && stock > 0) return false;
+    return true;
   }
 
   function filterProducts(){
     const rawQ = String(searchInput.value || '');
     const q = norm(rawQ);
+    const activeBranch = getBranchByIndex(getActiveBranchIndex());
+    if(activeBranch?.id && appState.auth?.loggedIn){
+      requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ.trim(), page:1, silent:true }).then((ok) => {
+        if(ok){
+          clearSearchHighlights();
+          if(appState.screen === 'dashboard') renderDashboard();
+          else if(['products','viewer'].includes(appState.screen)) renderMapView();
+          else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+        }
+      });
+      return;
+    }
     if(!q){
-      appState.filtered = appState.products;
+      appState.filtered = appState.products.slice();
       clearSearchHighlights();
       updateActiveProductCard(appState.selectedProduct || null);
       renderProducts(appState.filtered);
@@ -967,18 +1848,8 @@
     }
     const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
     const compactQuery = q.replace(/\s+/g, ' ').trim();
-    const scored = appState.products.map(p => {
-      const familyText = norm([p.marca, p.codigo, p.cod, p.modelo, p.nombre].filter(Boolean).join(' '));
-      const variantText = norm([getProductSizeValue(p), getProductColorValue(p), p.variante, p.sku, p.barras].filter(Boolean).join(' '));
-      const locationText = norm([p.ubicacion, p.almacen, p.rack, p.rackStore].filter(Boolean).join(' '));
-      const haystack = [familyText, variantText, locationText].filter(Boolean).join(' ');
-      const nameOnly = norm(p.nombre || '');
-      const nameVariant = norm(`${p.nombre || ''} ${p.variante || ''}`);
-      const exactSku = norm(p.sku || '');
-      const exactRack = norm(p.rack || '');
-      const exactRackStore = norm(p.rackStore || '');
-      const exactUbic = norm(p.ubicacion || '');
-      const exactAlm = norm(p.almacen || '');
+    const scored = (Array.isArray(appState.searchIndex) && appState.searchIndex.length ? appState.searchIndex : buildProductSearchIndex(appState.products)).map(entry => {
+      const { p, familyText, variantText, locationText, haystack, nameOnly, nameVariant, exactSku, exactRack, exactRackStore, exactUbic, exactAlm, idx } = entry;
       const phraseInFamily = familyText.includes(compactQuery);
       const phraseInNameVariant = nameVariant.includes(compactQuery);
       const phraseInFull = haystack.includes(compactQuery);
@@ -991,52 +1862,26 @@
       if (phraseInFull) score += 90;
       if (exactRack === q || exactRackStore === q) score += 85;
       if (exactUbic === q || exactAlm === q) score += 85;
-
-      let familyMatches = 0;
-      let variantMatches = 0;
-      let locationMatches = 0;
-      let matchedTokens = 0;
+      let familyMatches = 0, variantMatches = 0, locationMatches = 0, matchedTokens = 0;
       tokens.forEach(t => {
         let matched = false;
-        if (familyText.includes(t)) {
-          familyMatches += 1;
-          score += 28;
-          matched = true;
-          if (nameOnly.includes(t)) score += 10;
-          if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12;
-        }
-        if (variantText.includes(t)) {
-          variantMatches += 1;
-          score += 18;
-          matched = true;
-          if (exactSku.startsWith(t)) score += 18;
-        }
-        if (locationText.includes(t)) {
-          locationMatches += 1;
-          score += 8;
-          matched = true;
-        }
+        if (familyText.includes(t)) { familyMatches += 1; score += 28; matched = true; if (nameOnly.includes(t)) score += 10; if (familyText.startsWith(t) || nameOnly.startsWith(t)) score += 12; }
+        if (variantText.includes(t)) { variantMatches += 1; score += 18; matched = true; if (exactSku.startsWith(t)) score += 18; }
+        if (locationText.includes(t)) { locationMatches += 1; score += 8; matched = true; }
         if (matched) matchedTokens += 1;
       });
-
       const allTokensPresent = tokens.length ? matchedTokens === tokens.length : false;
       if (allTokensPresent) score += 34 + tokens.length * 6;
-
       const contentMatches = familyMatches + variantMatches;
       const strongPhrase = phraseInFamily || phraseInNameVariant || exactSku === q || exactUbic === q || exactAlm === q;
       let passes = false;
-      if (tokens.length === 1) {
-        passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
-      } else if (tokens.length === 2) {
-        passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
-      } else {
-        passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
-      }
-
-      return { p, score, matchedTokens, familyMatches, variantMatches, passes };
+      if (tokens.length === 1) passes = contentMatches >= 1 || locationMatches >= 1 || strongPhrase || exactSku.includes(compactQuery);
+      else if (tokens.length === 2) passes = allTokensPresent && (contentMatches >= 2 || strongPhrase || (familyMatches >= 1 && variantMatches >= 1));
+      else passes = allTokensPresent && (contentMatches >= Math.max(2, tokens.length - 1) || strongPhrase || familyMatches >= Math.max(2, tokens.length - 1));
+      return { p, score, matchedTokens, familyMatches, variantMatches, passes, idx };
     }).filter(x => x.passes && x.score >= (tokens.length >= 3 ? 72 : tokens.length === 2 ? 42 : 18))
-      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || String(a.p.nombre||'').localeCompare(String(b.p.nombre||'')) || String(a.p.variante||'').localeCompare(String(b.p.variante||'')));
-    appState.filtered = scored.map(x => x.p);
+      .sort((a,b) => b.score - a.score || b.familyMatches - a.familyMatches || b.variantMatches - a.variantMatches || a.idx - b.idx);
+    appState.filtered = scored.map(x => x.p).filter(p => productMatchesLocalFilters(p));
     const primary = appState.filtered[0] || null;
     if(primary){
       appState.selectedProduct = primary;
@@ -1046,13 +1891,9 @@
     const rackIds = [];
     appState.filtered.slice(0, 250).forEach(p => { if(p.rack) rackIds.push(p.rack); if(p.rackStore) rackIds.push(p.rackStore); });
     setSearchHighlightedRacks(rackIds, primary?.rack || primary?.rackStore || '');
-    if(primary){
-      updateActiveProductCard(primary);
-      applyProductSelectionEffects(primary);
-    } else {
-      updateActiveProductCard(null);
-      clearSearchHighlights();
-    }
+    if(primary){ updateActiveProductCard(primary); applyProductSelectionEffects(primary); }
+    else { updateActiveProductCard(null); clearSearchHighlights(); }
+    syncActiveProductCardHint();
     renderProducts(appState.filtered);
     if(appState.screen === 'dashboard') renderDashboard();
     else if(['products','viewer'].includes(appState.screen)) renderMapView();
@@ -1061,15 +1902,14 @@
 
   function selectProduct(p){
     appState.selectedProduct = p;
-    appState.selectedRack = p.rack;
-    appState.selectedRackLayoutId = p.rack;
+    applyProductSelectionEffects(p);
     updateActiveProductCard(p);
+    syncActiveProductCardHint();
     if(appState.screen === 'dashboard'){
-      appState.selectedRackLayoutId = p.rack || p.rackStore || '';
       renderDashboard();
     } else if(['products','reports','viewer'].includes(appState.screen)){
       renderMapView();
-      renderRackDetail(p.rack, p);
+      renderRackDetail(p.rack || p.rackStore, p);
     } else if (appState.screen === 'layout') {
       renderLayoutEditor();
       renderLayoutInspector();
@@ -1601,8 +2441,8 @@
       }).filter(x => x.sku || x.nombre || x.barras);
 
       if(parsed.length){
-        appState.products = parsed;
-        appState.filtered = parsed;
+        setProductDataset(parsed);
+        appState.filtered = appState.products.slice();
         appState.sheetConfig.lastMode = 'google';
         syncBranchLayoutWithProducts(getActiveLayoutBranchIndex(), parsed);
         sheetStatusChip.textContent = `${parsed.length.toLocaleString('es-PE')} filas`;
@@ -1717,6 +2557,7 @@
     (appState.layout?.zones || []).forEach(zone => ensureZoneSectionCuts(zone));
   }
   function persistActiveLayout(){
+    if(!(appState.history?.layout?.isApplying)) recordHistorySnapshot('layout');
     const idx = getActiveLayoutBranchIndex();
     if(!appState.branchLayouts) appState.branchLayouts = {};
     normalizeLayoutSectionState();
@@ -2264,6 +3105,7 @@
     if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
   }
   function renderAdminScreen(){
+    renderViewerMenu();
     const cfg = appState.admin; if(cfg.activeBranch >= cfg.branches.length) cfg.activeBranch = 0;
     const summaryBranches = cfg.branches.length, summaryWarehouses = cfg.branches.reduce((a,b)=>a+(b.warehouses?.length||0),0);
     contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = 'Administrador'; setTags([]);
@@ -2293,17 +3135,51 @@
   .sheet-preview-chip{padding:6px 10px;border-radius:999px;background:#173250;border:1px solid #355072;color:#d7e4ef;font-size:12px;}
   .sheet-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
 
-  .auth-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #355072;background:linear-gradient(180deg,#153152,#0f2742);color:#eaf4ff;font-weight:700;font-size:12px;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
+  
+  .app-modal-backdrop{position:fixed;inset:0;background:rgba(5,11,20,.7);display:none;align-items:center;justify-content:center;z-index:20000;padding:20px;backdrop-filter:blur(6px)}
+  .app-modal-backdrop.show{display:flex}
+  .app-modal{width:min(560px,100%);background:linear-gradient(180deg,#132337,#0c1728);border:1px solid #355072;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden}
+  .app-modal-head{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .app-modal-head b{font-size:16px}
+  .app-modal-body{padding:18px;display:grid;gap:12px;color:#d7e4ef;line-height:1.45}
+  .app-modal-actions{padding:16px 18px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+  .toast-stack{position:fixed;right:18px;bottom:18px;z-index:21000;display:grid;gap:10px;max-width:min(380px,calc(100vw - 32px))}
+  .toast{padding:12px 14px;border-radius:16px;border:1px solid #355072;background:linear-gradient(180deg,#132337,#0c1728);box-shadow:0 16px 40px rgba(0,0,0,.28);color:#edf5ff;font-size:13px}
+  .toast.success{border-color:rgba(17,194,141,.4);background:linear-gradient(180deg,rgba(17,194,141,.18),rgba(12,23,40,.98))}
+  .toast.warn{border-color:rgba(245,166,35,.4);background:linear-gradient(180deg,rgba(245,166,35,.16),rgba(12,23,40,.98))}
+  .toast.error{border-color:rgba(227,94,94,.44);background:linear-gradient(180deg,rgba(227,94,94,.18),rgba(12,23,40,.98))}
+  .sheet-toolbar-utility{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-left:auto;justify-content:flex-end}
+  .sheet-branch-submeta{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03);font-size:12px;color:#cfe0f3;margin-top:12px}
+  .sheet-helper-text{margin-top:4px;max-width:720px;line-height:1.45}
+  .sheet-utility-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:12px}
+  .sheet-inline-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .sheet-upload-hidden{display:none}
+.auth-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #355072;background:linear-gradient(180deg,#153152,#0f2742);color:#eaf4ff;font-weight:700;font-size:12px;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
   .auth-pill:hover{transform:translateY(-1px);border-color:#4b78a8}
   .auth-modal{position:fixed;inset:0;background:rgba(4,10,18,.72);display:none;align-items:center;justify-content:center;z-index:15000;padding:20px}
   .auth-modal.show{display:flex}
-  .auth-card{width:min(440px,100%);background:linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:22px;box-shadow:0 24px 64px rgba(0,0,0,.45);padding:22px}
-  .auth-card h3{margin:0 0 8px;font-size:24px}
-  .auth-card p{margin:0 0 18px;color:#b9c6d4;font-size:13px;line-height:1.45}
+  .auth-card{width:min(720px,100%);background:radial-gradient(circle at top right,rgba(91,185,140,.16),transparent 28%),linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:28px;box-shadow:0 28px 72px rgba(0,0,0,.48);padding:24px}
+  .auth-card h3{margin:0 0 8px;font-size:30px;line-height:1.02}
+  .auth-card p{margin:0;color:#b9c6d4;font-size:13px;line-height:1.55}
+  .auth-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
+  .auth-badge{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#e8f6ef;font-size:12px;font-weight:800;white-space:nowrap}
+  .auth-segment{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px}
+  .auth-segment-btn{height:46px;border-radius:14px;border:1px solid transparent;background:transparent;color:#cfe0f3;font-weight:800;cursor:pointer;transition:.18s ease}
+  .auth-segment-btn.active{background:linear-gradient(180deg,rgba(91,185,140,.24),rgba(91,185,140,.12));color:#f3fff9;border-color:rgba(91,185,140,.26);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+  .auth-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  .auth-role-card{display:grid;gap:4px;text-align:left;padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));color:#eaf4ff;cursor:pointer;transition:.18s ease}
+  .auth-role-card strong{font-size:16px}
+  .auth-role-card small{font-size:12px;color:#b9c6d4;line-height:1.45}
+  .auth-role-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ed6bd}
+  .auth-role-card.active{border-color:rgba(91,185,140,.34);background:linear-gradient(180deg,rgba(20,74,58,.56),rgba(10,23,28,.94));box-shadow:0 0 0 1px rgba(91,185,140,.16) inset,0 12px 24px rgba(0,0,0,.16)}
   .auth-grid{display:grid;gap:12px}
-  .auth-grid input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-grid-modern{grid-template-columns:1fr 1fr}
+  .auth-grid input,.auth-grid select{width:100%;padding:13px 14px;border-radius:14px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
+  .auth-hidden-native{display:none !important}
   .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
-  .auth-status{min-height:18px;color:#ffb4b4;font-size:12px;margin-top:8px}
+  .auth-actions-modern .btn.primary{min-width:170px}
+  .auth-status{min-height:20px;color:#ffb4b4;font-size:12px;margin-top:8px;padding-left:2px}
+  @media (max-width:760px){.auth-card{padding:18px;border-radius:22px}.auth-card h3{font-size:24px}.auth-hero,.auth-role-grid,.auth-grid-modern{grid-template-columns:1fr;display:grid}.auth-badge{justify-self:start}}
   .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
   .save-strip .btn,.save-strip .seg-btn{min-width:180px}
   @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
@@ -2377,7 +3253,19 @@
           body.theme-light .branch-card{background:#e8f5ef;border-color:rgba(64,138,113,.18)}
           body.theme-light .branch-head input,body.theme-light .branch-body input,body.theme-light .branch-body select{background:#ffffff;border-color:rgba(64,138,113,.18)}
           body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(237,247,242,.9) 24%, rgba(237,247,242,1))}
-        </style>
+      
+
+  /* ==== Lista de productos: mantener formato normal ==== */
+  .product-list{padding:0 !important}
+  @media (max-width: 980px){
+    .search-results-wrap,.table-scroll{overflow:auto !important}
+    .product-head{display:grid !important}
+  }
+  @media (max-width: 560px){
+    .product-head,.product-row{min-width:820px !important}
+  }
+
+  </style>
         <div class="company-head">
           <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
           <div class="grid"><label>Logo</label><div><input type="file" id="companyLogoInput" accept="image/*" style="display:none"><button class="company-logo-btn" id="companyLogoBtn">⤴ Subir logo</button></div></div>
@@ -2434,7 +3322,7 @@
     try{ loadLayoutForBranch(idx); }catch(_err){}
     const branch = branches[idx];
     if(Array.isArray(branch?.sheetPreviewProducts) && branch.sheetPreviewProducts.length){
-      appState.products = branch.sheetPreviewProducts.slice(0,12000);
+      setProductDataset(branch.sheetPreviewProducts.slice(0,12000));
       appState.filtered = appState.products.slice();
       return true;
     }
@@ -2444,11 +3332,11 @@
       if(appState.admin) appState.admin.activeBranch = fallbackIdx;
       try{ loadLayoutForBranch(fallbackIdx); }catch(_err){}
       const fallbackBranch = branches[fallbackIdx];
-      appState.products = fallbackBranch.sheetPreviewProducts.slice(0,12000);
+      setProductDataset(fallbackBranch.sheetPreviewProducts.slice(0,12000));
       appState.filtered = appState.products.slice();
       return true;
     }
-    appState.products = [];
+    setProductDataset([]);
     appState.filtered = [];
     return false;
   }
@@ -2477,6 +3365,10 @@
         if(Array.isArray(cfg.sheet_map_rows)) branch.sheetMapRows = cfg.sheet_map_rows;
         if(Array.isArray(cfg.sheet_headers)) branch.sheetHeaders = cfg.sheet_headers;
         if(Number.isFinite(Number(cfg.sheet_header_index))) branch.sheetHeaderIndex = Number(cfg.sheet_header_index || 0);
+        branch.lastImportAt = cfg.last_imported_at || '';
+        branch.lastImportStatus = cfg.last_import_status || '';
+        branch.lastImportSource = cfg.last_import_source || '';
+        branch.lastImportError = cfg.last_import_error || '';
         if(Array.isArray(cfg.imported_products) && cfg.imported_products.length){
           branch.sheetPreviewProducts = cfg.imported_products.slice(0,12000);
           branch.lastSheetCount = Number(cfg.last_sheet_count || cfg.imported_products.length || 0);
@@ -2543,7 +3435,7 @@
   }
   function saveProductsLocal(branchIndex){
     try{
-      const payload = JSON.stringify((appState.products || []).slice(0,12000));
+      const payload = JSON.stringify((appState.products || []).slice(0,500));
       const key = (Number.isFinite(branchIndex) && branchIndex >= 0) ? getBranchStorageKey(branchIndex) : 'wms_products_v2';
       localStorage.setItem(key, payload);
       if(Number.isFinite(branchIndex) && branchIndex >= 0){
@@ -2555,8 +3447,8 @@
   function loadProductsLocal(){ try{ const raw=localStorage.getItem('wms_products_v2'); if(raw){ const arr=JSON.parse(raw); if(Array.isArray(arr)&&arr.length){ appState.products=arr; appState.filtered=arr; } } }catch{} }
   function applyBranchProducts(arr, branchIndex){
     if(!Array.isArray(arr) || !arr.length) return false;
-    appState.products = arr;
-    appState.filtered = arr;
+    setProductDataset(arr);
+    appState.filtered = appState.products.slice();
     appState.activeBranchIndex = branchIndex;
     renderProducts(appState.filtered);
     if(arr[0]) selectProduct(arr[0]);
@@ -2587,19 +3479,31 @@
     appState.activeBranchIndex = branchIndex;
     const branch = (appState.admin?.branches || [])[branchIndex];
     if(!branch) return false;
-    if(loadBranchProducts(branchIndex)) return true;
+    if(branch.id && appState.auth?.loggedIn){
+      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
+      if(ok) return true;
+    }
+    if(loadBranchProducts(branchIndex)) {
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      updateProductPagerUi();
+      return true;
+    }
     if(Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length){
       applyBranchProducts(branch.sheetPreviewProducts, branchIndex);
+      appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'' };
+      updateProductPagerUi();
       return true;
     }
     const hasLink = String(branch.sheetUrl||'').trim() && String(branch.sheetName||'').trim();
     if(hasLink){
       try{ await importBranchSheet(branchIndex); return true; }catch{}
     }
-    appState.products = [];
+    setProductDataset([]);
     appState.filtered = [];
+    appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:0, totalPages:1, query:'', branchId:Number(branch.id || 0), lastError:'' };
     renderProducts([]);
     countProducts.textContent = '0';
+    updateProductPagerUi();
     return false;
   }
   function resetSheetPanelList(){ productList.innerHTML = '<div class="empty" style="padding:18px">Aún no hay productos importados en este asistente.</div>'; productSummary.textContent = 'Importa productos en el paso 3 para verlos aquí.'; countProducts.textContent='0'; }
@@ -2646,7 +3550,7 @@
   }
 
   function clearCurrentProductsForSheetLink(branchIndex){
-    appState.products = [];
+    setProductDataset([]);
     appState.filtered = [];
     appState.selectedProduct = null;
     appState.selectedRack = '';
@@ -2785,25 +3689,11 @@
     return getActiveBranchIndex();
   }
   function renderViewerBranchHost(activeBranchIndex){
+    appState.viewerBranchIndex = Number(activeBranchIndex);
+    renderViewerMenu();
     if(!searchBranchHost) return;
-    const branches = appState.admin?.branches || [];
-    if(appState.screen !== 'viewer' || !branches.length){
-      searchBranchHost.classList.remove('active');
-      searchBranchHost.innerHTML = '';
-      return;
-    }
-    const options = branches.map((branch, index) => `<option value="${index}" ${index===activeBranchIndex?'selected':''}>${escapeHtml(branch.name || `Sucursal ${index+1}`)}</option>`).join('');
-    searchBranchHost.classList.add('active');
-    searchBranchHost.innerHTML = `
-      <div class="search-branch-card">
-        <div class="branch-copy">
-          <b>Sucursal en visualización</b>
-          <div class="muted tiny">Selecciona la sede que quieres ver en el plano general y en los racks.</div>
-        </div>
-        <select id="viewerBranchSelectTop">${options}</select>
-      </div>`;
-    const topSelect = document.getElementById('viewerBranchSelectTop');
-    if(topSelect) topSelect.onchange = (e) => switchViewerBranch(e.target.value);
+    searchBranchHost.classList.remove('active');
+    searchBranchHost.innerHTML = '';
   }
   function getBranchPreviewProducts(branch){
     return Array.isArray(branch?.sheetPreviewProducts) ? branch.sheetPreviewProducts : [];
@@ -2877,6 +3767,7 @@ function getSheetBranchOpenMap(){
     saveAdminState();
     const data = await httpJson(`/api/sheets/rows?url=${encodeURIComponent(url)}&sheet=${encodeURIComponent(sheetName)}&headerOnly=1`);
     const detectedHeaders = Array.isArray(data.headers) ? data.headers.filter(Boolean) : [];
+    if(!detectedHeaders.length){ throw new Error('La hoja no devolvió encabezados válidos en la fila 1.'); }
     const preservedHeaders = Array.isArray(branch.sheetHeaders) ? branch.sheetHeaders.filter(Boolean) : [];
     branch.sheetHeaders = detectedHeaders.length ? detectedHeaders : preservedHeaders;
     branch.sheetHeaderIndex = Number(data.headerIndex || branch.sheetHeaderIndex || 0);
@@ -2893,6 +3784,7 @@ function getSheetBranchOpenMap(){
       if(hit) r.header = hit;
     });
     saveAdminState();
+    showToast(`Encabezados leídos: ${branch.sheetHeaders.length}.`, 'success');
   }
 
 
@@ -2915,6 +3807,7 @@ function getSheetBranchOpenMap(){
       payload.imported_products = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length)
         ? branch.sheetPreviewProducts.slice(0,12000)
         : ((Array.isArray(appState.products) && appState.products.length) ? appState.products.slice(0,12000) : []);
+      payload.import_source = 'google-sheet-ui';
     }
     await httpJson(`/api/branches/${branchId}/sheet`, {
       method:'POST',
@@ -2969,7 +3862,7 @@ function getSheetBranchOpenMap(){
       setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:branch.sheetStatusText, headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
       saveAdminState();
       renderSheetScreen();
-      alert(branch.sheetStatusText);
+      showToast(branch.sheetStatusText, 'error', 3800);
     }
   }
 
@@ -3011,6 +3904,7 @@ function getSheetBranchOpenMap(){
     await persistBranchSheet(index, { includeProducts:false });
     contentStatus.textContent = 'Columnas de sheet guardadas en servidor.';
     renderSheetScreen();
+    showToast('Columnas visibles guardadas.', 'success');
   }
 
   async function saveBranchSheetCurrent(index){
@@ -3061,14 +3955,15 @@ function getSheetBranchOpenMap(){
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         renderProducts(appState.filtered || []);
         countProducts.textContent = (appState.products || []).length.toLocaleString('es-PE');
-        renderSheetDetailPreview();
+        renderViewerMenu();
+    renderSheetDetailPreview();
         contentStatus.textContent = 'Guardado: se limpió la importación anterior de la sucursal.';
       }else{
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         // Restaurar SIEMPRE el estado visible. Este botón no debe tocar productos ni vista previa.
         branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-        appState.products = productsBackup.slice(0,12000);
-        appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
+        setProductDataset(productsBackup.slice(0,12000));
+        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000));
         if(selectedBackup) appState.selectedProduct = selectedBackup;
         renderProducts(appState.filtered);
         countProducts.textContent = appState.products.length.toLocaleString('es-PE');
@@ -3079,8 +3974,8 @@ function getSheetBranchOpenMap(){
       console.error(err);
       if(!sourceChanged){
         branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-        appState.products = productsBackup.slice(0,12000);
-        appState.filtered = (filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000);
+        setProductDataset(productsBackup.slice(0,12000));
+        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000));
       }
       if(selectedBackup) appState.selectedProduct = selectedBackup;
       setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:err.message || 'No se pudieron guardar los cambios de vinculación.', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
@@ -3106,19 +4001,21 @@ function getSheetBranchOpenMap(){
     ensureBranchSheetFields();
     const branch = appState.admin.branches[index]; if(!branch) return;
     const url = String(branch.sheetUrl||'').trim(); const sheetName = String(branch.sheetName||'').trim();
-    if(!url || !sheetName) return alert('Completa la URL/ID del Sheet y el nombre de la hoja.');
+    if(!url || !sheetName){ showToast('Completa la URL/ID del Sheet y el nombre de la hoja.', 'error', 3600); return; }
+    const issues = validateBranchSheetSetup(branch).filter(msg => !/leer la fila 1/i.test(msg) || !!(branch.sheetHeaders && branch.sheetHeaders.length));
     const currentSourceSignature = getSheetSourceSignature(url, sheetName);
     const hadImportedProducts = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length) || Number(branch.lastSheetCount || 0) > 0 || (appState.activeBranchIndex===index && Array.isArray(appState.products) && appState.products.length);
     if(hadImportedProducts){
-      const replaceOk = confirm('Esta sucursal ya tiene productos importados. ¿Deseas reemplazarlos por la nueva importación?');
+      const replaceOk = await openAppModal({ title:'Reemplazar importación', message:[`La sucursal ${branchLabel(branch, index)} ya tiene productos importados.`,`Se reemplazará la información anterior por la nueva importación.`], actions:[{label:'Cancelar', value:false, cls:'secondary'},{label:'Reemplazar', value:true, cls:'primary'}] });
       if(!replaceOk) return;
       clearImportedProductsForBranch(index, { resetUi: appState.activeBranchIndex===index, clearHeaders:false });
     }
+    if(issues.length){ await openAppModal({ title:'Validación de hoja', message: issues, actions:[{label:'Entendido', value:true, cls:'secondary'}] }); return; }
     if(!branch.sheetHeaders || !branch.sheetHeaders.length) {
       branch.sheetStatusText = 'Leyendo fila 1...';
       setBranchMetaStatus(branch, BRANCH_STATUS.LOADING, { loadingMessage:'Leyendo fila 1…', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
       saveAdminState(); renderSheetScreen();
-      try { await readBranchHeaders(index); } catch(err){ setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:err.message||'No se pudieron leer encabezados', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) }); alert(err.message||'No se pudieron leer encabezados'); return; }
+      try { await readBranchHeaders(index); } catch(err){ setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:err.message||'No se pudieron leer encabezados', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) }); showToast(err.message||'No se pudieron leer encabezados', 'error', 3800); return; }
     }
     await saveBranchSheetMapping(index);
     branch.sheetStatusText = 'Importando productos sin borrar el mapeo de columnas...';
@@ -3208,8 +4105,8 @@ function getSheetBranchOpenMap(){
         };
       }).filter(p=>p.sku || p.nombre || p.barras || p.ubicacion || p.almacen);
 
-      appState.products = list;
-      appState.filtered = list;
+      setProductDataset(list);
+      appState.filtered = appState.products.slice();
       syncBranchLayoutWithProducts(index, list);
       appState.activeBranchIndex = index;
       branch.sheetPreviewProducts = list.slice(0, 12000);
@@ -3220,15 +4117,23 @@ function getSheetBranchOpenMap(){
       branch.lastSheetCount = totalRows || list.length;
       branch.sheetConnected = true;
       branch.sheetStatusText = `Importados: ${list.length.toLocaleString('es-PE')} • detectados ${branch.lastSheetCount.toLocaleString('es-PE')}`;
+      branch.lastImportAt = new Date().toISOString();
+      branch.lastImportStatus = list.length ? 'success' : 'empty';
+      branch.lastImportSource = 'google-sheet-ui';
+      branch.lastImportError = '';
       setBranchMetaStatus(branch, BRANCH_STATUS.IMPORTED, { touchImportedAt:true, headerCount:getSheetBranchHeaderCount(branch), productCount:list.length });
       saveAdminState();
       await persistBranchSheet(index, { includeProducts:true });
+      await fetchProductsSummary(index);
       contentStatus.textContent = 'Productos importados y guardados en servidor.';
       renderSheetScreen();
+      showToast(`Se importaron ${list.length.toLocaleString('es-PE')} productos.`, 'success', 3200);
     }catch(err){
       branch.sheetStatusText = err.message || 'Error al importar';
+      branch.lastImportStatus = 'error';
+      branch.lastImportError = branch.sheetStatusText;
       setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:branch.sheetStatusText, headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
-      saveAdminState(); renderSheetScreen(); alert(branch.sheetStatusText);
+      saveAdminState(); renderSheetScreen(); showToast(branch.sheetStatusText, 'error', 4000);
     }
   }
 
@@ -3261,11 +4166,14 @@ function getSheetBranchOpenMap(){
       const statusText = statusInfo.label;
       const helperText = String(b.sheetStatusText || '').trim();
       const helperHtml = helperText && helperText !== statusText ? `<div class="tiny muted sheet-helper-text">${escapeHtml(helperText)}</div>` : '';
-      const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(ensureBranchMeta(b).lastImportedAt))}</span></div>`;
+      const importStamp = b.lastImportAt || ensureBranchMeta(b).lastImportedAt;
+      const importBadge = b.lastImportStatus ? `<span>Estado importación: ${escapeHtml(String(b.lastImportStatus || '').toUpperCase())}</span>` : '';
+      const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
+      const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
       const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
-      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y en qué orden verlas</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
+      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y en qué orden verlas</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;
 
     contentWrap.querySelectorAll('[data-sheet-toggle]').forEach(el=>el.onclick=async (e)=>{ const i=+e.currentTarget.dataset.sheetToggle; const wasOpen=!!openMap[i]; Object.keys(openMap).forEach(k=>{openMap[k]=false;}); openMap[i]=!wasOpen; if(openMap[i]){ await activateBranchSelection(i); } renderSheetScreen(); });
@@ -3279,7 +4187,8 @@ function getSheetBranchOpenMap(){
     });
     contentWrap.querySelectorAll('[data-sheet-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetLink(+e.currentTarget.dataset.sheetSave));
     contentWrap.querySelectorAll('[data-sheet-import]').forEach(el=>el.onclick=(e)=>importBranchSheet(+e.currentTarget.dataset.sheetImport));
-    contentWrap.querySelectorAll('[data-sheet-map-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetMapping(+e.currentTarget.dataset.sheetMapSave));
+    contentWrap.querySelectorAll('[data-sheet-clear-products]').forEach(el=>el.onclick=(e)=>clearBranchImportedData(+e.currentTarget.dataset.sheetClearProducts,'products'));
+        contentWrap.querySelectorAll('[data-sheet-map-save]').forEach(el=>el.onclick=(e)=>saveBranchSheetMapping(+e.currentTarget.dataset.sheetMapSave));
     contentWrap.querySelectorAll('[data-sheet-add-header]').forEach(el=>el.onclick=(e)=>addSheetMapRow(+e.currentTarget.dataset.sheetAddHeader));
     contentWrap.querySelectorAll('[data-map-del]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapDel.split(':'); deleteSheetMapRow(+i,id); });
     contentWrap.querySelectorAll('[data-map-up]').forEach(el=>el.onclick=(e)=>{ const [i,id] = e.currentTarget.dataset.mapUp.split(':'); moveSheetMapRow(+i,id,-1); });
@@ -3302,6 +4211,8 @@ function getSheetBranchOpenMap(){
     });
     const btnSheetExpand = document.getElementById('btnSheetExpand');
     if(btnSheetExpand) btnSheetExpand.onclick = toggleSheetExpanded;
+    const btnExportConfig = document.getElementById('btnExportConfig'); if(btnExportConfig) btnExportConfig.onclick = exportAdminConfig;
+    const btnImportConfig = document.getElementById('btnImportConfig'); if(btnImportConfig) btnImportConfig.onclick = triggerImportConfig;
     const btnSheetSaveCurrent = document.getElementById('btnSheetSaveCurrent');
     if(btnSheetSaveCurrent) btnSheetSaveCurrent.onclick = async ()=>{ const idx = getCurrentSheetBranchIndex(); await saveBranchSheetCurrent(idx); };
   }
@@ -3544,9 +4455,59 @@ function getSheetBranchOpenMap(){
           </div>
         </div>
       </div>`;
-    detailWrap.innerHTML = '';
-    detailTitle.textContent = '';
-    detailSubtitle.textContent = '';
+    detailWrap.innerHTML = `
+      <div class="viewer-focus-banner">
+        <div class="focus-copy">
+          <div class="focus-title">${prod ? escapeHtml(prod.nombre || 'Producto activo') : 'Plano listo para explorar'}</div>
+          <div class="focus-sub">${prod ? `Zona ${escapeHtml(prod.zona || '—')} • Rack ${escapeHtml(primaryRackId || '—')} • Nivel ${escapeHtml(String(prod.nivel || 0))} • Slot ${escapeHtml(String(prod.slot || 0))}` : 'Selecciona un producto desde la lista y el visor centrará zona, rack y ubicación principal.'}</div>
+        </div>
+        <div class="focus-actions">
+          <button class="btn secondary" type="button" id="viewerCenterSelectedBtn">Centrar producto</button>
+          <button class="btn secondary" type="button" id="viewerRefreshMapBtn">Actualizar visor</button>
+        </div>
+      </div>
+      <div class="panel-shell">
+        <div class="panel-shell-head">
+          <div>
+            <b>Ubicación principal y de almacén</b>
+            <div class="muted tiny">Resumen uniforme para leer rápido la ruta del producto dentro del plano.</div>
+          </div>
+          <span class="chip">${prod ? escapeHtml(prod.sku || 'SKU —') : 'Sin selección'}</span>
+        </div>
+        <div class="panel-shell-grid-2">
+          <div class="metric-tile">
+            <span class="metric-label">Ubicación principal</span>
+            <span class="metric-value">${escapeHtml(primaryLoc)}</span>
+            <span class="metric-note">Zona ${escapeHtml(prod?.zona || '—')} • Rack ${escapeHtml(primaryRackId || '—')} • Nivel ${escapeHtml(String(prod?.nivel || 0))} • Slot ${escapeHtml(String(prod?.slot || 0))}</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Ubicación de almacén</span>
+            <span class="metric-value">${escapeHtml(storeLoc)}</span>
+            <span class="metric-note">Zona ${escapeHtml(prod?.zonaStore || '—')} • Rack ${escapeHtml(storeRackId || '—')} • Nivel ${escapeHtml(String(prod?.nivelStore || 0))} • Slot ${escapeHtml(String(prod?.slotStore || 0))}</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel-shell compact">
+        <div class="panel-shell-grid-3">
+          <div class="metric-tile">
+            <span class="metric-label">Sucursal</span>
+            <span class="metric-value">${escapeHtml(activeBranch?.name || '—')}</span>
+            <span class="metric-note">Visor conectado a la sucursal activa.</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Rack activo</span>
+            <span class="metric-value">${escapeHtml(primaryRackId || '—')}</span>
+            <span class="metric-note">${prod ? 'Se resalta en el mapa isométrico.' : 'Selecciona un producto para resaltarlo.'}</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Estado visual</span>
+            <span class="metric-value">${prod ? 'En foco' : 'Exploración libre'}</span>
+            <span class="metric-note">${prod ? 'Zona, rack y slots sincronizados.' : 'Puedes navegar por el plano manualmente.'}</span>
+          </div>
+        </div>
+      </div>`;
+    detailTitle.textContent = 'Ruta visual del producto';
+    detailSubtitle.textContent = prod ? 'La selección actual ya está conectada con zona, rack, nivel y slot.' : 'Resumen operativo del visor isométrico.';
     detailStatus.textContent = prod ? `${primaryRackId} / ${storeRackId}` : '—';
     detailChip.textContent = prod ? `U: N${prod.nivel||0} S${prod.slot||0} • A: N${prod.nivelStore||0} S${prod.slotStore||0}` : '—';
     const svg = $('#isoMap');
@@ -3642,6 +4603,10 @@ function getSheetBranchOpenMap(){
     if($('#rackStoreLoc')) $('#rackStoreLoc').textContent = storeLoc;
     contentStatus.textContent = prod ? `Producto activo: ${prod.sku} • ${prod.rack}` : 'Visualizando layout actual';
     contentFootRight.textContent = prod ? `${primaryLoc} • ALM: ${storeLoc}` : `${(appState.layout?.zones || []).length} zonas • ${(appState.layout?.racks || []).length} racks`;
+    const centerBtn = document.getElementById('viewerCenterSelectedBtn');
+    if(centerBtn) centerBtn.onclick = () => focusSelectedProductInViewer({ switchScreen:false });
+    const refreshBtn = document.getElementById('viewerRefreshMapBtn');
+    if(refreshBtn) refreshBtn.onclick = () => renderMapView();
   }
 
   function buildBlinkMarker(x, y, color = '#ffd84d', store = false){
@@ -4982,6 +5947,7 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
+    if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
     ensureRackProps();
     contentTitle.textContent = 'Edición de Layout';
     appState.editor.view = 'ortho';
@@ -4993,6 +5959,8 @@ function getSheetBranchOpenMap(){
     detailTitle.textContent = 'Edición de layout';
     detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
     setTags([
+      { label:'↶ Undo', active: true, action:'history-undo-layout', extraClass:'history-chip' },
+      { label:'↷ Redo', active: true, action:'history-redo-layout', extraClass:'history-chip' },
       { label:'Seleccionar', active: appState.editor.mode === 'select', action:'toggle-select' },
       { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
       { label:'Bloquear zonas', active: !!appState.editor.zonesLocked, action:'toggle-lock-zones' },
@@ -5009,7 +5977,7 @@ function getSheetBranchOpenMap(){
         <div class="layout-shell">
           <aside class="layout-inner-sidebar">
             <div class="layout-tool-top">
-              <div class="save-strip"><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
+              <div class="save-strip" style="display:grid;gap:8px"><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
               <select id="layoutBranchSelect" class="seg-btn" style="width:100%;padding-right:28px">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
             </div>
             <div class="layout-tool-list">
@@ -5062,6 +6030,9 @@ function getSheetBranchOpenMap(){
     renderLayoutStackMenu();
     bindLayoutToolbar();
     bindLayoutAutoFit();
+    const undoBtn = document.querySelector('[data-history-undo="layout"]'); if(undoBtn) undoBtn.onclick = () => undoHistory('layout');
+    const redoBtn = document.querySelector('[data-history-redo="layout"]'); if(redoBtn) redoBtn.onclick = () => redoHistory('layout');
+    updateUndoRedoUi();
     const zl = $('#zoomLabel'); if(zl){ const vb = appState.editor.viewBox || {w:900}; zl.textContent = `${Math.round((900 / vb.w) * 100)}%`; }
   }
 
@@ -5752,6 +6723,10 @@ function zoomLayout(factor, center){
       else if(action === 'toggle-racks') appState.editor.racksVisible = appState.editor.racksVisible === false ? true : false;
       else if(action === 'toggle-zone-props') appState.editor.inspectorZoneOpen = !appState.editor.inspectorZoneOpen;
       else if(action === 'toggle-rack-props') appState.editor.rackPropsOpen = !appState.editor.rackPropsOpen;
+      else if(action === 'history-undo-layout'){ undoHistory('layout'); return; }
+      else if(action === 'history-redo-layout'){ redoHistory('layout'); return; }
+      else if(action === 'history-undo-racks'){ undoHistory('racks'); return; }
+      else if(action === 'history-redo-racks'){ redoHistory('racks'); return; }
       renderLayoutEditor();
     });
     if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
@@ -6390,6 +7365,7 @@ function zoomLayout(factor, center){
   }
 
   function renderRackModels(){
+    if(!(appState.history?.racks?.undoStack?.length)) recordHistorySnapshot('racks');
     const previousScreen = appState.screen;
     appState.screen = 'racks';
     if(previousScreen !== 'racks') resetRackPreviewCamera();
@@ -6397,7 +7373,11 @@ function zoomLayout(factor, center){
     contentSubtitle.textContent = 'Diseña modelos reutilizables de rack, sus niveles y su preview técnico.';
     detailTitle.textContent = 'Preview del modelo';
     detailSubtitle.textContent = 'Arrastra para mover y usa la rueda para acercar o alejar.';
-    setTags(['modelos', 'niveles', 'preview', 'biblioteca']);
+    setTags([
+      { label:'↶ Undo', active:true, action:'history-undo-racks', extraClass:'history-chip' },
+      { label:'↷ Redo', active:true, action:'history-redo-racks', extraClass:'history-chip' },
+      'modelos', 'niveles', 'preview', 'biblioteca'
+    ]);
 
     if (!Array.isArray(appState.models) || !appState.models.length){
       appState.models = [
@@ -6471,9 +7451,12 @@ function zoomLayout(factor, center){
     if ($('#btnNewModel')) $('#btnNewModel').onclick = createNewRackModelDraft;
     if ($('#btnDuplicateModel')) $('#btnDuplicateModel').onclick = () => duplicateRackModel(appState.selectedModelId);
     if ($('#btnDeleteModel')) $('#btnDeleteModel').onclick = () => deleteRackModel(appState.selectedModelId);
+    const undoRackBtn = document.querySelector('[data-history-undo="racks"]'); if(undoRackBtn) undoRackBtn.onclick = () => undoHistory('racks');
+    const redoRackBtn = document.querySelector('[data-history-redo="racks"]'); if(redoRackBtn) redoRackBtn.onclick = () => redoHistory('racks');
 
     renderModelsList();
     renderRackModelPreview();
+    updateUndoRedoUi();
     contentStatus.textContent = 'Modo activo: EDICIÓN DE RACK • biblioteca editable, niveles integrados y preview técnico.';
     contentFootRight.textContent = `${appState.models.length} modelos`;
   }
@@ -6781,6 +7764,7 @@ function zoomLayout(factor, center){
 
   
   function createNewRackModelDraft(){
+    recordHistorySnapshot('racks');
     const base = {
       id: 'm_' + Math.random().toString(16).slice(2,8),
       name: 'Nuevo modelo',
@@ -6810,6 +7794,7 @@ function zoomLayout(factor, center){
 
   
   function duplicateRackModel(id){
+    recordHistorySnapshot('racks');
     const model = rackModel(id);
     if(!model) return;
     const copy = {
@@ -6827,6 +7812,7 @@ function zoomLayout(factor, center){
 
   
   function deleteRackModel(id){
+    recordHistorySnapshot('racks');
     if(!id || !Array.isArray(appState.models) || appState.models.length <= 1) return;
     appState.models = appState.models.filter(m => m.id !== id);
     if(!appState.models.some(m => m.id === appState.selectedModelId)) appState.selectedModelId = appState.models[0]?.id || '';
@@ -6848,6 +7834,7 @@ function zoomLayout(factor, center){
 
   
   function autoDistributeLevels(modelId){
+    recordHistorySnapshot('racks');
     const targetId = modelId || appState.selectedModelId;
     const draft = rackModel(targetId);
     if(!draft) return;
@@ -6870,6 +7857,7 @@ function zoomLayout(factor, center){
 
   
   async function saveRackModel(){
+    recordHistorySnapshot('racks');
     saveRackModels();
     await saveRemoteAppState('modelo de rack');
     renderRackModels();
@@ -6877,6 +7865,7 @@ function zoomLayout(factor, center){
 
 
   function updateRackModelField(id, field, rawValue){
+    recordHistorySnapshot('racks');
     const model = rackModel(id);
     if(!model) return;
     appState.selectedModelId = id;
@@ -7183,9 +8172,23 @@ function zoomLayout(factor, center){
     const title = document.getElementById('authTitle');
     const subtitle = document.getElementById('authSubtitle');
     if(title) title.textContent = mode === 'register' ? 'Crear cuenta' : 'Iniciar sesión';
-    if(subtitle) subtitle.textContent = mode === 'register' ? 'Crea una cuenta administradora o visualizadora. Cada empresa guarda sus propios cambios.' : 'Usa tu usuario y contraseña para administrar guardados y cambios persistentes.';
-    if(btnDoLogin) btnDoLogin.textContent = mode === 'register' ? 'Crear e ingresar' : 'Ingresar';
+    if(subtitle) subtitle.textContent = mode === 'register'
+      ? (role === 'viewer' ? 'Crea un acceso viewer separado del administrador usando el código de empresa.' : 'Crea una cuenta administradora para gestionar sucursales, racks y layouts persistentes.')
+      : (role === 'viewer' ? 'Ingresa como viewer para consultar productos y ubicaciones sin editar.' : 'Ingresa como administrador para gestionar cambios y guardados persistentes.');
+    if(btnDoLogin){ const nextLabel = mode === 'register' ? 'Crear e ingresar' : 'Ingresar'; btnDoLogin.dataset.label = nextLabel; if(!authBusy) btnDoLogin.textContent = nextLabel; }
     if(btnToggleAuthMode) btnToggleAuthMode.textContent = mode === 'register' ? 'Ya tengo cuenta' : 'Crear cuenta';
+    document.querySelectorAll('.auth-segment-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+    document.querySelectorAll('.auth-role-card').forEach(btn => btn.classList.toggle('active', btn.dataset.role === role));
+  }
+
+  function setAuthMode(mode){
+    if(authMode) authMode.value = mode === 'register' ? 'register' : 'login';
+    syncAuthModeUi();
+  }
+
+  function setAuthRole(role){
+    if(authRole) authRole.value = role === 'viewer' ? 'viewer' : 'admin';
+    syncAuthModeUi();
   }
 
   function openAuthModal(message=''){
@@ -7194,7 +8197,6 @@ function zoomLayout(factor, center){
     authModal.style.display = 'flex';
     document.body.classList.add('auth-open');
     if(authStatus) authStatus.textContent = message || '';
-    if(loginUsername && !loginUsername.value) loginUsername.value = 'admin';
     if(loginPassword) loginPassword.value = '';
     if(authMode && !authMode.value) authMode.value = 'login';
     if(authRole && !authRole.value) authRole.value = 'admin';
@@ -7209,6 +8211,7 @@ function zoomLayout(factor, center){
     authModal.style.display = 'none';
     document.body.classList.remove('auth-open');
     if(authStatus) authStatus.textContent = '';
+    setAuthPending(false);
   }
 
   function updateAuthUi(){
@@ -7238,6 +8241,31 @@ function zoomLayout(factor, center){
   }
 
   function wait(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  let authBusy = false;
+  function setAuthPending(pending, message=''){
+    authBusy = !!pending;
+    if(btnDoLogin){
+      btnDoLogin.disabled = !!pending;
+      btnDoLogin.dataset.label = btnDoLogin.dataset.label || btnDoLogin.textContent || 'Ingresar';
+      btnDoLogin.textContent = pending ? 'Ingresando…' : (btnDoLogin.dataset.label || btnDoLogin.textContent || 'Ingresar');
+      btnDoLogin.classList.toggle('is-loading', !!pending);
+    }
+    if(btnContinueViewer){
+      btnContinueViewer.disabled = !!pending;
+      btnContinueViewer.classList.toggle('is-loading', !!pending);
+    }
+    if(loginUsername) loginUsername.disabled = !!pending;
+    if(loginPassword) loginPassword.disabled = !!pending;
+    if(authMode) authMode.disabled = !!pending;
+    if(authRole) authRole.disabled = !!pending;
+    document.querySelectorAll('.auth-role-card,.auth-segment-btn').forEach(el=>{
+      el.classList.toggle('disabled', !!pending);
+      el.style.pointerEvents = pending ? 'none' : '';
+      el.setAttribute('aria-disabled', pending ? 'true' : 'false');
+    });
+    if(authStatus && pending) authStatus.textContent = message || 'Validando acceso…';
+  }
 
   async function warmService(maxAttempts=6){
     for(let i=0;i<maxAttempts;i++){
@@ -7345,13 +8373,14 @@ function zoomLayout(factor, center){
     appState.activeBranchIndex = 0;
     appState.layout = layoutPayload.layout || defaultLayout();
     if(appState.editor) appState.editor.viewBox = layoutPayload.viewBox || { x:0, y:0, w:900, h:620 };
-    appState.products = imported;
-    appState.filtered = imported.slice();
+    setProductDataset(imported);
+    appState.filtered = appState.products.slice();
     appState.auth = { loggedIn:false, user:'', role:'viewer', company:'', companyCode:'', viewerGuest:true };
     return true;
   }
 
   function continueAsViewer(){
+    if(authBusy) return;
     appState.auth = { loggedIn:false, user:'', role:'viewer', company:'', companyCode:'', viewerGuest:true };
     updateAuthUi();
     applyRoleUi();
@@ -7360,39 +8389,49 @@ function zoomLayout(factor, center){
   }
 
   async function doLogin(){
+    if(authBusy) return false;
     const username = String(loginUsername?.value || '').trim();
     const password = String(loginPassword?.value || '');
     const mode = String(authMode?.value || 'login');
     const role = String(authRole?.value || 'admin');
     if(!username || !password){ if(authStatus) authStatus.textContent = 'Completa usuario y contraseña.'; return false; }
+    setAuthPending(true, mode === 'register' ? 'Creando acceso…' : 'Ingresando…');
     try{
       const payload = { username, password };
-      let url = '/api/login';
+      let endpoint = '/api/login';
       if(mode === 'register'){
-        url = '/api/register';
-        payload.mode = role;
+        endpoint = role === 'viewer' ? '/api/viewers/register' : '/api/register';
+        payload.role = role;
         payload.companyName = String(authCompanyName?.value || '').trim();
         payload.companyCode = String(authCompanyCode?.value || '').trim();
-        if(role !== 'viewer' && !payload.companyName) throw new Error('Ingresa el nombre de la empresa.');
-        if(role === 'viewer' && !payload.companyCode) throw new Error('Ingresa el código de empresa.');
       }
-      const res = await fetch(url, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const res = await fetch(endpoint, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json().catch(()=>({}));
       if(!res.ok || !data.ok) throw new Error(data.error || 'No se pudo iniciar sesión');
+
       appState.auth = { loggedIn:true, user:data.user || username, role:data.role || 'admin', company:data.company_name || '', companyCode:data.company_code || '', viewerGuest:false };
       updateAuthUi();
       applyRoleUi();
-      await loadRemoteAppState();
-      await loadAllBranchSheetConfigsFromServer();
-      renderCurrentScreen();
-      closeAuthModal();
-      alert(mode === 'register' ? `Cuenta creada correctamente. Código de empresa: ${appState.auth.companyCode || '-'}` : 'Sesión iniciada correctamente.');
+
+      closeAuthModal(true);
+      setScreen(appState.auth?.role === 'viewer' ? 'viewer' : 'admin');
+
+      Promise.allSettled([loadRemoteAppState(), loadAllBranchSheetConfigsFromServer()]).then(() => {
+        try{
+          ensureProductPagerUi();
+          ensureProductFilterBar();
+          syncProductFilterUi();
+          renderCurrentScreen();
+        }catch(_err){}
+      });
       return true;
     }catch(err){
       const msg = err.message || 'Error al iniciar sesión';
       if(authStatus) authStatus.textContent = msg;
-      try { alert(msg); } catch(_err) {}
+      if(/network|fetch|servidor|disponible|timeout/i.test(String(msg))) showToast(msg, 'error', 3200);
       return false;
+    }finally{
+      setAuthPending(false);
     }
   }
 
@@ -7401,7 +8440,8 @@ function zoomLayout(factor, center){
     appState.auth = { loggedIn:false, user:'', role:'', company:'', companyCode:'', viewerGuest:false };
     updateAuthUi();
     applyRoleUi();
-    openAuthModal('Sesión cerrada.');
+    openAuthModal('');
+    showToast('Sesión cerrada.', 'success', 1800);
   }
 
   function renderCurrentScreen(){
@@ -7505,7 +8545,9 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
       rehydratePersistedBranchView();
     }
     renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products);
+    bindActiveProductCardExpansion();
     if(appState.products[0]) selectProduct(appState.products[0]);
+    else syncActiveProductCardHint();
     applyBrand();
     if(viewerToken){
       setScreen('viewer');
@@ -7515,23 +8557,27 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
       closeAuthModal(true);
     }else if(appState.auth?.transientUnavailable){
       setScreen('viewer');
-      openAuthModal('El servicio está despertando o recuperando tu sesión. Espera unos segundos y recarga.');
+      openAuthModal('Conectando con el servicio…');
     }else{
       appState.auth = { ...(appState.auth||{}), loggedIn:false, viewerGuest:false, role:'viewer' };
       setScreen('viewer');
-      openAuthModal('Inicia sesión o continúa como visualizador.');
+      openAuthModal('');
     }
     applyRoleUi();
   }
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
+  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
-  if(btnDoLogin){ btnDoLogin.onclick = doLogin; btnDoLogin.addEventListener('click', doLogin); }
+  if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
   if(authRole) authRole.addEventListener('change', syncAuthModeUi);
-  if(btnToggleAuthMode){ const __toggleAuthMode = () => { if(authMode){ authMode.value = authMode.value === 'register' ? 'login' : 'register'; syncAuthModeUi(); } }; btnToggleAuthMode.onclick = __toggleAuthMode; btnToggleAuthMode.addEventListener('click', __toggleAuthMode); }
+  document.querySelectorAll('.auth-segment-btn').forEach(btn => btn.addEventListener('click', ()=> setAuthMode(btn.dataset.mode || 'login')));
+  document.querySelectorAll('.auth-role-card').forEach(btn => btn.addEventListener('click', ()=> setAuthRole(btn.dataset.role || 'admin')));
+  if(btnToggleAuthMode){ const __toggleAuthMode = () => setAuthMode((authMode?.value || 'login') === 'register' ? 'login' : 'register'); btnToggleAuthMode.onclick = __toggleAuthMode; }
   if(authModal) authModal.addEventListener('click', (e) => { if(e.target === authModal) closeAuthModal(); });
-  if(btnContinueViewer){ btnContinueViewer.onclick = continueAsViewer; btnContinueViewer.addEventListener('click', continueAsViewer); }
+  if(btnContinueViewer){ btnContinueViewer.onclick = continueAsViewer; }
   if(loginPassword) loginPassword.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
   if(loginUsername) loginUsername.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
 
