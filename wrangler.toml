@@ -1,8 +1,0 @@
-name = "wms-visual-v1"
-compatibility_date = "2025-08-01"
-pages_build_output_dir = "dist"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "wms_visual_v1"
-database_id = "REEMPLAZA_CON_TU_DATABASE_ID"
