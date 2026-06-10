@@ -1,93 +1,158 @@
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('admin','viewer')),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+# WMS Visual Interno V1
 
-CREATE TABLE IF NOT EXISTS companies (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  system_name TEXT NOT NULL,
-  primary_color TEXT DEFAULT '#2563eb',
-  secondary_color TEXT DEFAULT '#0f172a',
-  logo TEXT,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+Aplicación web inicial para encontrar la ubicación de productos en una tienda/almacén con sucursales, Google Sheets, buscador, cards, editor básico de plano y editor básico de estantes.
 
-CREATE TABLE IF NOT EXISTS branches (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  code TEXT,
-  address TEXT,
-  active INTEGER DEFAULT 1,
-  sheet_url TEXT,
-  sheet_name TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+## Qué incluye esta versión
 
-CREATE TABLE IF NOT EXISTS column_mappings (
-  branch_id TEXT PRIMARY KEY,
-  mapping_json TEXT NOT NULL,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+- Login inicial.
+- Roles: administrador y visualizador.
+- Sidebar con módulos principales.
+- Configuración de empresa.
+- Creación de sucursales.
+- Vinculación de Google Sheets por URL y nombre de hoja.
+- Lectura de encabezados desde fila 1.
+- Mapeo de columnas.
+- Importación de productos.
+- Buscador por nombre, SKU, código, marca, zona, estante, nivel, slot y almacén.
+- Cards con imagen del producto.
+- Editor básico de zonas en plano.
+- Editor básico de estantes con niveles y columnas.
+- Vista de plano con resaltado de zona y estante.
+- Estructura preparada para Cloudflare Pages + D1.
 
-CREATE TABLE IF NOT EXISTS products (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  sku TEXT,
-  barcode TEXT,
-  name TEXT NOT NULL,
-  brand TEXT,
-  category TEXT,
-  image_url TEXT,
-  stock TEXT,
-  zone TEXT,
-  rack TEXT,
-  level TEXT,
-  slot TEXT,
-  warehouse TEXT,
-  raw_json TEXT,
-  imported_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
+## Usuarios iniciales
 
-CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
-CREATE INDEX IF NOT EXISTS idx_products_search ON products(name, sku, barcode, brand, zone, rack);
+Administrador:
 
-CREATE TABLE IF NOT EXISTS zones (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  x REAL DEFAULT 0,
-  y REAL DEFAULT 0,
-  w REAL DEFAULT 220,
-  h REAL DEFAULT 140,
-  color TEXT DEFAULT '#dbeafe'
-);
+```txt
+Correo: admin@empresa.com
+Clave: admin123
+```
 
-CREATE TABLE IF NOT EXISTS racks (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  zone_id TEXT,
-  name TEXT NOT NULL,
-  type TEXT DEFAULT 'simple',
-  levels INTEGER DEFAULT 4,
-  columns INTEGER DEFAULT 3,
-  slots INTEGER DEFAULT 12,
-  x REAL DEFAULT 0,
-  y REAL DEFAULT 0,
-  w REAL DEFAULT 120,
-  h REAL DEFAULT 42,
-  color TEXT DEFAULT '#334155'
-);
+Visualizador:
 
-INSERT OR IGNORE INTO users (id, name, email, password, role)
-VALUES ('u_admin', 'Administrador', 'admin@empresa.com', 'admin123', 'admin');
+```txt
+Correo: visor@empresa.com
+Clave: visor123
+```
 
-INSERT OR IGNORE INTO users (id, name, email, password, role)
-VALUES ('u_viewer', 'Visualizador', 'visor@empresa.com', 'visor123', 'viewer');
+## Cómo probarlo en tu computadora
 
-INSERT OR IGNORE INTO companies (id, name, system_name)
-VALUES ('company_1', 'Mi Empresa', 'WMS Visual Interno');
+Necesitas instalar Node.js. Después:
+
+```bash
+npm install
+npm run dev
+```
+
+Luego abre la URL que aparece en la terminal, normalmente:
+
+```txt
+http://localhost:5173
+```
+
+## Cómo debe estar tu Google Sheet
+
+La fila 1 debe tener encabezados. Ejemplo:
+
+```txt
+Nombre Bsale | SKU | Barras | Marca | Categoria | Imagen | Stock | Zona | Estante | Nivel | Ubicacion | Almacen
+```
+
+Luego, dentro de la app:
+
+1. Crea una sucursal.
+2. Entra a Config. Sheets.
+3. Selecciona la sucursal.
+4. Pega la URL del Google Sheet.
+5. Escribe el nombre exacto de la hoja.
+6. Presiona “Leer fila 1”.
+7. Mapea las columnas.
+8. Presiona “Guardar e importar”.
+
+## Importante sobre Google Sheets
+
+Para que la app pueda leer el Sheet sin usar API de pago ni OAuth, el archivo debe estar accesible como CSV.
+
+Forma simple:
+
+1. Abre Google Sheets.
+2. Clic en Compartir.
+3. Cambia a “Cualquier persona con el enlace puede ver”.
+4. Usa la URL normal del Sheet en la app.
+
+La app intentará convertir la URL automáticamente a formato CSV.
+
+## Sobre almacenamiento
+
+Esta versión tiene dos capas:
+
+### Modo local inmediato
+
+La app ya funciona en el navegador usando `localStorage` para que puedas verla y probar el flujo sin configurar Cloudflare.
+
+### Modo producción recomendado
+
+La carpeta ya incluye:
+
+- `functions/api`: APIs para Cloudflare Pages Functions.
+- `migrations/0001_init.sql`: estructura inicial de Cloudflare D1.
+- `wrangler.toml`: configuración base.
+
+La siguiente fase será conectar completamente el frontend con esas APIs para que todo quede persistido en Cloudflare D1 y se pueda usar desde varios dispositivos.
+
+## Cómo preparar Cloudflare D1 gratis
+
+1. Crea una cuenta en Cloudflare.
+2. En Cloudflare, crea un proyecto Pages conectado a GitHub.
+3. Crea una base D1 llamada:
+
+```txt
+wms_visual_v1
+```
+
+4. Copia el `database_id` y reemplázalo en `wrangler.toml`:
+
+```toml
+database_id = "REEMPLAZA_CON_TU_DATABASE_ID"
+```
+
+5. Ejecuta la migración:
+
+```bash
+npx wrangler d1 migrations apply wms_visual_v1
+```
+
+6. Build de la app:
+
+```bash
+npm run build
+```
+
+7. Deploy:
+
+```bash
+npm run cf:deploy
+```
+
+## Archivos principales
+
+```txt
+src/main.tsx          App principal
+src/styles.css        Estilos visuales
+functions/api         APIs para Cloudflare Pages
+migrations            Base de datos D1
+wrangler.toml         Configuración Cloudflare
+README.md             Guía de uso
+```
+
+## Próxima mejora recomendada
+
+La próxima fase debe ser:
+
+1. Conectar el frontend directamente a Cloudflare D1.
+2. Dejar `localStorage` solo como respaldo.
+3. Hacer el editor de plano con drag & drop real.
+4. Mejorar el editor de estantes con plantillas.
+5. Agregar modo tablet/celular más fino.
+
