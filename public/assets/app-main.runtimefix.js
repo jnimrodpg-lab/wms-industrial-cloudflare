@@ -3298,6 +3298,10 @@
     }));
     if(appState.admin.activeBranch >= appState.admin.branches.length) appState.admin.activeBranch = 0;
   }
+  function renderCompanySectionHeader(step, title, subtitle=''){
+    return `<div class="company-config-section-header"><span class="company-config-step">${escapeHtml(String(step || '•'))}</span><div class="company-config-section-copy"><b>${escapeHtml(title || '')}</b>${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ''}</div></div>`;
+  }
+
   function renderAdminBranchCard(branch, index){
     const expanded = branch.expanded !== false;
     const statusLabel = index === 0 ? 'Principal' : 'Secundaria';
@@ -3331,11 +3335,12 @@
           </div>
         </div>
         <div class="company-branch-body">
+          ${renderCompanySectionHeader('A', 'Configuración de sucursal', 'Datos principales y almacén principal.')}
           <div class="company-branch-fields two">
             <div class="grid"><label>Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div>
             <div class="grid"><label>Almacén principal</label><select data-field="branch-main-warehouse" data-index="${index}">${warehouseOptions}</select></div>
           </div>
-          <div class="company-subsection-title">Almacenes adicionales (${warehouses.length})</div>
+          ${renderCompanySectionHeader('B', `Almacenes adicionales (${warehouses.length})`, 'Administra los almacenes vinculados a esta sucursal.')}
           <div class="company-warehouse-list">${rows}</div>
           <button class="company-add-inline" type="button" data-action="add-warehouse" data-index="${index}">＋ Agregar almacén adicional</button>
         </div>
@@ -3370,7 +3375,7 @@
         <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" id="companyPreviewBtn" type="button">Vista previa pública ↗</button></div>
         <section class="company-top-grid">
           <article class="company-card company-info-card">
-            <div class="company-card-head"><span class="company-card-icon">⌘</span><div><b>Información general</b><small>Datos principales de tu empresa.</small></div></div>
+            ${renderCompanySectionHeader(1, 'Información general', 'Datos principales de la empresa y logo.')}
             <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(companyName)}"></div>
             <div class="company-logo-grid">
               <div class="grid"><label>Logo</label><div class="company-logo-drop"><div class="company-logo-drop-inner">${cfg.logo ? `<img src="${cfg.logo}" alt="Logo actual">` : '<span class="company-logo-mark">⌂</span><span>Logo actual</span>'}</div></div></div>
@@ -3379,13 +3384,13 @@
             <div class="company-inline-note">ⓘ Los cambios se guardarán de forma inmediata.</div>
           </article>
           <article class="company-card company-brand-card">
-            <div class="company-card-head"><span class="company-card-icon gold">◔</span><div><b>Branding</b><small>Personaliza la identidad visual.</small></div></div>
+            ${renderCompanySectionHeader(2, 'Branding', 'Colores, acentos y vista previa visual.')}
             <div class="grid"><label>Colores principales</label><div class="company-swatch-row">${brandingColors.map((color, idx)=>`<button class="company-swatch${idx===activeColorIdx?' active':''}" type="button" data-action="branding-color" data-index="${idx}" title="Aplicar color ${escapeHtml(color)}" style="--sw:${escapeHtml(color)}"></button>`).join('')}<button class="company-swatch add" type="button" data-action="branding-add">＋</button></div><div class="company-brand-actions"><input type="color" id="brandingColorPicker" value="${escapeHtml(brandingColors[activeColorIdx] || '#6ff0a8')}"><button class="btn secondary compact" id="brandingApplyBtn" type="button">Aplicar color</button></div></div>
             <div class="grid"><label>Vista previa</label><div class="company-brand-preview"><span class="company-brand-cube">◫</span><b>${escapeHtml(companyName)}</b></div></div>
           </article>
         </section>
         <section class="company-card company-branches-panel">
-          <div class="company-panel-head"><div><b>Sucursales</b><small>Administra tus sucursales, almacenes y ubicaciones principales.</small></div><button class="btn" id="addBranchBtn">＋ Nueva sucursal</button></div>
+          <div class="company-panel-head sectionized"><div>${renderCompanySectionHeader(3, 'Sucursales y almacenes', 'Organiza sucursales, almacenes y ubicaciones principales.')}</div><button class="btn" id="addBranchBtn">＋ Nueva sucursal</button></div>
           <div class="company-branch-list">${cfg.branches.map((branch, idx)=>renderAdminBranchCard(branch, idx)).join('')}</div>
           <div class="company-drag-note">ⓘ Arrastra las sucursales para reordenarlas. La primera sucursal será la principal.</div>
         </section>

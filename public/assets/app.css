@@ -2753,3 +2753,18 @@ body.theme-light .company-brand-actions input[type="color"]{background:#fff;bord
 body.theme-light .company-swatch.active{box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16),0 6px 18px rgba(var(--accent-rgb),.10)}
 body.theme-light .company-save-btn{background:linear-gradient(180deg,rgb(var(--accent-rgb)),#2d6f53);color:#fff;box-shadow:0 12px 24px rgba(var(--accent-rgb),.18)}
 @media(max-width:1280px){.company-branch-list{max-height:clamp(280px,38vh,460px)}}
+
+
+.company-config-section-header{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.company-config-step{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:14px;background:rgba(var(--accent-rgb),.16);color:var(--accent);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.14) inset}
+.company-config-section-copy{display:grid;gap:4px}
+.company-config-section-copy b{font-size:18px;color:var(--text);line-height:1.1}
+.company-config-section-copy small{font-size:12px;color:var(--muted)}
+.company-panel-head.sectionized{align-items:center}
+.company-panel-head.sectionized > div{display:block;flex:1}
+.company-panel-head.sectionized .company-config-section-header{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.company-branch-body > .company-config-section-header{margin-top:2px;margin-bottom:10px;padding-bottom:10px}
+.company-branch-body > .company-config-section-header .company-config-step{width:30px;height:30px;border-radius:10px;font-size:12px}
+.company-branch-body > .company-config-section-header .company-config-section-copy b{font-size:14px}
+.company-branch-body > .company-config-section-header .company-config-section-copy small{font-size:11px}
+body.theme-light .company-config-section-header{border-bottom-color:rgba(44,138,104,.10)}
