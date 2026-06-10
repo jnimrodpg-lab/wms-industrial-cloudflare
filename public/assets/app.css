@@ -11,6 +11,8 @@
       --text:#edf4fb;
       --muted:#92a8bc;
       --accent:#5bb98c;
+      --accent-rgb:91,185,140;
+      --brand-active:#5bb98c;
       --accent-soft:rgba(91,185,140,.14);
       --gold:#ffd56c;
       --green:#6ae4a3;
@@ -2721,3 +2723,33 @@ body.theme-light .company-warehouse-illu .warehouse-door{background:linear-gradi
 body.theme-light .company-warehouse-illu .warehouse-floor{border-color:rgba(44,138,104,.10)}
 @media (max-width: 1380px){.company-top-grid{grid-template-columns:1fr}.company-summary-v2 .company-warehouse-illu{height:220px}}
 @media (max-width: 980px){.company-logo-grid,.company-branch-fields.two,.company-topbar-v2,.company-save-row{grid-template-columns:1fr;display:grid}.company-branch-head{grid-template-columns:44px 1fr}.company-branch-type-pill,.company-branch-actions{grid-column:2}.company-warehouse-row{grid-template-columns:36px 1fr 80px 36px 36px}.company-save-btn{min-width:unset;width:100%}}
+
+/* Functional fixes: company branding controls, branch scroll, preview actions */
+.company-brand-actions{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.company-brand-actions input[type="color"]{width:54px;height:42px;min-height:42px;padding:4px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.04);cursor:pointer}
+.company-brand-actions .compact{min-height:42px;border-radius:14px;padding:0 14px;font-size:13px}
+.company-branch-list{max-height:clamp(300px,42vh,560px);overflow-y:auto;overflow-x:hidden;padding-right:6px;scrollbar-gutter:stable}
+.company-branch-list::-webkit-scrollbar{width:10px}
+.company-branch-list::-webkit-scrollbar-thumb{background:rgba(var(--accent-rgb),.26);border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+.company-branch-list::-webkit-scrollbar-track{background:rgba(255,255,255,.025);border-radius:999px}
+.company-branch-card.collapsed{padding-bottom:14px}
+.company-branch-card.collapsed .company-branch-head{min-height:48px}
+.company-branch-toggle{font-size:18px;font-weight:900;transition:.18s ease}
+.company-branch-toggle:hover,.company-icon-btn:hover,.company-preview-btn:hover,.company-swatch:hover{transform:translateY(-1px);border-color:rgba(var(--accent-rgb),.32);box-shadow:0 8px 20px rgba(var(--accent-rgb),.10)}
+.company-swatch.active{outline:2px solid rgba(var(--accent-rgb),.46);outline-offset:3px;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.14),0 0 22px rgba(var(--accent-rgb),.24)}
+.company-brand-cube,.company-card-icon,.company-summary-icon{color:var(--accent);background:rgba(var(--accent-rgb),.14);box-shadow:0 0 22px rgba(var(--accent-rgb),.10)}
+.company-card,.company-branch-card.expanded,.company-preview-btn,.company-save-btn{border-color:rgba(var(--accent-rgb),.18)}
+.company-branch-card.expanded{box-shadow:0 0 0 1px rgba(var(--accent-rgb),.22) inset,0 0 28px rgba(var(--accent-rgb),.10)}
+.company-save-btn{background:linear-gradient(180deg,rgba(var(--accent-rgb),.88),rgba(30,110,78,.92));box-shadow:0 12px 28px rgba(var(--accent-rgb),.15),0 0 28px rgba(var(--accent-rgb),.12)}
+.company-brand-preview{box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.08)}
+.company-inline-note{position:relative;z-index:1}
+.company-card input,.company-card select,.company-branch-card input,.company-branch-card select{position:relative;z-index:1}
+.company-preview-btn{position:relative;z-index:1}
+.company-preview-btn::after{content:'Vista funcional';position:absolute;right:10px;bottom:-18px;font-size:10px;color:var(--muted);opacity:0;transition:.18s ease;pointer-events:none}
+.company-preview-btn:hover::after{opacity:.9}
+body.theme-light .company-branch-list::-webkit-scrollbar-track{background:rgba(44,138,104,.06)}
+body.theme-light .company-branch-list::-webkit-scrollbar-thumb{background:rgba(var(--accent-rgb),.28);border:2px solid rgba(255,255,255,.5);background-clip:padding-box}
+body.theme-light .company-brand-actions input[type="color"]{background:#fff;border-color:rgba(44,138,104,.16)}
+body.theme-light .company-swatch.active{box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16),0 6px 18px rgba(var(--accent-rgb),.10)}
+body.theme-light .company-save-btn{background:linear-gradient(180deg,rgb(var(--accent-rgb)),#2d6f53);color:#fff;box-shadow:0 12px 24px rgba(var(--accent-rgb),.18)}
+@media(max-width:1280px){.company-branch-list{max-height:clamp(280px,38vh,460px)}}

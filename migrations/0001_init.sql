@@ -1,93 +1,93 @@
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS companies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('admin','viewer')),
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  code TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS companies (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  system_name TEXT NOT NULL,
-  primary_color TEXT DEFAULT '#2563eb',
-  secondary_color TEXT DEFAULT '#0f172a',
-  logo TEXT,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'admin',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  username TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  company_name TEXT DEFAULT 'WMS Control',
+  company_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS branches (
-  id TEXT PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL DEFAULT 1,
   name TEXT NOT NULL,
-  code TEXT,
-  address TEXT,
-  active INTEGER DEFAULT 1,
-  sheet_url TEXT,
-  sheet_name TEXT,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  type TEXT NOT NULL DEFAULT 'tienda',
+  slug TEXT NOT NULL,
+  warehouses_json TEXT NOT NULL DEFAULT '[]',
+  canvas_width INTEGER NOT NULL DEFAULT 900,
+  canvas_height INTEGER NOT NULL DEFAULT 620,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(company_id, slug)
 );
 
-CREATE TABLE IF NOT EXISTS column_mappings (
-  branch_id TEXT PRIMARY KEY,
-  mapping_json TEXT NOT NULL,
-  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS branch_sheet_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id INTEGER NOT NULL UNIQUE,
+  sheet_id TEXT,
+  sheet_name TEXT DEFAULT 'Productos',
+  source_type TEXT DEFAULT 'google_sheet',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sheet_map_json TEXT,
+  imported_products_json TEXT,
+  last_sheet_count INTEGER NOT NULL DEFAULT 0,
+  sheet_headers_json TEXT,
+  sheet_header_index INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS products (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  sku TEXT,
-  barcode TEXT,
-  name TEXT NOT NULL,
-  brand TEXT,
-  category TEXT,
-  image_url TEXT,
-  stock TEXT,
-  zone TEXT,
-  rack TEXT,
-  level TEXT,
-  slot TEXT,
-  warehouse TEXT,
-  raw_json TEXT,
-  imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS branch_layouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id INTEGER NOT NULL UNIQUE,
+  layout_json TEXT NOT NULL,
+  viewbox_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
-CREATE INDEX IF NOT EXISTS idx_products_search ON products(name, sku, barcode, brand, zone, rack);
-
-CREATE TABLE IF NOT EXISTS zones (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  x REAL DEFAULT 0,
-  y REAL DEFAULT 0,
-  w REAL DEFAULT 220,
-  h REAL DEFAULT 140,
-  color TEXT DEFAULT '#dbeafe'
+CREATE TABLE IF NOT EXISTS viewer_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  branch_id INTEGER NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS racks (
-  id TEXT PRIMARY KEY,
-  branch_id TEXT NOT NULL,
-  zone_id TEXT,
-  name TEXT NOT NULL,
-  type TEXT DEFAULT 'simple',
-  levels INTEGER DEFAULT 4,
-  columns INTEGER DEFAULT 3,
-  slots INTEGER DEFAULT 12,
-  x REAL DEFAULT 0,
-  y REAL DEFAULT 0,
-  w REAL DEFAULT 120,
-  h REAL DEFAULT 42,
-  color TEXT DEFAULT '#334155'
+CREATE TABLE IF NOT EXISTS app_state_blobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL UNIQUE,
+  admin_json TEXT,
+  rack_models_json TEXT,
+  branch_layouts_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT OR IGNORE INTO users (id, name, email, password, role)
-VALUES ('u_admin', 'Administrador', 'admin@empresa.com', 'admin123', 'admin');
+CREATE TABLE IF NOT EXISTS system_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-INSERT OR IGNORE INTO users (id, name, email, password, role)
-VALUES ('u_viewer', 'Visualizador', 'visor@empresa.com', 'visor123', 'viewer');
-
-INSERT OR IGNORE INTO companies (id, name, system_name)
-VALUES ('company_1', 'Mi Empresa', 'WMS Visual Interno');
+CREATE TABLE IF NOT EXISTS sessions_store (
+  sid TEXT PRIMARY KEY,
+  sess_json TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

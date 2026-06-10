@@ -3223,7 +3223,7 @@
   function loadAdminState(){
     try{ const raw = localStorage.getItem('wms_admin_cfg_v2'); if(raw) return JSON.parse(raw); }catch{}
     const fallbackColor = '#ffd84d';
-    return { company:'WMS Industrial', logo:'', branches:[{name:'Sucursal principal', type:'tienda', color:fallbackColor, warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}], activeBranch:0 };
+    return { company:'WMS Industrial', logo:'', branding:{ colors:['#6ff0a8','#1f8d68','#324d57','#d9b45e','#20323b'], activeColor:0 }, branches:[{name:'Sucursal principal', type:'tienda', color:fallbackColor, warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0, expanded:true}], activeBranch:0 };
   }
   function sanitizedAdminState(){
     const admin = clone(appState.admin || {});
@@ -3248,6 +3248,17 @@
     try{ localStorage.setItem('wms_admin_cfg_v2', JSON.stringify(sanitizedAdminState())); }catch(err){ console.warn('No se pudo guardar admin local:', err); }
     ensureBranchLayouts(); saveBranchLayouts(); applyBrand();
   }
+  function getActiveBrandColor(){
+    const colors = Array.isArray(appState.admin?.branding?.colors) ? appState.admin.branding.colors : [];
+    const idx = Math.max(0, Math.min(Number(appState.admin?.branding?.activeColor || 0), Math.max(0, colors.length - 1)));
+    return colors[idx] || '#6ff0a8';
+  }
+  function hexToRgbTriplet(hex){
+    let value = String(hex || '').trim().replace('#','');
+    if(value.length === 3) value = value.split('').map(ch => ch + ch).join('');
+    const num = /^[0-9a-f]{6}$/i.test(value) ? parseInt(value, 16) : 0x6ff0a8;
+    return `${(num>>16)&255}, ${(num>>8)&255}, ${num&255}`;
+  }
   function applyBrand(){
     const companyInfo = appState.admin?.company;
     const companyName = typeof companyInfo === 'string' ? companyInfo : (companyInfo?.name || companyInfo?.company || 'WMS Industrial');
@@ -3255,6 +3266,10 @@
     const brandSub = document.querySelector('.brand-text .muted'); if(brandSub) brandSub.textContent = 'Interfaz renovada • visual premium';
     const box = document.querySelector('.brand-box');
     if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
+    const accent = getActiveBrandColor();
+    document.documentElement.style.setProperty('--accent', accent);
+    document.documentElement.style.setProperty('--accent-rgb', hexToRgbTriplet(accent));
+    document.documentElement.style.setProperty('--brand-active', accent);
   }
   function getAdminCompanyName(){
     const company = appState.admin?.company;
@@ -3278,12 +3293,13 @@
       type: String(branch?.type || 'tienda'),
       warehouses: Array.isArray(branch?.warehouses) && branch.warehouses.length ? branch.warehouses.map(w => String(w || 'Almacén principal')) : ['Almacén principal'],
       mainWarehouse: String(branch?.mainWarehouse || (Array.isArray(branch?.warehouses) && branch.warehouses[0]) || 'Almacén principal'),
-      color: String(branch?.color || '#6ff0a8')
+      color: String(branch?.color || '#6ff0a8'),
+      expanded: branch?.expanded !== false
     }));
     if(appState.admin.activeBranch >= appState.admin.branches.length) appState.admin.activeBranch = 0;
   }
   function renderAdminBranchCard(branch, index){
-    const expanded = index === appState.admin.activeBranch;
+    const expanded = branch.expanded !== false;
     const statusLabel = index === 0 ? 'Principal' : 'Secundaria';
     const warehouses = Array.isArray(branch.warehouses) ? branch.warehouses : ['Almacén principal'];
     const warehouseOptions = warehouses.map(name => `<option value="${escapeHtml(name)}" ${norm(name) === norm(branch.mainWarehouse) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('');
@@ -3351,7 +3367,7 @@
       </div>`;
     contentWrap.innerHTML = `
       <div class="company-config-v2">
-        <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" type="button">Vista previa pública ↗</button></div>
+        <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" id="companyPreviewBtn" type="button">Vista previa pública ↗</button></div>
         <section class="company-top-grid">
           <article class="company-card company-info-card">
             <div class="company-card-head"><span class="company-card-icon">⌘</span><div><b>Información general</b><small>Datos principales de tu empresa.</small></div></div>
@@ -3364,7 +3380,7 @@
           </article>
           <article class="company-card company-brand-card">
             <div class="company-card-head"><span class="company-card-icon gold">◔</span><div><b>Branding</b><small>Personaliza la identidad visual.</small></div></div>
-            <div class="grid"><label>Colores principales</label><div class="company-swatch-row">${brandingColors.map((color, idx)=>`<button class="company-swatch${idx===activeColorIdx?' active':''}" type="button" data-action="branding-color" data-index="${idx}" style="--sw:${escapeHtml(color)}"></button>`).join('')}<button class="company-swatch add" type="button" data-action="branding-add">＋</button></div></div>
+            <div class="grid"><label>Colores principales</label><div class="company-swatch-row">${brandingColors.map((color, idx)=>`<button class="company-swatch${idx===activeColorIdx?' active':''}" type="button" data-action="branding-color" data-index="${idx}" title="Aplicar color ${escapeHtml(color)}" style="--sw:${escapeHtml(color)}"></button>`).join('')}<button class="company-swatch add" type="button" data-action="branding-add">＋</button></div><div class="company-brand-actions"><input type="color" id="brandingColorPicker" value="${escapeHtml(brandingColors[activeColorIdx] || '#6ff0a8')}"><button class="btn secondary compact" id="brandingApplyBtn" type="button">Aplicar color</button></div></div>
             <div class="grid"><label>Vista previa</label><div class="company-brand-preview"><span class="company-brand-cube">◫</span><b>${escapeHtml(companyName)}</b></div></div>
           </article>
         </section>
@@ -3389,13 +3405,49 @@
     if(addBranchBtn) addBranchBtn.onclick = ()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#6ff0a8'),warehouses:['Almacén principal'],mainWarehouse:'Almacén principal',sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
     const saveCompanyBtn = $('#saveCompanyBtn');
     if(saveCompanyBtn) saveCompanyBtn.onclick = async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); showToast('Configuración guardada.', 'success'); renderAdminScreen(); };
-    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-main-warehouse"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].mainWarehouse=e.target.value);
-    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>{ const bi=+e.target.dataset.bindex, wi=+e.target.dataset.windex; const branch = appState.admin.branches[bi]; const oldName = branch.warehouses[wi]; branch.warehouses[wi]=e.target.value; if(norm(branch.mainWarehouse)===norm(oldName)) branch.mainWarehouse=e.target.value; });
+    const previewBtn = $('#companyPreviewBtn');
+    if(previewBtn) previewBtn.onclick = () => {
+      saveAdminState();
+      showToast('Vista previa pública abierta en modo viewer.', 'success');
+      setScreen('viewer');
+    };
+    const picker = $('#brandingColorPicker');
+    const applyColorBtn = $('#brandingApplyBtn');
+    const applyPickerColor = () => {
+      const value = (picker?.value || '').trim();
+      if(!value) return;
+      const idx = Math.max(0, Math.min(Number(appState.admin.branding.activeColor || 0), appState.admin.branding.colors.length - 1));
+      appState.admin.branding.colors[idx] = value;
+      saveAdminState();
+      renderAdminScreen();
+    };
+    if(applyColorBtn) applyColorBtn.onclick = applyPickerColor;
+    if(picker) picker.oninput = e => {
+      const idx = Math.max(0, Math.min(Number(appState.admin.branding.activeColor || 0), appState.admin.branding.colors.length - 1));
+      appState.admin.branding.colors[idx] = e.target.value;
+      applyBrand();
+    };
+    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>{ el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value; el.onchange=()=>saveAdminState(); });
+    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>{ appState.admin.branches[+e.target.dataset.index].type=e.target.value; saveAdminState(); renderAdminScreen(); });
+    contentWrap.querySelectorAll('[data-field="branch-main-warehouse"]').forEach(el=>el.onchange=e=>{ appState.admin.branches[+e.target.dataset.index].mainWarehouse=e.target.value; saveAdminState(); renderAdminScreen(); });
+    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>{ el.oninput=e=>{ const bi=+e.target.dataset.bindex, wi=+e.target.dataset.windex; const branch = appState.admin.branches[bi]; const oldName = branch.warehouses[wi]; branch.warehouses[wi]=e.target.value; if(norm(branch.mainWarehouse)===norm(oldName)) branch.mainWarehouse=e.target.value; }; el.onchange=()=>saveAdminState(); });
     contentWrap.querySelectorAll('[data-action="branding-color"]').forEach(el=>el.onclick=e=>{ appState.admin.branding.activeColor = +e.currentTarget.dataset.index; saveAdminState(); renderAdminScreen(); });
-    contentWrap.querySelector('[data-action="branding-add"]')?.addEventListener('click', ()=>{ appState.admin.branding.colors.push('#c7d6d2'); appState.admin.branding.activeColor = appState.admin.branding.colors.length - 1; saveAdminState(); renderAdminScreen(); });
-    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch = i===appState.admin.activeBranch ? -1 : i; if(appState.admin.activeBranch<0) appState.admin.activeBranch = i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ const name = 'Nuevo almacén '+((appState.admin.branches[i].warehouses?.length||0)+1); appState.admin.branches[i].warehouses.push(name); if(!appState.admin.branches[i].mainWarehouse) appState.admin.branches[i].mainWarehouse=name; renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; const branch = appState.admin.branches[bi]; const removed = branch.warehouses.splice(wi,1)[0]; if(!branch.warehouses.length) branch.warehouses=['Almacén principal']; if(norm(branch.mainWarehouse)===norm(removed)) branch.mainWarehouse=branch.warehouses[0]; renderAdminScreen(); } if(a==='set-main-warehouse'){ const branch = appState.admin.branches[bi]; branch.mainWarehouse = branch.warehouses[wi] || branch.mainWarehouse; renderAdminScreen(); } });
+    contentWrap.querySelector('[data-action="branding-add"]')?.addEventListener('click', ()=>{ const next = prompt('Nuevo color HEX para branding:', '#c7d6d2') || '#c7d6d2'; appState.admin.branding.colors.push(/^#[0-9a-f]{6}$/i.test(next.trim()) ? next.trim() : '#c7d6d2'); appState.admin.branding.activeColor = appState.admin.branding.colors.length - 1; saveAdminState(); renderAdminScreen(); });
+    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{
+      const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex;
+      if(a==='toggle-branch'){
+        const branch = appState.admin.branches[i];
+        if(branch) branch.expanded = branch.expanded === false ? true : false;
+        appState.admin.activeBranch = branch?.expanded ? i : -1;
+        saveAdminState(); renderAdminScreen(); return;
+      }
+      if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; saveAdminState(); renderAdminScreen(); return; }
+      if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; saveAdminState(); renderAdminScreen(); return; }
+      if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); saveAdminState(); renderAdminScreen(); return; }
+      if(a==='add-warehouse'){ const name = 'Nuevo almacén '+((appState.admin.branches[i].warehouses?.length||0)+1); appState.admin.branches[i].warehouses.push(name); if(!appState.admin.branches[i].mainWarehouse) appState.admin.branches[i].mainWarehouse=name; appState.admin.branches[i].expanded = true; saveAdminState(); renderAdminScreen(); return; }
+      if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; const branch = appState.admin.branches[bi]; const removed = branch.warehouses.splice(wi,1)[0]; if(!branch.warehouses.length) branch.warehouses=['Almacén principal']; if(norm(branch.mainWarehouse)===norm(removed)) branch.mainWarehouse=branch.warehouses[0]; saveAdminState(); renderAdminScreen(); return; }
+      if(a==='set-main-warehouse'){ const branch = appState.admin.branches[bi]; branch.mainWarehouse = branch.warehouses[wi] || branch.mainWarehouse; saveAdminState(); renderAdminScreen(); return; }
+    });
     applyBrand();
   }
 

@@ -1,15 +1,17 @@
 {
-  "name": "wms-industrial-cloudflare-clean",
+  "name": "wms-branch-viewer-app",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "description": "WMS básico con sucursales, layout persistente, Google Sheets y links de visualización.",
+  "main": "server.js",
   "scripts": {
-    "build": "echo \"Static Cloudflare Pages app - no build required\"",
-    "cf:dev": "wrangler pages dev public --d1=DB",
-    "cf:deploy": "wrangler pages deploy public"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
-  "devDependencies": {
-    "wrangler": "latest",
-    "@cloudflare/workers-types": "latest"
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1"
   }
 }
