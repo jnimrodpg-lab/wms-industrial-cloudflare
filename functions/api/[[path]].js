@@ -1,4 +1,4 @@
-const BUILD_MARK = 'sheet-fix-v4-import-50000-layout-stable';
+const BUILD_MARK = 'cloudflare-v5-import-50000-search-api';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -505,6 +505,64 @@ export async function onRequest(context) {
         return withJson({
           ok: true,
           preserved_products: Array.isArray(imported_products) ? imported_products.length : 0,
+          build: BUILD_MARK
+        });
+      }
+
+
+      if (tail === '/products' && request.method === 'GET') {
+        const session = await requireAuth(request, env.DB);
+        if (session.error) return session.error;
+        const effectiveCompanyId = session.company_id || 1;
+        const branch = await getOwnedBranch(env.DB, effectiveCompanyId, branchId);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
+
+        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+        const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') || 120) || 120));
+        const q = String(url.searchParams.get('q') || '').trim();
+        const filters = {
+          brand: url.searchParams.get('brand') || '',
+          category: url.searchParams.get('category') || '',
+          zone: url.searchParams.get('zone') || '',
+          warehouse: url.searchParams.get('warehouse') || '',
+          rack: url.searchParams.get('rack') || '',
+          image_state: url.searchParams.get('image_state') || '',
+          location_state: url.searchParams.get('location_state') || '',
+          stock_state: url.searchParams.get('stock_state') || ''
+        };
+
+        const products = await getImportedProductsForBranch(env.DB, branchId);
+        const filtered = filterImportedProducts(products, q, filters);
+        const total = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const safePage = Math.min(page, totalPages);
+        const start = (safePage - 1) * limit;
+        const items = filtered.slice(start, start + limit);
+
+        return withJson({
+          ok: true,
+          items,
+          total,
+          page: safePage,
+          limit,
+          total_pages: totalPages,
+          facets: buildProductFacets(products),
+          summary: buildProductSummary(products),
+          build: BUILD_MARK
+        });
+      }
+
+      if (tail === '/products-summary' && request.method === 'GET') {
+        const session = await requireAuth(request, env.DB);
+        if (session.error) return session.error;
+        const effectiveCompanyId = session.company_id || 1;
+        const branch = await getOwnedBranch(env.DB, effectiveCompanyId, branchId);
+        if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
+        const products = await getImportedProductsForBranch(env.DB, branchId);
+        return withJson({
+          ok: true,
+          summary: buildProductSummary(products),
+          facets: buildProductFacets(products),
           build: BUILD_MARK
         });
       }
@@ -1260,7 +1318,7 @@ async function handleSheetRows(url) {
   const headerOnly = String(url.searchParams.get('headerOnly') || '') === '1';
   const limit = Math.max(
     1,
-    Math.min(50000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200))
+    Math.min(50000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 50000)) || (headerOnly ? 1 : 50000))
   );
 
   if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios', build: BUILD_MARK }, 400);
@@ -1369,6 +1427,141 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   const csvPayload = await getSheetRowsPayloadFromCsv(id, sheet, gid, limit, headerOnly);
   if (csvPayload) return csvPayload;
   throw new Error('La hoja está vacía o no se pudo leer');
+}
+
+
+async function getImportedProductsForBranch(db, branchId) {
+  const row = await first(
+    db.prepare('SELECT imported_products_json FROM branch_sheet_config WHERE branch_id = ?').bind(branchId)
+  );
+  const products = safeJsonParse(row?.imported_products_json, []);
+  return Array.isArray(products) ? products : [];
+}
+
+function normalizeSearchText(value) {
+  return String(value == null ? '' : value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function productValue(product, keys) {
+  for (const key of keys) {
+    const value = product && product[key];
+    if (value != null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function productSearchHaystack(product) {
+  return normalizeSearchText([
+    productValue(product, ['sku', 'Sku', 'SKU']),
+    productValue(product, ['nombre', 'Nombre', 'name', 'producto']),
+    productValue(product, ['variante', 'Variante', 'variant']),
+    productValue(product, ['barras', 'barcode', 'codigoBarras']),
+    productValue(product, ['ubicacion', 'ubicación', 'location']),
+    productValue(product, ['almacen', 'almacén', 'warehouse']),
+    productValue(product, ['zona', 'zone', 'zonaStore']),
+    productValue(product, ['rack', 'estante', 'rackStore', 'estanteStore']),
+    productValue(product, ['nivel', 'level', 'nivelStore']),
+    productValue(product, ['slot', 'slotStore']),
+    productValue(product, ['talla', 'size']),
+    productValue(product, ['color']),
+    productValue(product, ['marca', 'brand']),
+    productValue(product, ['categoria', 'categoría', 'category']),
+    productValue(product, ['linea', 'línea'])
+  ].join(' '));
+}
+
+function productHasImage(product) {
+  return !!productValue(product, ['imagen', 'image', 'foto', 'imagen2', 'image2', 'foto2']);
+}
+
+function productHasLocation(product) {
+  return !!productValue(product, ['ubicacion', 'ubicación', 'location', 'almacen', 'almacén', 'warehouse', 'zona', 'rack', 'estante']);
+}
+
+function productHasStock(product) {
+  const raw = productValue(product, ['stock', 'cantidad', 'cant', 'Cant. Restock', 'cantRestock', 'cantidadRestock']);
+  if (!raw) return false;
+  const numeric = Number(String(raw).replace(',', '.').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric > 0 : true;
+}
+
+function filterImportedProducts(products, q, filters = {}) {
+  const terms = normalizeSearchText(q).split(/\s+/).filter(Boolean);
+  return (products || []).filter((product) => {
+    if (terms.length) {
+      const haystack = productSearchHaystack(product);
+      if (!terms.every((term) => haystack.includes(term))) return false;
+    }
+
+    const brand = normalizeSearchText(filters.brand);
+    if (brand && normalizeSearchText(productValue(product, ['marca', 'brand'])) !== brand) return false;
+
+    const category = normalizeSearchText(filters.category);
+    if (category && normalizeSearchText(productValue(product, ['categoria', 'categoría', 'category'])) !== category) return false;
+
+    const zone = normalizeSearchText(filters.zone);
+    if (zone && normalizeSearchText(productValue(product, ['zona', 'zone', 'zonaStore'])) !== zone) return false;
+
+    const warehouse = normalizeSearchText(filters.warehouse);
+    if (warehouse && normalizeSearchText(productValue(product, ['almacen', 'almacén', 'warehouse'])) !== warehouse) return false;
+
+    const rack = normalizeSearchText(filters.rack);
+    if (rack && normalizeSearchText(productValue(product, ['rack', 'estante', 'rackStore', 'estanteStore'])) !== rack) return false;
+
+    const imageState = String(filters.image_state || '').trim();
+    if (imageState === 'with' && !productHasImage(product)) return false;
+    if (imageState === 'without' && productHasImage(product)) return false;
+
+    const locationState = String(filters.location_state || '').trim();
+    if (locationState === 'with' && !productHasLocation(product)) return false;
+    if (locationState === 'without' && productHasLocation(product)) return false;
+
+    const stockState = String(filters.stock_state || '').trim();
+    if (stockState === 'with' && !productHasStock(product)) return false;
+    if (stockState === 'without' && productHasStock(product)) return false;
+
+    return true;
+  });
+}
+
+function uniqueSortedFacet(products, keys) {
+  const seen = new Map();
+  for (const product of products || []) {
+    const value = productValue(product, keys);
+    if (!value) continue;
+    const normalized = normalizeSearchText(value);
+    if (!seen.has(normalized)) seen.set(normalized, value);
+  }
+  return Array.from(seen.values()).sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' }));
+}
+
+function buildProductFacets(products) {
+  return {
+    brands: uniqueSortedFacet(products, ['marca', 'brand']),
+    brand_options: uniqueSortedFacet(products, ['marca', 'brand']),
+    categories: uniqueSortedFacet(products, ['categoria', 'categoría', 'category']),
+    category_options: uniqueSortedFacet(products, ['categoria', 'categoría', 'category']),
+    zones: uniqueSortedFacet(products, ['zona', 'zone', 'zonaStore']),
+    zone_options: uniqueSortedFacet(products, ['zona', 'zone', 'zonaStore']),
+    warehouses: uniqueSortedFacet(products, ['almacen', 'almacén', 'warehouse']),
+    warehouse_options: uniqueSortedFacet(products, ['almacen', 'almacén', 'warehouse']),
+    racks: uniqueSortedFacet(products, ['rack', 'estante', 'rackStore', 'estanteStore']),
+    rack_options: uniqueSortedFacet(products, ['rack', 'estante', 'rackStore', 'estanteStore'])
+  };
+}
+
+function buildProductSummary(products) {
+  const list = Array.isArray(products) ? products : [];
+  return {
+    total: list.length,
+    with_location: list.filter(productHasLocation).length,
+    with_image: list.filter(productHasImage).length,
+    with_stock: list.filter(productHasStock).length
+  };
 }
 
 async function fetchSheetMeta(id) {

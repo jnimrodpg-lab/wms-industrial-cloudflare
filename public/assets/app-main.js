@@ -3646,6 +3646,54 @@
     });
   }
 
+  function parseCsvRowsLocal(csvText){
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let inQuotes = false;
+    const text = String(csvText || '').replace(/^\uFEFF/, '');
+    for(let i = 0; i < text.length; i += 1){
+      const ch = text[i];
+      const next = text[i + 1];
+      if(inQuotes){
+        if(ch === '"' && next === '"') { cell += '"'; i += 1; }
+        else if(ch === '"') inQuotes = false;
+        else cell += ch;
+      }else{
+        if(ch === '"') inQuotes = true;
+        else if(ch === ',') { row.push(String(cell || '').trim()); cell = ''; }
+        else if(ch === '\n') { row.push(String(cell || '').trim()); rows.push(row); row = []; cell = ''; }
+        else if(ch === '\r') { /* ignorar */ }
+        else cell += ch;
+      }
+    }
+    row.push(String(cell || '').trim());
+    if(row.some(v => String(v || '').trim()) || rows.length) rows.push(row);
+    return rows;
+  }
+
+  function normalizeSheetMatrixLocal(rawRows){
+    const rowsIn = Array.isArray(rawRows) ? rawRows : [];
+    const nonEmpty = rowsIn.filter(row => Array.isArray(row) && row.some(v => String(v || '').trim()));
+    if(!nonEmpty.length) throw new Error('La hoja está vacía o no se pudo leer.');
+    let headerIndex = 0;
+    let headerRow = nonEmpty[0] || [];
+    if(headerRow.filter(v => String(v || '').trim()).length <= 1 && nonEmpty[1] && nonEmpty[1].filter(v => String(v || '').trim()).length >= 2){
+      headerIndex = 1;
+      headerRow = nonEmpty[1] || [];
+    }
+    const dataRowsAllRaw = nonEmpty.slice(headerIndex + 1);
+    const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map(r => Array.isArray(r) ? r.length : 0), 0);
+    let lastCol = 0;
+    for(let i = 0; i < maxLen; i += 1){
+      if(String(headerRow[i] || '').trim()) lastCol = i;
+      else if(dataRowsAllRaw.slice(0,500).some(r => String((r || [])[i] || '').trim())) lastCol = i;
+    }
+    const headers = dedupeSheetHeadersLocal(headerRow.slice(0, lastCol + 1));
+    const rows = dataRowsAllRaw.map(r => (r || []).slice(0, lastCol + 1));
+    return { headers, rows, headerIndex, totalRows: rows.length };
+  }
+
   async function fetchSheetRowsLocal(apiUrl){
     const params = new URLSearchParams(String(apiUrl).split('?')[1] || '');
     const id = parseSheetId(params.get('url') || params.get('id') || '');
@@ -3653,33 +3701,36 @@
     const headerOnly = String(params.get('headerOnly') || '') === '1';
     const limit = Math.max(1, Math.min(50000, Number(params.get('limit') || (headerOnly ? 1 : 50000)) || (headerOnly ? 1 : 50000)));
     if(!id || !sheet) throw new Error('URL/ID y hoja son obligatorios.');
-    const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheet)}`;
+
+    // Live Server no tiene backend. Para evitar el corte típico de 500 filas del visor JSON,
+    // primero se lee como CSV por Google GViz con rango amplio. Esto permite buscar sobre toda la hoja.
+    const rangeRows = Math.max(limit + 5, 1000);
+    const csvEndpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=0&sheet=${encodeURIComponent(sheet)}&range=${encodeURIComponent('A1:AZ' + rangeRows)}`;
+    try{
+      const csvText = await fetch(csvEndpoint, { cache:'no-store' }).then(r => {
+        if(!r.ok) throw new Error('No se pudo leer Google Sheet en modo CSV.');
+        return r.text();
+      });
+      const parsed = normalizeSheetMatrixLocal(parseCsvRowsLocal(csvText));
+      const rowsLimited = parsed.rows.slice(0, limit);
+      if(headerOnly) return { ok:true, headers:parsed.headers, headerIndex:parsed.headerIndex, previewCount:parsed.totalRows, source:'local-gviz-csv-full' };
+      return { ok:true, headers:parsed.headers, rows:rowsLimited, headerIndex:parsed.headerIndex, totalRows:parsed.totalRows, source:'local-gviz-csv-full' };
+    }catch(csvErr){
+      console.warn('Fallback CSV falló, intentando JSON GViz:', csvErr);
+    }
+
+    const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheet)}&range=${encodeURIComponent('A1:AZ' + rangeRows)}`;
     const text = await fetch(endpoint, { cache:'no-store' }).then(r => {
       if(!r.ok) throw new Error('No se pudo leer Google Sheet. Revisa permisos o nombre de hoja.');
       return r.text();
     });
     const jsonText = text.replace(/^.*?setResponse\(/s, '').replace(/\);?\s*$/s, '');
     const json = JSON.parse(jsonText);
-    const rawRows = (json.table?.rows || []).map(r => (r.c || []).map(c => String(c?.v ?? '').trim()));
-    const nonEmpty = rawRows.filter(row => row.some(v => String(v || '').trim()));
-    if(!nonEmpty.length) throw new Error('La hoja está vacía o no se pudo leer.');
-    let headerIndex = 0;
-    let headerRow = nonEmpty[0] || [];
-    if(headerRow.filter(v => String(v||'').trim()).length <= 1 && nonEmpty[1] && nonEmpty[1].filter(v => String(v||'').trim()).length >= 2){
-      headerIndex = 1;
-      headerRow = nonEmpty[1] || [];
-    }
-    const dataRowsAllRaw = nonEmpty.slice(headerIndex + 1);
-    const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map(r => r.length), 0);
-    let lastCol = 0;
-    for(let i=0;i<maxLen;i+=1){
-      if(String(headerRow[i] || '').trim()) lastCol = i;
-      else if(dataRowsAllRaw.slice(0,200).some(r => String((r || [])[i] || '').trim())) lastCol = i;
-    }
-    const headers = dedupeSheetHeadersLocal(headerRow.slice(0, lastCol + 1));
-    const rows = dataRowsAllRaw.map(r => (r || []).slice(0, lastCol + 1));
-    if(headerOnly) return { ok:true, headers, headerIndex, previewCount: rows.length, source:'local-gviz-json' };
-    return { ok:true, headers, rows: rows.slice(0, limit), headerIndex, totalRows: rows.length, source:'local-gviz-json' };
+    const rawRows = (json.table?.rows || []).map(r => (r.c || []).map(c => String(c?.v ?? c?.f ?? '').trim()));
+    const parsed = normalizeSheetMatrixLocal(rawRows);
+    const rowsLimited = parsed.rows.slice(0, limit);
+    if(headerOnly) return { ok:true, headers:parsed.headers, headerIndex:parsed.headerIndex, previewCount:parsed.totalRows, source:'local-gviz-json-range' };
+    return { ok:true, headers:parsed.headers, rows:rowsLimited, headerIndex:parsed.headerIndex, totalRows:parsed.totalRows, source:'local-gviz-json-range' };
   }
 
   async function httpJson(url, opts={}){
