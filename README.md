@@ -1,60 +1,93 @@
-# WMS Branch Viewer App
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('admin','viewer')),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
-Versión optimizada sin cambiar la base tecnológica principal.
+CREATE TABLE IF NOT EXISTS companies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  system_name TEXT NOT NULL,
+  primary_color TEXT DEFAULT '#2563eb',
+  secondary_color TEXT DEFAULT '#0f172a',
+  logo TEXT,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
-## Mejoras aplicadas
+CREATE TABLE IF NOT EXISTS branches (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT,
+  address TEXT,
+  active INTEGER DEFAULT 1,
+  sheet_url TEXT,
+  sheet_name TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
-- Persistencia reforzada con tabla `products` en SQLite.
-- Sincronización automática de productos importados desde `branch_sheet_config` hacia `products`.
-- Nuevos índices para acelerar búsquedas por sucursal, SKU, código de barras, rack, almacén y zona.
-- Nuevos endpoints para búsqueda paginada:
-  - `GET /api/branches/:id/products`
-  - `GET /api/products/search`
-  - `GET /api/branches/:id/products-summary`
-- Extracción del CSS principal a `public/assets/app.css` para mejorar orden y cacheo.
-- Extracción del JS principal a `public/assets/app-main.js` para reducir el peso del `index.html` y preparar modularización futura.
+CREATE TABLE IF NOT EXISTS column_mappings (
+  branch_id TEXT PRIMARY KEY,
+  mapping_json TEXT NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
-## Ejecutar localmente
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL,
+  sku TEXT,
+  barcode TEXT,
+  name TEXT NOT NULL,
+  brand TEXT,
+  category TEXT,
+  image_url TEXT,
+  stock TEXT,
+  zone TEXT,
+  rack TEXT,
+  level TEXT,
+  slot TEXT,
+  warehouse TEXT,
+  raw_json TEXT,
+  imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 
-```bash
-npm install
-npm run dev
-```
+CREATE INDEX IF NOT EXISTS idx_products_branch ON products(branch_id);
+CREATE INDEX IF NOT EXISTS idx_products_search ON products(name, sku, barcode, brand, zone, rack);
 
-App: `http://localhost:3000`
+CREATE TABLE IF NOT EXISTS zones (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  x REAL DEFAULT 0,
+  y REAL DEFAULT 0,
+  w REAL DEFAULT 220,
+  h REAL DEFAULT 140,
+  color TEXT DEFAULT '#dbeafe'
+);
 
-## Despliegue gratis
+CREATE TABLE IF NOT EXISTS racks (
+  id TEXT PRIMARY KEY,
+  branch_id TEXT NOT NULL,
+  zone_id TEXT,
+  name TEXT NOT NULL,
+  type TEXT DEFAULT 'simple',
+  levels INTEGER DEFAULT 4,
+  columns INTEGER DEFAULT 3,
+  slots INTEGER DEFAULT 12,
+  x REAL DEFAULT 0,
+  y REAL DEFAULT 0,
+  w REAL DEFAULT 120,
+  h REAL DEFAULT 42,
+  color TEXT DEFAULT '#334155'
+);
 
-### Opción actual
-- Render o un VPS/local con Node.js + SQLite.
+INSERT OR IGNORE INTO users (id, name, email, password, role)
+VALUES ('u_admin', 'Administrador', 'admin@empresa.com', 'admin123', 'admin');
 
-### Evolución sugerida
-- Frontend en Cloudflare Pages.
-- API/DB en Cloudflare Workers + D1.
+INSERT OR IGNORE INTO users (id, name, email, password, role)
+VALUES ('u_viewer', 'Visualizador', 'visor@empresa.com', 'visor123', 'viewer');
 
-## Notas
-
-- No se modificó la lógica funcional del editor de layout ni del editor de racks.
-- La app sigue siendo compatible con el flujo actual basado en Google Sheets.
-- `localStorage` puede seguir usándose como apoyo visual, pero la base persistente ya queda mejor preparada en SQLite.
-
-
-## Fase 2 aplicada
-
-Se añadió una segunda capa de optimización enfocada en rendimiento de búsqueda y carga:
-
-- Endpoints paginados para productos por sucursal.
-- Endpoint de búsqueda por API (`/api/products/search`).
-- Endpoint de resumen por sucursal (`/api/branches/:id/products-summary`).
-- Serialización de productos desde SQLite al formato que ya usa el frontend.
-- El frontend ahora intenta cargar productos por API antes de usar caché local.
-- Búsqueda del listado conectada al backend cuando hay sesión activa.
-- Paginación visible en la barra del listado.
-- Caché local reducida a un respaldo ligero, ya no como fuente principal del catálogo.
-
-### Resultado esperado
-
-- Menos carga inicial del navegador.
-- Menos lag al buscar.
-- Menos dependencia de `localStorage` para productos.
-- Mejor base para seguir agregando filtros reales por backend.
+INSERT OR IGNORE INTO companies (id, name, system_name)
+VALUES ('company_1', 'Mi Empresa', 'WMS Visual Interno');
