@@ -1,0 +1,15 @@
+{
+  "name": "wms-industrial-cloudflare-clean",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo \"Static Cloudflare Pages app - no build required\"",
+    "cf:dev": "wrangler pages dev public --d1=DB",
+    "cf:deploy": "wrangler pages deploy public"
+  },
+  "devDependencies": {
+    "wrangler": "latest",
+    "@cloudflare/workers-types": "latest"
+  }
+}
