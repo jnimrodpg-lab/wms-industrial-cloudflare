@@ -1,4 +1,4 @@
-const BUILD_MARK = 'sheet-fix-v3';
+const BUILD_MARK = 'sheet-fix-v4-import-50000-layout-stable';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -447,7 +447,7 @@ export async function onRequest(context) {
           sheet_name,
           source_type,
           JSON.stringify(sheet_map_rows),
-          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []),
+          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 50000) : []),
           last_sheet_count,
           JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
           sheet_header_index,
@@ -495,7 +495,7 @@ export async function onRequest(context) {
           sheet_name,
           source_type,
           JSON.stringify(sheet_map_rows),
-          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 12000) : []),
+          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 50000) : []),
           last_sheet_count,
           JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
           sheet_header_index,
@@ -1260,7 +1260,7 @@ async function handleSheetRows(url) {
   const headerOnly = String(url.searchParams.get('headerOnly') || '') === '1';
   const limit = Math.max(
     1,
-    Math.min(12000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200))
+    Math.min(50000, Number(url.searchParams.get('limit') || (headerOnly ? 1 : 200)) || (headerOnly ? 1 : 200))
   );
 
   if (!id || !sheet) return withJson({ error: 'URL/ID y hoja son obligatorios', build: BUILD_MARK }, 400);

@@ -3459,7 +3459,66 @@
     applyBrand();
   }
 
-  async function httpJson(url, opts={}){ const finalOpts = { credentials:'include', ...opts }; if(opts.headers) finalOpts.headers = opts.headers; const res=await fetch(url, finalOpts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
+  function dedupeSheetHeadersLocal(headers){
+    const seen = new Map();
+    return (headers || []).map((h, i) => {
+      const base = String(h || `Columna ${i + 1}`).trim() || `Columna ${i + 1}`;
+      const key = norm(base) || `columna_${i+1}`;
+      const count = (seen.get(key) || 0) + 1;
+      seen.set(key, count);
+      return count > 1 ? `${base} ${count}` : base;
+    });
+  }
+
+  async function fetchSheetRowsLocal(apiUrl){
+    const params = new URLSearchParams(String(apiUrl).split('?')[1] || '');
+    const id = parseSheetId(params.get('url') || params.get('id') || '');
+    const sheet = String(params.get('sheet') || 'Productos').trim();
+    const headerOnly = String(params.get('headerOnly') || '') === '1';
+    const limit = Math.max(1, Math.min(50000, Number(params.get('limit') || (headerOnly ? 1 : 50000)) || (headerOnly ? 1 : 50000)));
+    if(!id || !sheet) throw new Error('URL/ID y hoja son obligatorios.');
+    const endpoint = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=0&sheet=${encodeURIComponent(sheet)}`;
+    const text = await fetch(endpoint, { cache:'no-store' }).then(r => {
+      if(!r.ok) throw new Error('No se pudo leer Google Sheet. Revisa permisos o nombre de hoja.');
+      return r.text();
+    });
+    const jsonText = text.replace(/^.*?setResponse\(/s, '').replace(/\);?\s*$/s, '');
+    const json = JSON.parse(jsonText);
+    const rawRows = (json.table?.rows || []).map(r => (r.c || []).map(c => String(c?.v ?? '').trim()));
+    const nonEmpty = rawRows.filter(row => row.some(v => String(v || '').trim()));
+    if(!nonEmpty.length) throw new Error('La hoja está vacía o no se pudo leer.');
+    let headerIndex = 0;
+    let headerRow = nonEmpty[0] || [];
+    if(headerRow.filter(v => String(v||'').trim()).length <= 1 && nonEmpty[1] && nonEmpty[1].filter(v => String(v||'').trim()).length >= 2){
+      headerIndex = 1;
+      headerRow = nonEmpty[1] || [];
+    }
+    const dataRowsAllRaw = nonEmpty.slice(headerIndex + 1);
+    const maxLen = Math.max(headerRow.length, ...dataRowsAllRaw.map(r => r.length), 0);
+    let lastCol = 0;
+    for(let i=0;i<maxLen;i+=1){
+      if(String(headerRow[i] || '').trim()) lastCol = i;
+      else if(dataRowsAllRaw.slice(0,200).some(r => String((r || [])[i] || '').trim())) lastCol = i;
+    }
+    const headers = dedupeSheetHeadersLocal(headerRow.slice(0, lastCol + 1));
+    const rows = dataRowsAllRaw.map(r => (r || []).slice(0, lastCol + 1));
+    if(headerOnly) return { ok:true, headers, headerIndex, previewCount: rows.length, source:'local-gviz-json' };
+    return { ok:true, headers, rows: rows.slice(0, limit), headerIndex, totalRows: rows.length, source:'local-gviz-json' };
+  }
+
+  async function httpJson(url, opts={}){
+    if(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth() && typeof url === 'string' && url.startsWith('/api/sheets/rows')){
+      return fetchSheetRowsLocal(url);
+    }
+    const finalOpts = { credentials:'include', ...opts };
+    if(opts.headers) finalOpts.headers = opts.headers;
+    const res=await fetch(url, finalOpts);
+    const txt=await res.text();
+    let data={};
+    try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}}
+    if(!res.ok) throw new Error(data.error||txt||'Error');
+    return data;
+  }
 
   function coerceRemoteModels(models){
     if(!Array.isArray(models) || !models.length) return null;
@@ -3493,7 +3552,7 @@
     try{ loadLayoutForBranch(idx); }catch(_err){}
     const branch = branches[idx];
     if(Array.isArray(branch?.sheetPreviewProducts) && branch.sheetPreviewProducts.length){
-      setProductDataset(branch.sheetPreviewProducts.slice(0,12000));
+      setProductDataset(branch.sheetPreviewProducts.slice(0,50000));
       appState.filtered = appState.products.slice();
       return true;
     }
@@ -3503,7 +3562,7 @@
       if(appState.admin) appState.admin.activeBranch = fallbackIdx;
       try{ loadLayoutForBranch(fallbackIdx); }catch(_err){}
       const fallbackBranch = branches[fallbackIdx];
-      setProductDataset(fallbackBranch.sheetPreviewProducts.slice(0,12000));
+      setProductDataset(fallbackBranch.sheetPreviewProducts.slice(0,50000));
       appState.filtered = appState.products.slice();
       return true;
     }
@@ -3544,7 +3603,7 @@
         branch.lastImportSource = cfg.last_import_source || '';
         branch.lastImportError = cfg.last_import_error || '';
         if(Array.isArray(cfg.imported_products) && cfg.imported_products.length){
-          branch.sheetPreviewProducts = cfg.imported_products.slice(0,12000);
+          branch.sheetPreviewProducts = cfg.imported_products.slice(0,50000);
           branch.lastSheetCount = Number(cfg.last_sheet_count || cfg.imported_products.length || 0);
           branch.sheetConnected = true;
           branch.sheetStatusText = branch.sheetStatusText || `Importados: ${branch.sheetPreviewProducts.length.toLocaleString('es-PE')}`;
@@ -3609,7 +3668,7 @@
   }
   function saveProductsLocal(branchIndex){
     try{
-      const payload = JSON.stringify((appState.products || []).slice(0,500));
+      const payload = JSON.stringify((appState.products || []));
       const key = (Number.isFinite(branchIndex) && branchIndex >= 0) ? getBranchStorageKey(branchIndex) : 'wms_products_v2';
       localStorage.setItem(key, payload);
       if(Number.isFinite(branchIndex) && branchIndex >= 0){
@@ -3982,8 +4041,8 @@ function getSheetBranchOpenMap(){
     };
     if(includeProducts){
       payload.imported_products = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length)
-        ? branch.sheetPreviewProducts.slice(0,12000)
-        : ((Array.isArray(appState.products) && appState.products.length) ? appState.products.slice(0,12000) : []);
+        ? branch.sheetPreviewProducts.slice(0,50000)
+        : ((Array.isArray(appState.products) && appState.products.length) ? appState.products.slice(0,50000) : []);
       payload.import_source = 'google-sheet-ui';
     }
     await httpJson(`/api/branches/${branchId}/sheet`, {
@@ -4078,8 +4137,12 @@ function getSheetBranchOpenMap(){
     branch.sheetStatusText = 'Mapeo guardado';
     setBranchMetaStatus(branch, getSheetBranchProductCount(branch) ? BRANCH_STATUS.IMPORTED : BRANCH_STATUS.MAPPED, { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
     saveAdminState();
-    await persistBranchSheet(index, { includeProducts:false });
-    contentStatus.textContent = 'Columnas de sheet guardadas en servidor.';
+    if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
+      await persistBranchSheet(index, { includeProducts:false });
+      contentStatus.textContent = 'Columnas de sheet guardadas en servidor.';
+    }else{
+      contentStatus.textContent = 'Columnas de sheet guardadas localmente.';
+    }
     renderSheetScreen();
     showToast('Columnas visibles guardadas.', 'success');
   }
@@ -4092,9 +4155,9 @@ function getSheetBranchOpenMap(){
     if(appState.admin) appState.admin.activeBranch = index;
 
     const previousSourceSignature = getSheetSourceSignature(branch.sheetUrl || '', branch.sheetName || '');
-    const previewBackup = Array.isArray(branch.sheetPreviewProducts) ? branch.sheetPreviewProducts.slice(0,12000) : [];
-    const productsBackup = Array.isArray(appState.products) ? appState.products.slice(0,12000) : [];
-    const filteredBackup = Array.isArray(appState.filtered) ? appState.filtered.slice(0,12000) : [];
+    const previewBackup = Array.isArray(branch.sheetPreviewProducts) ? branch.sheetPreviewProducts.slice(0,50000) : [];
+    const productsBackup = Array.isArray(appState.products) ? appState.products.slice(0,50000) : [];
+    const filteredBackup = Array.isArray(appState.filtered) ? appState.filtered.slice(0,50000) : [];
     const selectedBackup = appState.selectedProduct ? { ...appState.selectedProduct } : null;
 
     const urlInput = contentWrap.querySelector(`[data-sheet-url="${index}"]`);
@@ -4127,7 +4190,7 @@ function getSheetBranchOpenMap(){
     }
 
     try{
-      await persistBranchSheetMetadataOnly(index);
+      if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())) await persistBranchSheetMetadataOnly(index);
       if(sourceChanged){
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         renderProducts(appState.filtered || []);
@@ -4138,9 +4201,9 @@ function getSheetBranchOpenMap(){
       }else{
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         // Restaurar SIEMPRE el estado visible. Este botón no debe tocar productos ni vista previa.
-        branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-        setProductDataset(productsBackup.slice(0,12000));
-        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000));
+        branch.sheetPreviewProducts = previewBackup.slice(0,50000);
+        setProductDataset(productsBackup.slice(0,50000));
+        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,50000));
         if(selectedBackup) appState.selectedProduct = selectedBackup;
         renderProducts(appState.filtered);
         countProducts.textContent = appState.products.length.toLocaleString('es-PE');
@@ -4150,9 +4213,9 @@ function getSheetBranchOpenMap(){
     }catch(err){
       console.error(err);
       if(!sourceChanged){
-        branch.sheetPreviewProducts = previewBackup.slice(0,12000);
-        setProductDataset(productsBackup.slice(0,12000));
-        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,12000));
+        branch.sheetPreviewProducts = previewBackup.slice(0,50000);
+        setProductDataset(productsBackup.slice(0,50000));
+        appState.filtered = sortProductsStable((filteredBackup.length ? filteredBackup : productsBackup).slice(0,50000));
       }
       if(selectedBackup) appState.selectedProduct = selectedBackup;
       setBranchMetaStatus(branch, BRANCH_STATUS.ERROR, { error:err.message || 'No se pudieron guardar los cambios de vinculación.', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
@@ -4199,7 +4262,7 @@ function getSheetBranchOpenMap(){
     setBranchMetaStatus(branch, BRANCH_STATUS.LOADING, { loadingMessage:'Importando productos…', headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
     saveAdminState(); renderSheetScreen();
     try{
-      const data = await httpJson(`/api/sheets/rows?url=${encodeURIComponent(url)}&sheet=${encodeURIComponent(sheetName)}&limit=12000`);
+      const data = await httpJson(`/api/sheets/rows?url=${encodeURIComponent(url)}&sheet=${encodeURIComponent(sheetName)}&limit=50000`);
       const headers = Array.isArray(data.headers)?data.headers:[];
       const rows = Array.isArray(data.rows)?data.rows:[];
       const headerIndex = Number(data.headerIndex || branch.sheetHeaderIndex || 0);
@@ -4289,7 +4352,7 @@ function getSheetBranchOpenMap(){
       appState.filtered = appState.products.slice();
       syncBranchLayoutWithProducts(index, list);
       appState.activeBranchIndex = index;
-      branch.sheetPreviewProducts = list.slice(0, 12000);
+      branch.sheetPreviewProducts = list.slice(0, 50000);
       branch.lastImportedSourceSignature = currentSourceSignature;
       if(list[0]) selectProduct(list[0]); else appState.selectedProduct = null;
       renderProducts(appState.filtered);
@@ -4303,9 +4366,13 @@ function getSheetBranchOpenMap(){
       branch.lastImportError = '';
       setBranchMetaStatus(branch, BRANCH_STATUS.IMPORTED, { touchImportedAt:true, headerCount:getSheetBranchHeaderCount(branch), productCount:list.length });
       saveAdminState();
-      await persistBranchSheet(index, { includeProducts:true });
-      await fetchProductsSummary(index);
-      contentStatus.textContent = 'Productos importados y guardados en servidor.';
+      if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
+        await persistBranchSheet(index, { includeProducts:true });
+        await fetchProductsSummary(index);
+        contentStatus.textContent = 'Productos importados y guardados en servidor.';
+      }else{
+        contentStatus.textContent = 'Productos importados y guardados localmente.';
+      }
       renderSheetScreen();
       showToast(`Se importaron ${list.length.toLocaleString('es-PE')} productos.`, 'success', 3200);
     }catch(err){
@@ -4335,7 +4402,7 @@ function getSheetBranchOpenMap(){
     const currentSheetIndex = getCurrentSheetBranchIndex();
     const currentSheetBranch = (appState.admin?.branches || [])[currentSheetIndex];
     if(currentSheetBranch && Array.isArray(currentSheetBranch.sheetPreviewProducts) && currentSheetBranch.sheetPreviewProducts.length){
-      applyBranchProducts(currentSheetBranch.sheetPreviewProducts.slice(0,12000), currentSheetIndex);
+      applyBranchProducts(currentSheetBranch.sheetPreviewProducts.slice(0,50000), currentSheetIndex);
       if(currentSheetBranch.sheetPreviewProducts[0]) appState.selectedProduct = currentSheetBranch.sheetPreviewProducts[0];
       countProducts.textContent = currentSheetBranch.sheetPreviewProducts.length.toLocaleString('es-PE');
     }
@@ -6329,8 +6396,10 @@ function getSheetBranchOpenMap(){
   }
 
   function scheduleLayoutAutoFit(force=false){
+    if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
     window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
     const run = () => {
+      if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
       const svg = document.getElementById('layoutSvg');
       if(!svg) return;
       if(force || !appState.editor.viewBoxCustomized) fitLayoutViewBox();
@@ -6352,7 +6421,7 @@ function getSheetBranchOpenMap(){
       const w = Math.round(rect?.width || 0);
       const h = Math.round(rect?.height || 0);
       if(!w || !h) return;
-      if(Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 2) return;
+      if(Math.abs(w - lastW) < 6 && Math.abs(h - lastH) < 6) return;
       lastW = w; lastH = h;
       scheduleLayoutAutoFit(false);
     });
@@ -7073,7 +7142,7 @@ function zoomLayout(factor, center){
     if(!zone) return;
     const zoneIndex = (appState.layout?.zones || []).findIndex(z => z === zone);
     appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts), racks: clone(appState.layout.racks.filter(r => r.zoneId === zoneId)) };
-    renderLayoutInspector(); renderLayoutEditor();
+    renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startVertexDrag(e, zoneId, idx){
     if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
@@ -7085,7 +7154,7 @@ function zoomLayout(factor, center){
     appState.selectedZoneId = zoneId; appState.selectedVertex = { zoneId, idx }; appState.selectedRackLayoutId = '';
     closeStackMenu();
     appState.editor.dragging = { type:'vertex', zoneId, zoneIndex, idx, start:p, original: clone(zone.pts[idx]) };
-    renderLayoutInspector(); renderLayoutEditor();
+    renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startEdgeDrag(e, zoneId, a, b){
     if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
@@ -7099,7 +7168,7 @@ function zoomLayout(factor, center){
     appState.selectedRackLayoutId = '';
     closeStackMenu();
     appState.editor.dragging = { type:'edge', zoneId, zoneIndex, a, b, start:p, originalA: clone(zone.pts[a]), originalB: clone(zone.pts[b]) };
-    renderLayoutInspector(); renderLayoutEditor();
+    renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startSectionGuideDrag(e, axis, source='line'){
     if(!appState.editor.sectionVisible) return;
@@ -7119,7 +7188,8 @@ function zoomLayout(factor, center){
     if(e.shiftKey){
       toggleRackSelection(rackId);
       appState.selectedZoneId = rack.zoneId;
-      renderLayoutInspector(); renderLayoutEditor();
+      const activeSvg = document.getElementById('layoutSvg');
+      renderLayoutSvg(activeSvg); renderLayoutSection(); renderLayoutInspector();
       return;
     }
     setSelectedRackIds([rackId]);
@@ -7127,7 +7197,7 @@ function zoomLayout(factor, center){
     const cx = rack.x + rack.w/2, cy = rack.y + rack.h/2;
     appState.selectedZoneId = rack.zoneId;
     appState.editor.dragging = { type:'rack', rackId, start:p, original: { x:rack.x, y:rack.y, cx, cy, zoneId:rack.zoneId } };
-    renderLayoutInspector(); renderLayoutEditor();
+    renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
 
   function handleLayoutMove(e){
@@ -7152,7 +7222,7 @@ function zoomLayout(factor, center){
     }
     if(appState.editor?.dragSelect?.active){
       updateDragSelection(p);
-      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      renderLayoutSvg(svg); renderLayoutSection();
       return;
     }
     const dx = snapGrid(p.x - d.start.x), dy = snapGrid(p.y - d.start.y);
@@ -7167,14 +7237,14 @@ function zoomLayout(factor, center){
         r.y = snapGrid(base.y + dy);
       });
       clearRackSnapPreview();
-      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'vertex'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
       const lockAxis = e.shiftKey ? (Math.abs(p.x - d.start.x) >= Math.abs(p.y - d.start.y) ? 'x' : 'y') : null;
       const snapped = snapPointAdvanced(p, { zoneId:d.zoneId, keepAxis:lockAxis, origin:d.original });
       clearRackSnapPreview();
-      zone.pts[d.idx] = { x:snapped.x, y:snapped.y }; pickNearestEdge(snapped); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      zone.pts[d.idx] = { x:snapped.x, y:snapped.y }; pickNearestEdge(snapped); renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'edge'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
@@ -7189,7 +7259,7 @@ function zoomLayout(factor, center){
       }
       clearRackSnapPreview();
       appState.selectedEdge = { zoneId:d.zoneId, a:d.a, b:d.b };
-      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'section-guide'){
       const zone = findZoneById(d.zoneId) || appState.layout.zones[0];
       if(zone){
@@ -7197,7 +7267,7 @@ function zoomLayout(factor, center){
         else updateSectionCutFromPoint(zone, d.axis, p);
         clearRackSnapPreview();
         d.moved = true;
-        renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+        renderLayoutSvg(svg); renderLayoutSection();
       }
     } else if(d.type === 'rack'){
       const rack = findRackById(d.rackId);
@@ -7213,7 +7283,7 @@ function zoomLayout(factor, center){
       const host = targetZone || currentZone || nearestZoneForPoint(center);
       if(host){ keepRackSnapped(rack, host); rack.zoneId = host.id; }
       if(host && !rackFullyInsideZone(rack, host) && d.original){ rack.x = d.original.x; rack.y = d.original.y; rack.zoneId = d.original.zoneId; }
-      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      renderLayoutSvg(svg); renderLayoutSection();
     }
   }
   function stopEditorDrag(){
@@ -8421,6 +8491,13 @@ function zoomLayout(factor, center){
     }
   }
 
+  function isLocalRuntimeForAuth(){
+    try{
+      const host = String(window.location.hostname || '').toLowerCase();
+      return host === 'localhost' || host === '127.0.0.1' || host === '' || String(window.location.port || '') === '5500' || window.location.protocol === 'file:';
+    }catch(_err){ return false; }
+  }
+
   function wait(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
 
   let authBusy = false;
@@ -8494,6 +8571,12 @@ function zoomLayout(factor, center){
   }
 
   async function checkSession(){
+    if(isLocalRuntimeForAuth()){
+      appState.auth = { loggedIn:false, user:'', role:'', company:'', companyCode:'', viewerGuest:false, localMode:true };
+      updateAuthUi();
+      applyRoleUi();
+      return;
+    }
     const hadCookie = hasSessionCookie();
     await warmService(hadCookie ? 8 : 2);
     const outcome = await fetchSessionWithRetry(hadCookie ? 7 : 3);
@@ -8532,7 +8615,7 @@ function zoomLayout(factor, center){
     const branch = data?.branch || {};
     const layoutPayload = data?.layout || {};
     const sheet = data?.sheet || {};
-    const imported = Array.isArray(sheet.imported_products) ? sheet.imported_products.slice(0,12000) : [];
+    const imported = Array.isArray(sheet.imported_products) ? sheet.imported_products.slice(0,50000) : [];
     const viewerBranch = {
       id: Number(branch.id || 1),
       name: String(branch.name || 'Sucursal'),
@@ -8579,6 +8662,19 @@ function zoomLayout(factor, center){
     if(!username || !password){ if(authStatus) authStatus.textContent = 'Completa usuario y contraseña.'; return false; }
     setAuthPending(true, mode === 'register' ? 'Creando acceso…' : 'Ingresando…');
     try{
+      if(isLocalRuntimeForAuth()){
+        const okLocalLogin = mode === 'register' || (username.toLowerCase() === 'admin' && password === 'admin123');
+        if(!okLocalLogin) throw new Error('En Live Server usa admin / admin123 o crea una cuenta local.');
+        appState.auth = { loggedIn:true, user:username || 'admin', role:role || 'admin', company:getAdminCompanyName ? getAdminCompanyName() : 'WMS Local', companyCode:'LOCAL', viewerGuest:false, localMode:true };
+        updateAuthUi();
+        applyRoleUi();
+        const targetScreen = String(appState.ui?.pendingScreenAfterLogin || '').trim() || (appState.auth?.role === 'viewer' ? 'viewer' : 'admin');
+        if(appState.ui) appState.ui.pendingScreenAfterLogin = '';
+        closeAuthModal(true);
+        setScreen(targetScreen);
+        showToast('Modo local activo para Live Server.', 'success', 2200);
+        return true;
+      }
       const payload = { username, password };
       let endpoint = '/api/login';
       if(mode === 'register'){
@@ -8715,7 +8811,7 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
           const targetIdx = activeIdx >= 0 ? activeIdx : linkedIdx;
           const targetBranch = branches[targetIdx] || branches[linkedIdx];
           if(Array.isArray(targetBranch?.sheetPreviewProducts) && targetBranch.sheetPreviewProducts.length){
-            applyBranchProducts(targetBranch.sheetPreviewProducts.slice(0,12000), targetIdx);
+            applyBranchProducts(targetBranch.sheetPreviewProducts.slice(0,50000), targetIdx);
             try{ loadLayoutForBranch(targetIdx); }catch(_err){}
           }else{
             await activateBranchSelection(targetIdx >= 0 ? targetIdx : linkedIdx);
