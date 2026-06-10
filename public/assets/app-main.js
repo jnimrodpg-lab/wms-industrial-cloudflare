@@ -3138,13 +3138,110 @@
     drawZoneEdgeDimensions(layer, zone);
   }
 
+  function companyHexToRgb(hex){
+    const safe = String(hex || '').trim().replace('#','');
+    const full = safe.length === 3 ? safe.split('').map(ch => ch + ch).join('') : safe.padEnd(6,'0').slice(0,6);
+    const num = parseInt(full, 16);
+    return { r:(num >> 16) & 255, g:(num >> 8) & 255, b:num & 255 };
+  }
+  function companyShiftHex(hex, amount){
+    const { r, g, b } = companyHexToRgb(hex);
+    const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
+    const shifted = { r:clamp(r + amount), g:clamp(g + amount), b:clamp(b + amount) };
+    return '#' + [shifted.r, shifted.g, shifted.b].map(v => v.toString(16).padStart(2,'0')).join('');
+  }
+  function normalizeAdminBranding(admin){
+    if(!admin || typeof admin !== 'object') admin = {};
+    if(!admin.branding || typeof admin.branding !== 'object') admin.branding = {};
+    const defaultPalette = ['#7ce7b0','#47b58b','#39596b','#e0bf67','#24394a','#dde5e2'];
+    const palette = Array.isArray(admin.branding.palette) && admin.branding.palette.length
+      ? admin.branding.palette.map(c => String(c || '').trim() || '#7ce7b0').slice(0,8)
+      : defaultPalette.slice();
+    const fallback = palette[0] || '#7ce7b0';
+    admin.branding.palette = palette;
+    admin.branding.activeColor = admin.branding.activeColor || fallback;
+    admin.branding.selectedColor = admin.branding.selectedColor || admin.branding.activeColor;
+    admin.branding.lastAppliedAt = Number(admin.branding.lastAppliedAt || admin.lastUpdatedAt || Date.now());
+    return admin.branding;
+  }
+  function normalizeAdminBranches(admin){
+    if(!Array.isArray(admin.branches) || !admin.branches.length){
+      admin.branches = [{
+        name:'Sucursal principal',
+        type:'tienda',
+        color:'#e0bf67',
+        expanded:true,
+        primaryWarehouseIndex:0,
+        warehouses:['Almacén principal'],
+        sheetUrl:'',
+        sheetName:'Productos',
+        sheetConnected:false,
+        lastSheetCount:0
+      }];
+    }
+    admin.branches = admin.branches.map((branch, index) => {
+      const paletteColor = branch?.color || (ZONE_COLOR_PALETTE[index % ZONE_COLOR_PALETTE.length] || '#e0bf67');
+      const warehouses = Array.isArray(branch?.warehouses) && branch.warehouses.length ? branch.warehouses.map(w => String(w || '').trim() || 'Almacén principal') : ['Almacén principal'];
+      const primaryWarehouseIndex = Math.max(0, Math.min(Number(branch?.primaryWarehouseIndex || 0), warehouses.length - 1));
+      return {
+        ...branch,
+        name: branch?.name || `Sucursal ${index + 1}`,
+        type: branch?.type || 'tienda',
+        color: paletteColor,
+        expanded: typeof branch?.expanded === 'boolean' ? branch.expanded : index === Number(admin.activeBranch || 0),
+        primaryWarehouseIndex,
+        warehouses
+      };
+    });
+    if(!Number.isFinite(Number(admin.activeBranch)) || !admin.branches[Number(admin.activeBranch)]) admin.activeBranch = 0;
+    return admin.branches;
+  }
   function loadAdminState(){
-    try{ const raw = localStorage.getItem('wms_admin_cfg_v2'); if(raw) return JSON.parse(raw); }catch{}
-    const fallbackColor = '#ffd84d';
-    return { company:'WMS Industrial', logo:'', branches:[{name:'Sucursal principal', type:'tienda', color:fallbackColor, warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}], activeBranch:0 };
+    try{
+      const raw = localStorage.getItem('wms_admin_cfg_v2');
+      if(raw){
+        const parsed = JSON.parse(raw);
+        normalizeAdminBranding(parsed);
+        normalizeAdminBranches(parsed);
+        parsed.company = parsed.company || 'WMS Industrial';
+        parsed.logo = parsed.logo || '';
+        parsed.lastUpdatedAt = Number(parsed.lastUpdatedAt || Date.now());
+        return parsed;
+      }
+    }catch(_err){}
+    const fallback = {
+      company:'WMS Industrial',
+      logo:'',
+      lastUpdatedAt: Date.now(),
+      branches:[{
+        name:'Sucursal principal',
+        type:'tienda',
+        color:'#e0bf67',
+        expanded:true,
+        primaryWarehouseIndex:0,
+        warehouses:['Almacén principal'],
+        sheetUrl:'',
+        sheetName:'Productos',
+        sheetConnected:false,
+        lastSheetCount:0
+      }],
+      activeBranch:0,
+      branding:{
+        palette:['#7ce7b0','#47b58b','#39596b','#e0bf67','#24394a','#dde5e2'],
+        selectedColor:'#7ce7b0',
+        activeColor:'#7ce7b0',
+        lastAppliedAt:Date.now()
+      }
+    };
+    normalizeAdminBranding(fallback);
+    normalizeAdminBranches(fallback);
+    return fallback;
   }
   function sanitizedAdminState(){
     const admin = clone(appState.admin || {});
+    normalizeAdminBranding(admin);
+    normalizeAdminBranches(admin);
+    admin.lastUpdatedAt = Number(admin.lastUpdatedAt || Date.now());
     admin.branches = (admin.branches || []).map(b => ({
       ...b,
       sheetPreviewProducts: [],
@@ -3163,199 +3260,381 @@
     return admin;
   }
   function saveAdminState(){
+    normalizeAdminBranding(appState.admin);
+    normalizeAdminBranches(appState.admin);
     try{ localStorage.setItem('wms_admin_cfg_v2', JSON.stringify(sanitizedAdminState())); }catch(err){ console.warn('No se pudo guardar admin local:', err); }
-    ensureBranchLayouts(); saveBranchLayouts(); applyBrand();
+    ensureBranchLayouts();
+    saveBranchLayouts();
+    applyBrand();
   }
   function applyBrand(){
-    const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = appState.admin.company || 'WMS Industrial';
-    const brandSub = document.querySelector('.brand-text div'); if(brandSub) brandSub.textContent = 'WAREHOUSE';
+    const admin = appState.admin || {};
+    const branding = normalizeAdminBranding(admin);
+    const activeColor = branding.activeColor || '#7ce7b0';
+    const activeRgb = companyHexToRgb(activeColor);
+    document.documentElement.style.setProperty('--accent', activeColor);
+    document.documentElement.style.setProperty('--accent-rgb', `${activeRgb.r},${activeRgb.g},${activeRgb.b}`);
+    document.documentElement.style.setProperty('--accent-soft', `rgba(${activeRgb.r},${activeRgb.g},${activeRgb.b},.16)`);
+    document.documentElement.style.setProperty('--brand-active', activeColor);
+    const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = admin.company || 'WMS Industrial';
+    const brandSub = document.querySelector('.brand-text div'); if(brandSub) brandSub.textContent = 'visual premium';
     const box = document.querySelector('.brand-box');
-    if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
+    if(box){
+      box.style.background = `linear-gradient(145deg, ${companyShiftHex(activeColor, 12)}, ${companyShiftHex(activeColor, -56)})`;
+      box.style.boxShadow = `0 14px 28px rgba(${activeRgb.r},${activeRgb.g},${activeRgb.b},.22)`;
+      box.innerHTML = admin.logo ? `<img src="${admin.logo}" style="width:100%;height:100%;object-fit:contain;border-radius:12px">` : `<span>${escapeHtml((admin.company || 'W').trim().charAt(0).toUpperCase())}</span>`;
+    }
+  }
+  function formatCompanyDate(ts){
+    if(!ts) return 'Sin registro';
+    try{ return new Date(ts).toLocaleString('es-PE', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }); }catch(_err){ return 'Sin registro'; }
+  }
+  function openCompanyPublicPreview(){
+    const cfg = appState.admin || {};
+    const branding = normalizeAdminBranding(cfg);
+    const activeColor = branding.activeColor || '#7ce7b0';
+    const win = window.open('', '_blank', 'noopener,noreferrer,width=1180,height=860');
+    if(!win){ showToast('No se pudo abrir la vista previa. Revisa si tu navegador bloqueó la ventana.', 'warn', 3600); return; }
+    const mainBranch = (cfg.branches || [])[0] || { name:'Sucursal principal', warehouses:['Almacén principal'] };
+    const cards = (cfg.branches || []).slice(0, 4).map((branch, index) => `
+      <div class="branch-card">
+        <div class="branch-row"><b>${escapeHtml(branch.name || `Sucursal ${index + 1}`)}</b><span>${index === 0 ? 'Principal' : 'Sucursal'}</span></div>
+        <small>${escapeHtml((branch.warehouses || []).join(' · ') || 'Sin almacenes')}</small>
+      </div>`).join('');
+    win.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Vista previa pública</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+      body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;color:#eef4fa;background:radial-gradient(circle at top left, rgba(124,231,176,.14), transparent 22%),linear-gradient(180deg,#071119,#0b1621)}
+      .shell{padding:32px;min-height:100vh;display:grid;gap:20px}
+      .hero,.list,.info{border:1px solid rgba(255,255,255,.09);border-radius:28px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.018));box-shadow:0 24px 50px rgba(0,0,0,.22)}
+      .hero{padding:28px 30px;background:radial-gradient(circle at top right, rgba(${companyHexToRgb(activeColor).r},${companyHexToRgb(activeColor).g},${companyHexToRgb(activeColor).b},.18), transparent 24%),linear-gradient(180deg,#0d1722,#0a131d)}
+      h1{margin:0 0 8px;font-size:40px} p{margin:0;color:#a7bbcd}.grid{display:grid;grid-template-columns:2fr 1fr;gap:20px}.list,.info{padding:20px}
+      .branch-card{padding:16px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:12px}.branch-row{display:flex;justify-content:space-between;gap:12px;margin-bottom:6px}.branch-row span{padding:6px 10px;border-radius:999px;background:rgba(${companyHexToRgb(activeColor).r},${companyHexToRgb(activeColor).g},${companyHexToRgb(activeColor).b},.16);color:#f5fffa;font-size:12px}
+      .hero-chip{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;background:rgba(${companyHexToRgb(activeColor).r},${companyHexToRgb(activeColor).g},${companyHexToRgb(activeColor).b},.16);border:1px solid rgba(${companyHexToRgb(activeColor).r},${companyHexToRgb(activeColor).g},${companyHexToRgb(activeColor).b},.26);margin-top:18px}
+      .stat{padding:14px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:10px}.stat b{display:block;font-size:28px;margin-bottom:4px}
+    </style></head><body><div class="shell"><div class="hero"><p>Vista previa pública</p><h1>${escapeHtml(cfg.company || 'WMS Industrial')}</h1><p>Sucursal principal: ${escapeHtml(mainBranch.name || 'Sucursal principal')} · Almacén: ${escapeHtml((mainBranch.warehouses || [])[mainBranch.primaryWarehouseIndex || 0] || 'Almacén principal')}</p><div class="hero-chip">Color activo · ${escapeHtml(activeColor)}</div></div><div class="grid"><div class="list"><h3>Sucursales visibles</h3>${cards || '<p>No hay sucursales configuradas.</p>'}</div><div class="info"><div class="stat"><b>${(cfg.branches || []).length}</b><span>Sucursales</span></div><div class="stat"><b>${(cfg.branches || []).reduce((acc, branch)=> acc + ((branch.warehouses || []).length || 0), 0)}</b><span>Almacenes</span></div><div class="stat"><b>${formatCompanyDate(cfg.lastUpdatedAt)}</b><span>Última actualización</span></div></div></div></div></body></html>`);
+    win.document.close();
+  }
+  function renderAdminDetailPanel(cfg){
+    const summaryBranches = (cfg.branches || []).length;
+    const summaryWarehouses = (cfg.branches || []).reduce((acc, branch) => acc + ((branch.warehouses || []).length || 0), 0);
+    const lastUpdated = formatCompanyDate(cfg.lastUpdatedAt);
+    const branding = normalizeAdminBranding(cfg);
+    detailTitle.textContent='Resumen';
+    detailSubtitle.textContent='Información general de tu empresa.';
+    detailStatus.textContent='Empresa';
+    detailChip.textContent='config';
+    detailWrap.innerHTML = `
+      <div class="company-detail-stack">
+        <div class="company-summary-card">
+          <div class="company-summary-icon">⌂</div>
+          <div><b>${summaryBranches}</b><span>Sucursales configuradas</span></div>
+        </div>
+        <div class="company-summary-card">
+          <div class="company-summary-icon">▣</div>
+          <div><b>${summaryWarehouses}</b><span>Total de almacenes</span></div>
+        </div>
+        <div class="company-summary-card">
+          <div class="company-summary-icon">◔</div>
+          <div><b style="font-size:16px">${escapeHtml(lastUpdated)}</b><span>Última actualización</span></div>
+        </div>
+        <div class="company-mini-scene" style="--scene-accent:${branding.activeColor}">
+          <div class="company-mini-block block-a"></div>
+          <div class="company-mini-block block-b"></div>
+          <div class="company-mini-block block-c"></div>
+          <div class="company-mini-glow"></div>
+        </div>
+      </div>`;
   }
   function renderAdminScreen(){
     renderViewerMenu();
-    const cfg = appState.admin; if(cfg.activeBranch >= cfg.branches.length) cfg.activeBranch = 0;
-    const summaryBranches = cfg.branches.length, summaryWarehouses = cfg.branches.reduce((a,b)=>a+(b.warehouses?.length||0),0);
-    contentTitle.textContent = 'Configuración de Empresa'; contentSubtitle.textContent = 'Administrador'; setTags([]);
-    detailTitle.textContent='Resumen'; detailSubtitle.textContent='Configuración general';
-    detailWrap.innerHTML = `<div class="kv"><div class="kv-row"><b>Sucursales</b><span>${summaryBranches}</span></div><div class="kv-row"><b>Total almacenes</b><span>${summaryWarehouses}</span></div></div>`;
-    detailStatus.textContent='Empresa'; detailChip.textContent='config';
+    const cfg = appState.admin || {};
+    normalizeAdminBranding(cfg);
+    normalizeAdminBranches(cfg);
+    if(cfg.activeBranch >= cfg.branches.length) cfg.activeBranch = 0;
+    const branding = cfg.branding;
+    const previewColor = branding.selectedColor || branding.activeColor;
+    contentTitle.textContent = 'Configuración de Empresa';
+    contentSubtitle.textContent = 'Administrador';
+    setTags([]);
+    renderAdminDetailPanel(cfg);
     contentWrap.innerHTML = `
       <div class="form-wrap admin-company-screen">
         <style>
-          .admin-company-screen{display:flex;flex-direction:column;height:100%;min-height:0}.company-head{display:grid;gap:18px;padding:10px 4px 16px}.company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}.branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}.branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}.branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}.branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}.branch-card.collapsed .branch-body{display:none}.branch-head{display:grid;grid-template-columns:24px 1fr 120px 44px 44px 44px;gap:10px;align-items:center}.branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}.branch-body{margin-top:12px;padding-top:12px;border-top:1px solid rgba(64,138,113,.15);display:grid;gap:10px}.ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}.tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}.tiny-btn.danger{background:#7d4747;color:#ffe5e5}.save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
-        
-  .sheet-branch-list{display:grid;gap:14px;height:100%;align-content:start;}
-  .sheet-branch-card{background:linear-gradient(180deg,#1f3a32,#183129);border:1px solid #3f6d60;border-radius:18px;overflow:hidden;box-shadow:0 10px 24px rgba(0,0,0,.18);}
-  .sheet-branch-head{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;background:rgba(255,255,255,.02);}
-  .sheet-branch-head:hover{background:rgba(255,255,255,.04);}
-  .sheet-branch-dot{width:14px;height:14px;border-radius:999px;flex:0 0 14px;border:2px solid rgba(255,255,255,.28);}
-  .sheet-branch-meta{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;}
-  .status-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid #33506f;background:#10263c;color:#cfe0f3;}
-  .status-badge.ok{background:rgba(17,194,141,.14);border-color:rgba(17,194,141,.38);color:#9ff0d3;}
-  .status-badge.warn{background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.35);color:#ffdca2;}
-  .sheet-branch-body{padding:0 16px 16px;display:none;border-top:1px solid rgba(255,255,255,.06);}
-  .sheet-branch-card.open .sheet-branch-body{display:block;}
-  .sheet-branch-grid{display:grid;grid-template-columns:1fr 240px;gap:14px;margin-top:14px;}
-  .sheet-branch-grid .grid{margin-bottom:0;}
-  .sheet-mini-preview{margin-top:14px;border:1px dashed #33506f;border-radius:14px;padding:12px;background:#0f1d30;}
-  .sheet-preview-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
-  .sheet-preview-chip{padding:6px 10px;border-radius:999px;background:#173250;border:1px solid #355072;color:#d7e4ef;font-size:12px;}
-  .sheet-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
-
-  
-  .app-modal-backdrop{position:fixed;inset:0;background:rgba(5,11,20,.7);display:none;align-items:center;justify-content:center;z-index:20000;padding:20px;backdrop-filter:blur(6px)}
-  .app-modal-backdrop.show{display:flex}
-  .app-modal{width:min(560px,100%);background:linear-gradient(180deg,#132337,#0c1728);border:1px solid #355072;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden}
-  .app-modal-head{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .app-modal-head b{font-size:16px}
-  .app-modal-body{padding:18px;display:grid;gap:12px;color:#d7e4ef;line-height:1.45}
-  .app-modal-actions{padding:16px 18px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
-  .toast-stack{position:fixed;right:18px;bottom:18px;z-index:21000;display:grid;gap:10px;max-width:min(380px,calc(100vw - 32px))}
-  .toast{padding:12px 14px;border-radius:16px;border:1px solid #355072;background:linear-gradient(180deg,#132337,#0c1728);box-shadow:0 16px 40px rgba(0,0,0,.28);color:#edf5ff;font-size:13px}
-  .toast.success{border-color:rgba(17,194,141,.4);background:linear-gradient(180deg,rgba(17,194,141,.18),rgba(12,23,40,.98))}
-  .toast.warn{border-color:rgba(245,166,35,.4);background:linear-gradient(180deg,rgba(245,166,35,.16),rgba(12,23,40,.98))}
-  .toast.error{border-color:rgba(227,94,94,.44);background:linear-gradient(180deg,rgba(227,94,94,.18),rgba(12,23,40,.98))}
-  .sheet-toolbar-utility{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-left:auto;justify-content:flex-end}
-  .sheet-branch-submeta{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.03);font-size:12px;color:#cfe0f3;margin-top:12px}
-  .sheet-helper-text{margin-top:4px;max-width:720px;line-height:1.45}
-  .sheet-utility-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-top:12px}
-  .sheet-inline-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .sheet-upload-hidden{display:none}
-.auth-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid #355072;background:linear-gradient(180deg,#153152,#0f2742);color:#eaf4ff;font-weight:700;font-size:12px;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
-  .auth-pill:hover{transform:translateY(-1px);border-color:#4b78a8}
-  .auth-modal{position:fixed;inset:0;background:rgba(4,10,18,.72);display:none;align-items:center;justify-content:center;z-index:15000;padding:20px}
-  .auth-modal.show{display:flex}
-  .auth-card{width:min(720px,100%);background:radial-gradient(circle at top right,rgba(91,185,140,.16),transparent 28%),linear-gradient(180deg,#10233c,#0a182b);border:1px solid rgba(120,180,255,.22);border-radius:28px;box-shadow:0 28px 72px rgba(0,0,0,.48);padding:24px}
-  .auth-card h3{margin:0 0 8px;font-size:30px;line-height:1.02}
-  .auth-card p{margin:0;color:#b9c6d4;font-size:13px;line-height:1.55}
-  .auth-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px}
-  .auth-badge{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#e8f6ef;font-size:12px;font-weight:800;white-space:nowrap}
-  .auth-segment{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px;border-radius:18px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);margin-bottom:14px}
-  .auth-segment-btn{height:46px;border-radius:14px;border:1px solid transparent;background:transparent;color:#cfe0f3;font-weight:800;cursor:pointer;transition:.18s ease}
-  .auth-segment-btn.active{background:linear-gradient(180deg,rgba(91,185,140,.24),rgba(91,185,140,.12));color:#f3fff9;border-color:rgba(91,185,140,.26);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
-  .auth-role-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-  .auth-role-card{display:grid;gap:4px;text-align:left;padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));color:#eaf4ff;cursor:pointer;transition:.18s ease}
-  .auth-role-card strong{font-size:16px}
-  .auth-role-card small{font-size:12px;color:#b9c6d4;line-height:1.45}
-  .auth-role-kicker{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9ed6bd}
-  .auth-role-card.active{border-color:rgba(91,185,140,.34);background:linear-gradient(180deg,rgba(20,74,58,.56),rgba(10,23,28,.94));box-shadow:0 0 0 1px rgba(91,185,140,.16) inset,0 12px 24px rgba(0,0,0,.16)}
-  .auth-grid{display:grid;gap:12px}
-  .auth-grid-modern{grid-template-columns:1fr 1fr}
-  .auth-grid input,.auth-grid select{width:100%;padding:13px 14px;border-radius:14px;border:1px solid #355072;background:#0f1d30;color:#eef6ff}
-  .auth-hidden-native{display:none !important}
-  .auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
-  .auth-actions-modern .btn.primary{min-width:170px}
-  .auth-status{min-height:20px;color:#ffb4b4;font-size:12px;margin-top:8px;padding-left:2px}
-  @media (max-width:760px){.auth-card{padding:18px;border-radius:22px}.auth-card h3{font-size:24px}.auth-hero,.auth-role-grid,.auth-grid-modern{grid-template-columns:1fr;display:grid}.auth-badge{justify-self:start}}
-  .save-strip{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
-  .save-strip .btn,.save-strip .seg-btn{min-width:180px}
-  @media (max-width: 980px){ .sheet-branch-grid{grid-template-columns:1fr;} }
-
-
-  .model-inline-grid-2,.model-inline-grid-4{ display:grid; gap:10px; }
-  .model-inline-grid-2{ grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .model-inline-grid-4{ grid-template-columns:repeat(4,minmax(0,1fr)); }
-  .library-inline-actions-box{ display:flex; align-items:flex-end; }
-  .library-inline-actions-box .mini-btn{ width:100%; }
-  .library-levels-panel{ display:none; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,.08); }
-  .library-levels-panel.open{ display:block; }
-  .embedded-level-list{ display:grid; gap:8px; }
-  .level-row.compact{ grid-template-columns:90px minmax(220px,.9fr) minmax(120px,.45fr); }
-  .rack-library-editor-block{ min-height:0; }
-  @media (max-width: 1200px){ .model-inline-grid-4{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
-
-
-  .dashboard-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;align-content:start;}
-  .dashboard-card{background:linear-gradient(180deg,#243836,#1c2f2d);border:1px solid #3f6d60;border-radius:18px;padding:16px;box-shadow:0 10px 24px rgba(0,0,0,.18);min-height:0;}
-  .dashboard-card h4{margin:0 0 6px;font-size:15px;color:#eef5ff;}
-  .dashboard-card .tiny{display:block;}
-  .kpi-card{grid-column:span 3;display:grid;gap:10px;}
-  .kpi-card b{font-size:30px;line-height:1;color:#fff;}
-  .kpi-foot{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#a9bfd6;font-size:12px;}
-  .kpi-trend{padding:4px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-weight:700;font-size:11px;}
-  .kpi-trend.up{color:#9ff0d3;background:rgba(17,194,141,.14);border-color:rgba(17,194,141,.38);}
-  .kpi-trend.warn{color:#ffdca2;background:rgba(245,166,35,.14);border-color:rgba(245,166,35,.35);}
-  .kpi-trend.down{color:#ffb3b3;background:rgba(227,94,94,.14);border-color:rgba(227,94,94,.35);}
-  .dashboard-card.wide{grid-column:span 6;}
-  .dashboard-card.full{grid-column:1/-1;}
-  .dashboard-card.tall{min-height:320px;}
-  .dash-zone-grid,.dash-top-list,.dash-alert-list{display:grid;gap:10px;}
-  .dash-zone-card,.dash-top-item{width:100%;text-align:left;background:#1d342f;border:1px solid #3f6d60;border-radius:14px;padding:12px;color:#eef8f4;cursor:pointer;transition:.18s ease;}
-  .dash-zone-card:hover,.dash-top-item:hover{transform:translateY(-1px);border-color:#5ea28a;background:#13293f;}
-  .dash-zone-card.active,.dash-top-item.active{border-color:#B0E4CC;box-shadow:0 0 0 1px rgba(107,181,255,.28) inset;background:#23453d;}
-  .dash-progress-head,.dash-top-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;}
-  .dash-mini-kv,.dash-top-meta{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:8px;font-size:12px;color:#b8d5cb;}
-  .dash-bar{height:10px;border-radius:999px;background:#253332;border:1px solid rgba(255,255,255,.06);overflow:hidden;}
-  .dash-bar span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#58d68d,#B0E4CC);}
-  .dash-bar.warn span{background:linear-gradient(90deg,#f5b041,#f39c12);}
-  .dash-bar.down span{background:linear-gradient(90deg,#ec7063,#cb4335);}
-  .dash-detail-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;align-items:stretch;}
-  .dash-svg-wrap{background:#253332;border:1px solid #3f6d60;border-radius:16px;padding:10px;min-height:340px;display:flex;align-items:center;justify-content:center;}
-  .dash-svg-wrap svg{width:100%;height:100%;min-height:300px;display:block;}
-  .dash-alert-item{padding:12px;border-radius:14px;border:1px solid #3f6d60;background:#1d342f;display:grid;gap:6px;}
-  .dash-alert-item.good{border-color:rgba(17,194,141,.38);background:rgba(17,194,141,.10);}
-  .dash-alert-item.warn{border-color:rgba(245,166,35,.35);background:rgba(245,166,35,.10);}
-  .dash-alert-item.down{border-color:rgba(227,94,94,.35);background:rgba(227,94,94,.10);}
-  @media (max-width:1200px){.kpi-card,.dashboard-card.wide{grid-column:span 6;}.dash-detail-grid{grid-template-columns:1fr;}}
-  @media (max-width:860px){.dashboard-grid{grid-template-columns:1fr;}.kpi-card,.dashboard-card.wide,.dashboard-card.full{grid-column:1/-1;}}
-
-
-
-
-          .company-logo-btn{display:inline-flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;background:linear-gradient(135deg,#408A71,#285A48);border:1px solid rgba(176,228,204,.20);color:#fff;font-weight:700;cursor:pointer;width:max-content}
-          .branches-panel{display:flex;flex-direction:column;min-height:0;flex:1;border:1px solid rgba(64,138,113,.22);background:var(--panel-3);border-radius:18px;overflow:hidden}
-          .branches-toolbar{position:sticky;top:0;z-index:3;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(64,138,113,.18);background:linear-gradient(180deg, rgba(64,138,113,.10), rgba(64,138,113,.04))}
-          .branches-scroll{overflow:auto;max-height:430px;padding:14px;display:flex;flex-direction:column;gap:12px}
-          .branch-card{border:1px solid rgba(64,138,113,.22);background:var(--panel-2);border-radius:16px;padding:12px}
-          .branch-card.collapsed .branch-body{display:none}
-          .branch-head{display:grid;grid-template-columns:24px 1fr 120px 44px 44px 44px;gap:10px;align-items:center}
-          .branch-head input,.branch-body input,.branch-body select{background:var(--panel);border:1px solid rgba(64,138,113,.22);color:var(--text);border-radius:12px;padding:10px 12px;width:100%}
-          .branch-body{margin-top:12px;padding-top:12px;border-top:1px solid rgba(64,138,113,.15);display:grid;gap:10px}
-          .ware-row{display:grid;grid-template-columns:1fr 36px;gap:8px;align-items:center}
-          .tiny-btn{height:36px;border:none;border-radius:12px;background:#285A48;color:#fff;cursor:pointer;font-weight:800}
-          .tiny-btn.danger{background:#7d4747;color:#ffe5e5}
-          .save-stick{position:sticky;bottom:0;padding:14px 0 6px;background:linear-gradient(180deg, rgba(255,255,255,0), rgba(53,60,59,.08) 24%, rgba(53,60,59,.18))}
-          body.theme-light .company-logo-btn{background:linear-gradient(135deg,#408A71,#285A48)}
-          body.theme-light .branches-panel{background:#edf7f2;border-color:rgba(64,138,113,.18)}
-          body.theme-light .branch-card{background:#e8f5ef;border-color:rgba(64,138,113,.18)}
-          body.theme-light .branch-head input,body.theme-light .branch-body input,body.theme-light .branch-body select{background:#ffffff;border-color:rgba(64,138,113,.18)}
-          body.theme-light .save-stick{background:linear-gradient(180deg, rgba(255,255,255,0), rgba(237,247,242,.9) 24%, rgba(237,247,242,1))}
-      
-
-  /* ==== Lista de productos: mantener formato normal ==== */
-  .product-list{padding:0 !important}
-  @media (max-width: 980px){
-    .search-results-wrap,.table-scroll{overflow:auto !important}
-    .product-head{display:grid !important}
-  }
-  @media (max-width: 560px){
-    .product-head,.product-row{min-width:820px !important}
-  }
-
-  </style>
-        <div class="company-head">
-          <div class="grid"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company)}"></div>
-          <div class="grid"><label>Logo</label><div><input type="file" id="companyLogoInput" accept="image/*" style="display:none"><button class="company-logo-btn" id="companyLogoBtn">⤴ Subir logo</button></div></div>
+          .admin-company-screen{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:14px;height:100%;min-height:0;padding:8px 6px 4px}
+          .company-page-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:6px 6px 0}
+          .company-page-title{display:grid;gap:4px}.company-page-title h2{margin:0;font-size:18px}.company-page-title p{margin:0;color:var(--muted);font-size:13px}
+          .company-preview-btn{min-width:188px;justify-content:center}
+          .company-top-grid{display:grid;grid-template-columns:1.25fr .95fr;gap:14px;align-items:stretch}
+          .company-card{position:relative;border:1px solid rgba(var(--accent-rgb),.16);border-radius:26px;background:radial-gradient(circle at top left, rgba(var(--accent-rgb),.10), transparent 28%),linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.018));box-shadow:0 20px 50px rgba(0,0,0,.18);padding:18px;overflow:hidden}
+          .company-card::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg, rgba(255,255,255,.03), transparent 34%);pointer-events:none}
+          .company-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+          .company-card-title{display:flex;align-items:flex-start;gap:12px}.company-card-icon{width:34px;height:34px;border-radius:14px;display:grid;place-items:center;background:rgba(var(--accent-rgb),.14);border:1px solid rgba(var(--accent-rgb),.18);color:#f6fff9;font-weight:900;box-shadow:0 10px 26px rgba(var(--accent-rgb),.12)}
+          .company-card-title b{display:block;font-size:15px;margin-bottom:4px}.company-card-title span{font-size:12px;color:var(--muted)}
+          .company-company-grid{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:end}
+          .company-field{display:grid;gap:8px}.company-field label{font-size:12px;font-weight:700;color:#d8e7f2}
+          .company-field input,.company-field select{height:48px;border-radius:16px;background:rgba(255,255,255,.038);border:1px solid rgba(255,255,255,.08)}
+          .company-logo-panel{display:grid;grid-template-columns:minmax(0,1fr) 164px;gap:12px;align-items:stretch}
+          .company-logo-drop{min-height:110px;border-radius:20px;border:1px dashed rgba(255,255,255,.14);background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015));display:grid;place-items:center;padding:12px;overflow:hidden}
+          .company-logo-drop img{max-width:100%;max-height:92px;object-fit:contain}.company-logo-empty{display:grid;justify-items:center;gap:8px;color:var(--muted)}
+          .company-logo-cta{display:grid;gap:10px;align-content:center}.company-logo-btn{height:54px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:0 18px;background:linear-gradient(180deg,#102236,#081622);border:1px solid rgba(255,255,255,.08);color:#f0f6fd;font-weight:800;cursor:pointer}
+          .company-help{font-size:12px;color:var(--muted)}
+          .company-brand-swatches{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}.company-swatch{width:42px;height:42px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:var(--swatch);box-shadow:0 10px 18px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.25);cursor:pointer;position:relative}.company-swatch.active::after,.company-swatch.selected::before{content:'';position:absolute;inset:-4px;border-radius:999px;border:1px solid rgba(255,255,255,.14)}.company-swatch.active::after{box-shadow:0 0 0 2px rgba(var(--accent-rgb),.18)}.company-swatch.selected::before{inset:-8px;border-color:rgba(var(--accent-rgb),.28)}
+          .company-color-add{display:grid;place-items:center;color:#fff;background:linear-gradient(180deg,#162739,#101c29)}
+          .company-brand-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+          .company-preview-brand{height:58px;border-radius:18px;border:1px solid rgba(var(--accent-rgb),.18);background:linear-gradient(90deg, rgba(var(--accent-rgb),.12), rgba(255,255,255,.02));display:flex;align-items:center;gap:12px;padding:0 16px}
+          .company-preview-badge{width:34px;height:34px;border-radius:12px;background:var(--brand-preview);display:grid;place-items:center;color:#fff;font-weight:900;box-shadow:0 10px 18px rgba(0,0,0,.14)}
+          .company-section-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px}.company-section-header b{font-size:16px}.company-section-header span{font-size:12px;color:var(--muted)}
+          .company-branches-card{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0}
+          .company-branches-scroll{overflow:auto;max-height:420px;display:grid;gap:14px;padding-right:6px}
+          .company-branch-card{border:1px solid rgba(255,255,255,.08);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.018));overflow:hidden}
+          .company-branch-card.collapsed .company-branch-body{display:none}
+          .company-branch-head{display:grid;grid-template-columns:42px minmax(0,1fr) auto auto auto auto auto;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.05)}
+          .company-toggle-btn,.company-icon-btn{width:42px;height:42px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,#162739,#101c29);color:#f1f7fd;cursor:pointer;font-weight:900}
+          .company-icon-btn.danger{background:linear-gradient(180deg,#60242d,#4b1b22);color:#ffecec}
+          .company-branch-ident{display:flex;align-items:center;gap:12px;min-width:0}.company-branch-dot{width:10px;height:10px;border-radius:999px;background:var(--branch-color);box-shadow:0 0 0 5px rgba(255,255,255,.02),0 0 18px rgba(255,214,108,.08)}
+          .company-branch-name-input{height:44px;border-radius:16px}.company-branch-pill{display:inline-flex;align-items:center;justify-content:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);font-size:12px;font-weight:800;color:#eff6fb;background:rgba(255,255,255,.03)}.company-branch-pill.primary{background:rgba(224,191,103,.14);color:#ffe8ab;border-color:rgba(224,191,103,.26)}.company-branch-pill.active{background:rgba(var(--accent-rgb),.14);color:#dffff1;border-color:rgba(var(--accent-rgb),.26)}
+          .company-branch-body{padding:16px;display:grid;gap:14px}
+          .company-branch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.company-inline-select{display:grid;gap:8px}
+          .company-warehouses-wrap{display:grid;gap:10px}.company-warehouse-row{display:grid;grid-template-columns:32px minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.06);border-radius:18px;background:rgba(255,255,255,.02)}.company-warehouse-index{width:32px;height:32px;border-radius:999px;background:rgba(255,255,255,.05);display:grid;place-items:center;font-size:12px;color:#cfd9e4}
+          .company-warehouse-tag{padding:8px 12px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.08);background:rgba(var(--accent-rgb),.14);color:#dff8eb;font-weight:800}
+          .company-bottom-note{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);color:var(--muted);font-size:12px;margin-top:10px}
+          .company-save-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:2px 2px 0}.company-save-row .btn{min-width:286px;height:48px;border-radius:18px}
+          .company-detail-stack{display:grid;gap:12px}.company-summary-card{display:grid;grid-template-columns:52px 1fr;gap:12px;align-items:center;padding:16px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.018))}.company-summary-icon{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;background:rgba(var(--accent-rgb),.14);border:1px solid rgba(var(--accent-rgb),.18)}.company-summary-card b{display:block;font-size:34px;line-height:1;margin-bottom:6px}.company-summary-card span{color:var(--muted);font-size:12px}
+          .company-mini-scene{position:relative;height:238px;border-radius:24px;border:1px solid rgba(255,255,255,.08);background:radial-gradient(circle at 30% 20%, rgba(var(--accent-rgb),.18), transparent 26%),linear-gradient(180deg,#10212f,#09131f);overflow:hidden}.company-mini-glow{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:118px;height:118px;border-radius:999px;background:radial-gradient(circle, rgba(var(--accent-rgb),.35), transparent 70%)}.company-mini-block{position:absolute;border-radius:22px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));box-shadow:0 20px 40px rgba(0,0,0,.25)}.company-mini-block.block-a{width:134px;height:82px;left:22px;bottom:34px;background:linear-gradient(180deg,#c2f0dd,#8dcaae)}.company-mini-block.block-b{width:88px;height:54px;left:124px;bottom:16px;background:linear-gradient(180deg,#f6d98b,#d5a34b);border-radius:999px}.company-mini-block.block-c{width:148px;height:148px;right:24px;bottom:28px;background:linear-gradient(180deg,#284032,#1a2d25)}
+          body.theme-light .company-card{background:radial-gradient(circle at top left, rgba(var(--accent-rgb),.10), transparent 28%),linear-gradient(180deg, rgba(255,255,255,.96), rgba(243,249,245,.92));box-shadow:0 16px 36px rgba(10,58,34,.08)}
+          body.theme-light .company-branch-card,body.theme-light .company-summary-card{background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(247,250,247,.94))}
+          body.theme-light .company-toggle-btn,body.theme-light .company-icon-btn,body.theme-light .company-logo-btn{background:linear-gradient(180deg,#ffffff,#eef5f1);color:#102234}
+          body.theme-light .company-mini-scene{background:radial-gradient(circle at 30% 20%, rgba(var(--accent-rgb),.12), transparent 26%),linear-gradient(180deg,#ffffff,#eaf4ef)}
+          @media (max-width: 1200px){.company-top-grid{grid-template-columns:1fr}.company-branch-head{grid-template-columns:42px minmax(0,1fr) auto auto auto auto}.company-branch-pill.primary{order:3}}
+          @media (max-width: 860px){.company-branch-grid,.company-logo-panel{grid-template-columns:1fr}.company-save-row{flex-direction:column;align-items:stretch}.company-save-row .btn{width:100%;min-width:0}.company-branch-head{grid-template-columns:42px minmax(0,1fr) auto auto}.company-page-hero{flex-direction:column;align-items:stretch}.company-preview-btn{width:100%}}
+        </style>
+        <div class="company-page-hero">
+          <div class="company-page-title"><h2>Configuración de Empresa</h2><p>Administrador · edición visual premium</p></div>
+          <button class="btn secondary company-preview-btn" id="publicPreviewBtn">Vista previa pública ↗</button>
         </div>
-        <div class="branches-panel"><div class="branches-toolbar"><div><b>Sucursales</b></div><button class="btn secondary" id="addBranchBtn">＋ Sucursal</button></div><div class="branches-scroll" id="branchesScroll">${cfg.branches.map((b,i)=>renderBranchCard(b,i)).join('')}</div></div>
-        <div class="save-stick"><button class="btn primary" id="saveCompanyBtn">Guardar Configuración</button></div>
+        <div class="company-top-grid">
+          <section class="company-card">
+            <div class="company-card-header">
+              <div class="company-card-title"><div class="company-card-icon">⌘</div><div><b>Información general</b><span>Datos principales de tu empresa.</span></div></div>
+              <div class="tiny muted">Auto guardado local</div>
+            </div>
+            <div class="company-field"><label>Nombre de la Empresa</label><input id="companyNameInput" value="${escapeHtml(cfg.company || '')}" placeholder="Ingresa el nombre de tu empresa"></div>
+            <div class="company-field" style="margin-top:12px"><label>Logo</label>
+              <div class="company-logo-panel">
+                <div class="company-logo-drop">${cfg.logo ? `<img src="${cfg.logo}" alt="Logo">` : `<div class="company-logo-empty"><div style="font-size:34px">⌂</div><div>Logo actual</div></div>`}</div>
+                <div class="company-logo-cta"><input type="file" id="companyLogoInput" accept="image/png,image/jpeg,image/svg+xml" style="display:none"><button id="companyLogoBtn" class="company-logo-btn">☁ Subir logo</button><div class="company-help">PNG, JPG o SVG.<br>Máx. 2MB</div></div>
+              </div>
+            </div>
+          </section>
+          <section class="company-card">
+            <div class="company-card-header">
+              <div class="company-card-title"><div class="company-card-icon">◔</div><div><b>Branding</b><span>Personaliza la identidad visual.</span></div></div>
+              <div class="tiny muted">Color activo</div>
+            </div>
+            <div class="company-field"><label>Colores principales</label>
+              <div class="company-brand-swatches">${branding.palette.map((color, idx) => `<button type="button" class="company-swatch ${branding.activeColor===color?'active':''} ${previewColor===color?'selected':''}" data-brand-swatch="${escapeHtml(color)}" title="Color ${idx+1}" style="--swatch:${color}"></button>`).join('')}<button type="button" class="company-swatch company-color-add" id="addBrandColorBtn">＋</button><input type="color" id="customBrandColor" value="${escapeHtml(previewColor)}" style="display:none"></div>
+            </div>
+            <div class="company-brand-actions"><div style="width:46px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:${previewColor}"></div><button class="btn secondary" id="applyBrandColorBtn">Aplicar color</button><div class="tiny muted">Seleccionado: ${escapeHtml(previewColor)}</div></div>
+            <div class="company-field"><label>Vista previa</label><div class="company-preview-brand" style="--brand-preview:linear-gradient(145deg, ${companyShiftHex(previewColor, 12)}, ${companyShiftHex(previewColor, -56)})"><div class="company-preview-badge">⌂</div><b>${escapeHtml(cfg.company || 'WMS Industrial')}</b></div></div>
+          </section>
+        </div>
+        <section class="company-card company-branches-card">
+          <div class="company-section-header"><div><b>Sucursales</b><span>Administra tus sucursales, almacenes y ubicaciones principales.</span></div><button class="btn" id="addBranchBtn">＋ Nueva sucursal</button></div>
+          <div class="company-branches-scroll" id="branchesScroll">${cfg.branches.map((branch, index) => renderBranchCard(branch, index)).join('')}</div>
+          <div class="company-bottom-note">ⓘ Arrastra las sucursales para reordenarlas. Mientras tanto, usa las flechas para cambiar el orden.</div>
+        </section>
+        <div class="company-save-row"><button class="btn" id="saveCompanyBtn">💾 Guardar configuración</button><div class="tiny muted">Entorno: Producción</div></div>
       </div>`;
     bindAdminScreenEvents();
   }
-  function renderBranchCard(branch,index){ return `<div class="branch-card${index!==appState.admin.activeBranch?' collapsed':''}" data-branch-card="${index}"><div class="branch-head"><button class="tiny-btn" data-action="toggle-branch" data-index="${index}">${index===appState.admin.activeBranch?'−':'+'}</button><input data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name)}"><input type="color" data-field="branch-color" data-index="${index}" value="${escapeHtml(branch.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}" title="Color identificador" class="company-color-circle"><button class="tiny-btn" data-action="move-up" data-index="${index}">↑</button><button class="tiny-btn" data-action="move-down" data-index="${index}">↓</button><button class="tiny-btn danger" data-action="delete-branch" data-index="${index}">🗑</button></div><div class="branch-body"><div><label class="tiny muted">Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div><div class="grid"><label class="tiny muted">Almacenes</label><div style="display:grid;gap:8px">${(branch.warehouses||[]).map((w,wi)=>`<div class="ware-row"><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(w)}"><button class="tiny-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}">🗑</button></div>`).join('')}</div></div><button class="tiny-btn" data-action="add-warehouse" data-index="${index}">＋ Almacén</button></div></div>`; }
+  function renderBranchCard(branch,index){
+    const expanded = branch?.expanded !== false;
+    const primaryWarehouseIndex = Math.max(0, Math.min(Number(branch?.primaryWarehouseIndex || 0), ((branch?.warehouses || []).length || 1) - 1));
+    const primaryWarehouse = (branch?.warehouses || [])[primaryWarehouseIndex] || 'Almacén principal';
+    return `<article class="company-branch-card${expanded ? '' : ' collapsed'}" data-branch-card="${index}">
+      <div class="company-branch-head">
+        <button class="company-toggle-btn" data-action="toggle-branch" data-index="${index}" title="Expandir o minimizar">${expanded ? '−' : '+'}</button>
+        <div class="company-branch-ident">
+          <div class="company-branch-dot" style="--branch-color:${escapeHtml(branch.color || '#e0bf67')}"></div>
+          <input class="company-branch-name-input" data-field="branch-name" data-index="${index}" value="${escapeHtml(branch.name || `Sucursal ${index + 1}`)}">
+        </div>
+        <span class="company-branch-pill primary">${index === 0 ? 'Principal' : 'Secundaria'}</span>
+        <span class="company-branch-pill active">${expanded ? 'Activa' : 'Plegada'}</span>
+        <span class="company-branch-pill">${escapeHtml((branch.type || 'tienda').replace(/^./, ch => ch.toUpperCase()))}</span>
+        <button class="company-icon-btn" data-action="move-up" data-index="${index}" title="Subir">↑</button>
+        <button class="company-icon-btn" data-action="move-down" data-index="${index}" title="Bajar">↓</button>
+        <button class="company-icon-btn danger" data-action="delete-branch" data-index="${index}" title="Eliminar sucursal">🗑</button>
+      </div>
+      <div class="company-branch-body">
+        <div class="company-branch-grid">
+          <div class="company-inline-select"><label class="tiny muted">Tipo</label><select data-field="branch-type" data-index="${index}"><option value="tienda" ${branch.type==='tienda'?'selected':''}>Tienda</option><option value="almacen" ${branch.type==='almacen'?'selected':''}>Almacén</option><option value="showroom" ${branch.type==='showroom'?'selected':''}>Showroom</option></select></div>
+          <div class="company-inline-select"><label class="tiny muted">Almacén principal</label><select data-field="primary-warehouse" data-index="${index}">${(branch.warehouses || []).map((warehouse, wi) => `<option value="${wi}" ${wi===primaryWarehouseIndex?'selected':''}>${escapeHtml(warehouse)}</option>`).join('')}</select></div>
+        </div>
+        <div class="company-inline-select"><label class="tiny muted">Almacenes adicionales (${(branch.warehouses || []).length})</label><div class="company-warehouses-wrap">${(branch.warehouses || []).map((warehouse, wi) => `<div class="company-warehouse-row"><div class="company-warehouse-index">${wi + 1}</div><input data-field="warehouse-name" data-bindex="${index}" data-windex="${wi}" value="${escapeHtml(warehouse)}"><span class="company-warehouse-tag">${wi===primaryWarehouseIndex ? 'Principal' : 'Secundario'}</span><button class="company-icon-btn danger" data-action="delete-warehouse" data-bindex="${index}" data-windex="${wi}" title="Eliminar almacén">🗑</button></div>`).join('')}</div></div>
+        <button class="btn secondary" data-action="add-warehouse" data-index="${index}">＋ Agregar almacén adicional</button>
+      </div>
+    </article>`;
+  }
   function bindAdminScreenEvents(){
-    $('#companyNameInput').addEventListener('input', e=>appState.admin.company=e.target.value); $('#companyLogoBtn').onclick=()=>$('#companyLogoInput').click();
-    $('#companyLogoInput').addEventListener('change', e=>{ const f=e.target.files?.[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ appState.admin.logo=r.result; saveAdminState(); renderAdminScreen(); }; r.readAsDataURL(f); });
-    $('#addBranchBtn').onclick=()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#ffd84d'),warehouses:['Almacén principal'], sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
-    $('#saveCompanyBtn').onclick=async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); alert('Configuración guardada.'); renderAdminScreen(); };
-    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.index].name=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el=>el.onchange=e=>appState.admin.branches[+e.target.dataset.index].type=e.target.value);
-    contentWrap.querySelectorAll('[data-field="branch-color"]').forEach(el=>el.oninput=e=>{ appState.admin.branches[+e.target.dataset.index].color=e.target.value; });
-    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el=>el.oninput=e=>appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex]=e.target.value);
-    contentWrap.querySelectorAll('[data-action]').forEach(btn=>btn.onclick=e=>{ const a=e.currentTarget.dataset.action, i=+e.currentTarget.dataset.index, bi=+e.currentTarget.dataset.bindex, wi=+e.currentTarget.dataset.windex; if(a==='toggle-branch'){ appState.admin.activeBranch=i; renderAdminScreen(); } if(a==='move-up'&&i>0){ const arr=appState.admin.branches; [arr[i-1],arr[i]]=[arr[i],arr[i-1]]; appState.admin.activeBranch=i-1; renderAdminScreen(); } if(a==='move-down'&&i<appState.admin.branches.length-1){ const arr=appState.admin.branches; [arr[i+1],arr[i]]=[arr[i],arr[i+1]]; appState.admin.activeBranch=i+1; renderAdminScreen(); } if(a==='delete-branch'){ if(!confirm('¿Eliminar sucursal?')) return; if(appState.admin.branches.length===1) return alert('Debe quedar al menos una sucursal.'); appState.admin.branches.splice(i,1); appState.admin.activeBranch=Math.max(0,Math.min(appState.admin.activeBranch, appState.admin.branches.length-1)); renderAdminScreen(); } if(a==='add-warehouse'){ appState.admin.branches[i].warehouses.push('Nuevo almacén'); renderAdminScreen(); } if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; appState.admin.branches[bi].warehouses.splice(wi,1); if(!appState.admin.branches[bi].warehouses.length) appState.admin.branches[bi].warehouses=['Almacén principal']; renderAdminScreen(); } } );
+    const cfg = appState.admin;
+    normalizeAdminBranding(cfg);
+    normalizeAdminBranches(cfg);
+    const companyNameInput = $('#companyNameInput');
+    const companyLogoBtn = $('#companyLogoBtn');
+    const companyLogoInput = $('#companyLogoInput');
+    const publicPreviewBtn = $('#publicPreviewBtn');
+    const addBranchBtn = $('#addBranchBtn');
+    const saveCompanyBtn = $('#saveCompanyBtn');
+    const addBrandColorBtn = $('#addBrandColorBtn');
+    const customBrandColor = $('#customBrandColor');
+    const applyBrandColorBtn = $('#applyBrandColorBtn');
+
+    if(companyNameInput) companyNameInput.addEventListener('input', e => {
+      appState.admin.company = e.target.value;
+      applyBrand();
+    });
+    if(companyLogoBtn) companyLogoBtn.onclick = () => companyLogoInput && companyLogoInput.click();
+    if(companyLogoInput) companyLogoInput.addEventListener('change', e => {
+      const f = e.target.files?.[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        appState.admin.logo = reader.result;
+        appState.admin.lastUpdatedAt = Date.now();
+        saveAdminState();
+        renderAdminScreen();
+        showToast('Logo actualizado.', 'success');
+      };
+      reader.readAsDataURL(f);
+    });
+    if(publicPreviewBtn) publicPreviewBtn.onclick = () => openCompanyPublicPreview();
+    if(addBrandColorBtn) addBrandColorBtn.onclick = () => customBrandColor && customBrandColor.click();
+    if(customBrandColor) customBrandColor.addEventListener('input', e => {
+      const color = e.target.value;
+      const branding = normalizeAdminBranding(appState.admin);
+      if(!branding.palette.includes(color)) branding.palette.push(color);
+      branding.selectedColor = color;
+      renderAdminScreen();
+    });
+    contentWrap.querySelectorAll('[data-brand-swatch]').forEach(btn => {
+      btn.onclick = () => {
+        const color = btn.dataset.brandSwatch;
+        normalizeAdminBranding(appState.admin).selectedColor = color;
+        renderAdminScreen();
+      };
+    });
+    if(applyBrandColorBtn) applyBrandColorBtn.onclick = () => {
+      const branding = normalizeAdminBranding(appState.admin);
+      branding.activeColor = branding.selectedColor || branding.activeColor;
+      branding.lastAppliedAt = Date.now();
+      appState.admin.lastUpdatedAt = Date.now();
+      saveAdminState();
+      renderAdminScreen();
+      showToast('Branding aplicado a la interfaz.', 'success');
+    };
+    if(addBranchBtn) addBranchBtn.onclick = () => {
+      const nextIndex = (appState.admin.branches || []).length + 1;
+      appState.admin.branches.push({
+        name:`Sucursal ${nextIndex}`,
+        type:'tienda',
+        color: ZONE_COLOR_PALETTE[(nextIndex - 1) % ZONE_COLOR_PALETTE.length] || '#7ce7b0',
+        expanded:true,
+        primaryWarehouseIndex:0,
+        warehouses:['Almacén principal'],
+        sheetUrl:'',
+        sheetName:'Productos',
+        sheetConnected:false,
+        lastSheetCount:0
+      });
+      appState.admin.activeBranch = appState.admin.branches.length - 1;
+      appState.admin.lastUpdatedAt = Date.now();
+      renderAdminScreen();
+      showToast('Sucursal agregada.', 'success');
+    };
+    if(saveCompanyBtn) saveCompanyBtn.onclick = async () => {
+      const names = appState.admin.branches.map(b => norm(b.name));
+      if(new Set(names).size !== names.length) return alert('Hay sucursales con nombres repetidos.');
+      for(const branch of appState.admin.branches){
+        const warehouses = (branch.warehouses || []).map(x => norm(x));
+        if(new Set(warehouses).size !== warehouses.length) return alert(`Hay almacenes repetidos en ${branch.name}.`);
+      }
+      appState.admin.lastUpdatedAt = Date.now();
+      saveAdminState();
+      await saveRemoteAppState('empresa');
+      showToast('Configuración guardada.', 'success');
+      renderAdminScreen();
+    };
+    contentWrap.querySelectorAll('[data-field="branch-name"]').forEach(el => el.oninput = e => {
+      appState.admin.branches[+e.target.dataset.index].name = e.target.value;
+    });
+    contentWrap.querySelectorAll('[data-field="branch-type"]').forEach(el => el.onchange = e => {
+      appState.admin.branches[+e.target.dataset.index].type = e.target.value;
+    });
+    contentWrap.querySelectorAll('[data-field="primary-warehouse"]').forEach(el => el.onchange = e => {
+      appState.admin.branches[+e.target.dataset.index].primaryWarehouseIndex = Number(e.target.value || 0);
+      appState.admin.lastUpdatedAt = Date.now();
+      renderAdminScreen();
+    });
+    contentWrap.querySelectorAll('[data-field="warehouse-name"]').forEach(el => el.oninput = e => {
+      appState.admin.branches[+e.target.dataset.bindex].warehouses[+e.target.dataset.windex] = e.target.value;
+    });
+    contentWrap.querySelectorAll('[data-action]').forEach(btn => btn.onclick = async e => {
+      const action = e.currentTarget.dataset.action;
+      const index = Number(e.currentTarget.dataset.index);
+      const bindex = Number(e.currentTarget.dataset.bindex);
+      const windex = Number(e.currentTarget.dataset.windex);
+      if(action === 'toggle-branch'){
+        const branch = appState.admin.branches[index];
+        branch.expanded = !(branch.expanded !== false);
+        appState.admin.activeBranch = index;
+        renderAdminScreen();
+        return;
+      }
+      if(action === 'move-up' && index > 0){
+        const list = appState.admin.branches;
+        [list[index - 1], list[index]] = [list[index], list[index - 1]];
+        appState.admin.activeBranch = index - 1;
+        appState.admin.lastUpdatedAt = Date.now();
+        renderAdminScreen();
+        return;
+      }
+      if(action === 'move-down' && index < appState.admin.branches.length - 1){
+        const list = appState.admin.branches;
+        [list[index + 1], list[index]] = [list[index], list[index + 1]];
+        appState.admin.activeBranch = index + 1;
+        appState.admin.lastUpdatedAt = Date.now();
+        renderAdminScreen();
+        return;
+      }
+      if(action === 'delete-branch'){
+        const ok = await openAppModal({ title:'Eliminar sucursal', message:'¿Deseas eliminar esta sucursal? Esta acción no se puede deshacer.', actions:[{label:'Cancelar', value:false, cls:'secondary'},{label:'Eliminar', value:true, cls:'danger'}] });
+        if(!ok) return;
+        if(appState.admin.branches.length === 1){ alert('Debe quedar al menos una sucursal.'); return; }
+        appState.admin.branches.splice(index, 1);
+        appState.admin.activeBranch = Math.max(0, Math.min(appState.admin.activeBranch, appState.admin.branches.length - 1));
+        appState.admin.lastUpdatedAt = Date.now();
+        renderAdminScreen();
+        return;
+      }
+      if(action === 'add-warehouse'){
+        appState.admin.branches[index].warehouses.push(`Almacén ${appState.admin.branches[index].warehouses.length + 1}`);
+        appState.admin.lastUpdatedAt = Date.now();
+        renderAdminScreen();
+        return;
+      }
+      if(action === 'delete-warehouse'){
+        const ok = await openAppModal({ title:'Eliminar almacén', message:'¿Deseas eliminar este almacén?', actions:[{label:'Cancelar', value:false, cls:'secondary'},{label:'Eliminar', value:true, cls:'danger'}] });
+        if(!ok) return;
+        const branch = appState.admin.branches[bindex];
+        if((branch.warehouses || []).length === 1){ alert('Debe quedar al menos un almacén.'); return; }
+        branch.warehouses.splice(windex, 1);
+        if(branch.primaryWarehouseIndex >= branch.warehouses.length) branch.primaryWarehouseIndex = Math.max(0, branch.warehouses.length - 1);
+        appState.admin.lastUpdatedAt = Date.now();
+        renderAdminScreen();
+      }
+    });
     applyBrand();
   }
+
   async function httpJson(url, opts={}){ const finalOpts = { credentials:'include', ...opts }; if(opts.headers) finalOpts.headers = opts.headers; const res=await fetch(url, finalOpts); const txt=await res.text(); let data={}; try{data=txt?JSON.parse(txt):{}}catch{data={raw:txt}} if(!res.ok) throw new Error(data.error||txt||'Error'); return data; }
 
   function coerceRemoteModels(models){

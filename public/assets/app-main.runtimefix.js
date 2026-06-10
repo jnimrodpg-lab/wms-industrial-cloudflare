@@ -6145,7 +6145,7 @@ function getSheetBranchOpenMap(){
     ]);
 
     contentWrap.innerHTML = `
-      <div class="stage" style="position:relative;height:100%">
+      <div class="stage layout-premium-render" style="position:relative;height:100%">
         <div id="layoutHeaderCards" class="layout-header-cards"></div>
         <div class="layout-shell">
           <aside class="layout-inner-sidebar">
