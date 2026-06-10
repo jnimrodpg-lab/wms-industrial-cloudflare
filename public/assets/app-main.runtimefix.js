@@ -33,6 +33,7 @@
   const btnOpenViewerFromProduct = $('#btnOpenViewerFromProduct');
   let activeImageCycleTimer = null;
   let activeImageCycleUrls = [];
+  let activeMediaCycleItems = [];
   let activeImageCycleIndex = 0;
   let activeImageGalleryBound = false;
   const sheetStatusChip = $('#sheetStatusChip');
@@ -1397,31 +1398,100 @@
     return `url("${value.replace(/"/g, '\"')}")`;
   }
 
-  function getProductImageUrls(product){
-    if(!product) return [];
-    const raw = [product.imagen, product.image, product.imagen2, product.image2, product.foto2, product.img2].filter(Boolean).map(v => String(v).trim());
+  function splitMediaValues(values){
     const split = [];
-    raw.forEach(value => {
-      if(/[|\n,;]/.test(value)) split.push(...value.split(/[|\n,;]+/));
+    values.filter(Boolean).map(v => String(v).trim()).forEach(value => {
+      if(/[|\n;]/.test(value)) split.push(...value.split(/[|\n;]+/));
       else split.push(value);
     });
     const out = [];
     const seen = new Set();
-    split.map(v => String(v || '').trim()).filter(Boolean).forEach(url => { if(!seen.has(url)){ seen.add(url); out.push(url); } });
+    split.map(v => String(v || '').trim()).filter(Boolean).forEach(url => {
+      if(!seen.has(url)){ seen.add(url); out.push(url); }
+    });
     return out;
+  }
+
+  function getProductImageUrls(product){
+    if(!product) return [];
+    return splitMediaValues([product.imagen, product.image, product.imagen_url, product.image_url, product.foto, product.img, product.imagen2, product.image2, product.foto2, product.img2]);
+  }
+
+  function getProductBackdropUrl(product, fallbackUrl=''){
+    if(!product) return fallbackUrl || '';
+    const raw = splitMediaValues([
+      product.fondo_card, product.background_card, product.imagen_fondo, product.background_image,
+      product.fondo, product.backdrop, product.backdrop_url
+    ]);
+    return raw[0] || fallbackUrl || '';
+  }
+
+  function getProductVideoUrls(product){
+    if(!product) return [];
+    return splitMediaValues([
+      product.video, product.video_url, product.video_link, product.link_video, product.enlace_video,
+      product.url_video, product.video_producto, product.product_video
+    ]);
+  }
+
+  function getVideoEmbedUrl(url){
+    const raw = String(url || '').trim();
+    if(!raw) return '';
+    try{
+      const u = new URL(raw);
+      const host = u.hostname.replace(/^www\./,'').toLowerCase();
+      if(host === 'youtu.be'){
+        const id = u.pathname.split('/').filter(Boolean)[0];
+        return id ? `https://www.youtube.com/embed/${id}` : raw;
+      }
+      if(host.includes('youtube.com')){
+        const id = u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
+        return id ? `https://www.youtube.com/embed/${id}` : raw;
+      }
+      if(host.includes('vimeo.com')){
+        const id = u.pathname.split('/').filter(Boolean).pop();
+        return id ? `https://player.vimeo.com/video/${id}` : raw;
+      }
+      if(host.includes('drive.google.com')){
+        const parts = u.pathname.split('/').filter(Boolean);
+        const fileIdx = parts.indexOf('file');
+        const id = fileIdx >= 0 && parts[fileIdx + 2] === 'view' ? parts[fileIdx + 1] : (u.searchParams.get('id') || '');
+        return id ? `https://drive.google.com/file/d/${id}/preview` : raw;
+      }
+    }catch(_){}
+    return raw;
+  }
+
+  function isDirectVideoUrl(url){
+    return /\.(mp4|webm|ogg|mov)(\?|#|$)/i.test(String(url || ''));
+  }
+
+  function getProductMediaItems(product){
+    const items = [];
+    getProductVideoUrls(product).forEach((url, idx) => items.push({ type:'video', url, label:`Video ${idx + 1}` }));
+    getProductImageUrls(product).forEach((url, idx) => items.push({ type:'image', url, label:`Imagen ${idx + 1}` }));
+    return items;
+  }
+
+  function clearActiveProductVideo(){
+    if(!activeProductImageWrap) return;
+    activeProductImageWrap.querySelectorAll('.active-product-video-frame,.active-product-video').forEach(el => el.remove());
   }
 
   function stopActiveProductImageCycle(){
     if(activeImageCycleTimer){ clearInterval(activeImageCycleTimer); activeImageCycleTimer = null; }
     activeImageCycleUrls = [];
+    activeMediaCycleItems = [];
     activeImageCycleIndex = 0;
   }
 
   function renderActiveProductGallery(){
     if(!activeProductGallery || !activeProductGalleryCounter) return;
-    const urls = Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.slice() : [];
+    const items = (Array.isArray(activeMediaCycleItems) && activeMediaCycleItems.length)
+      ? activeMediaCycleItems.slice()
+      : (Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.map(url => ({ type:'image', url })) : []);
     activeProductGallery.innerHTML = '';
-    const total = urls.length;
+    const total = items.length;
     const index = Math.max(0, Math.min(activeImageCycleIndex, Math.max(0, total - 1)));
     activeImageCycleIndex = index;
     if(!total){
@@ -1430,15 +1500,22 @@
       if(activeProductGalleryNext) activeProductGalleryNext.disabled = true;
       return;
     }
-    urls.forEach((url, idx) => {
+    items.forEach((item, idx) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'search-card-thumb' + (idx === index ? ' active' : '');
-      btn.setAttribute('aria-label', `Imagen ${idx + 1}`);
-      const img = document.createElement('img');
-      img.src = url;
-      img.alt = `Vista ${idx + 1}`;
-      btn.appendChild(img);
+      btn.className = 'search-card-thumb' + (idx === index ? ' active' : '') + (item.type === 'video' ? ' is-video' : '');
+      btn.setAttribute('aria-label', item.type === 'video' ? `Video ${idx + 1}` : `Imagen ${idx + 1}`);
+      if(item.type === 'video'){
+        const mark = document.createElement('span');
+        mark.className = 'video-thumb-mark';
+        mark.textContent = '▶ Video';
+        btn.appendChild(mark);
+      }else{
+        const img = document.createElement('img');
+        img.src = item.url;
+        img.alt = `Vista ${idx + 1}`;
+        btn.appendChild(img);
+      }
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         showActiveProductImageAt(idx);
@@ -1452,12 +1529,16 @@
 
   function showActiveProductImageAt(index = 0){
     if(!activeProductImageWrap || !activeProductImage) return;
-    const urls = Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.filter(Boolean) : [];
+    const items = (Array.isArray(activeMediaCycleItems) && activeMediaCycleItems.length)
+      ? activeMediaCycleItems.filter(item => item && item.url)
+      : (Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.filter(Boolean).map(url => ({ type:'image', url })) : []);
     const mediaCol = activeProductImageWrap.closest('.search-card-media-col');
-    if(!urls.length){
+    clearActiveProductVideo();
+    if(!items.length){
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
       activeProductImageWrap.classList.add('empty');
+      activeProductImageWrap.classList.remove('has-video');
       if(mediaCol){
         mediaCol.style.setProperty('--product-bg-image', 'none');
         mediaCol.classList.remove('has-backdrop-image');
@@ -1465,15 +1546,40 @@
       renderActiveProductGallery();
       return;
     }
-    activeImageCycleIndex = Math.max(0, Math.min(Number(index) || 0, urls.length - 1));
-    const currentUrl = urls[activeImageCycleIndex];
-    activeProductImage.src = currentUrl;
-    activeProductImage.style.display = 'block';
+    activeImageCycleIndex = Math.max(0, Math.min(Number(index) || 0, items.length - 1));
+    const item = items[activeImageCycleIndex];
+    const currentUrl = item.url;
     activeProductImageWrap.classList.remove('empty');
+    if(item.type === 'video'){
+      activeProductImage.removeAttribute('src');
+      activeProductImage.style.display = 'none';
+      activeProductImageWrap.classList.add('has-video');
+      if(isDirectVideoUrl(currentUrl)){
+        const video = document.createElement('video');
+        video.className = 'active-product-video';
+        video.src = currentUrl;
+        video.controls = true;
+        video.playsInline = true;
+        video.preload = 'metadata';
+        activeProductImageWrap.appendChild(video);
+      }else{
+        const iframe = document.createElement('iframe');
+        iframe.className = 'active-product-video-frame';
+        iframe.src = getVideoEmbedUrl(currentUrl);
+        iframe.title = 'Video del producto';
+        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+        iframe.allowFullscreen = true;
+        activeProductImageWrap.appendChild(iframe);
+      }
+    }else{
+      activeProductImageWrap.classList.remove('has-video');
+      activeProductImage.src = currentUrl;
+      activeProductImage.style.display = 'block';
+    }
     if(mediaCol){
-      const backdropUrl = getProductBackdropUrl(appState.selectedProduct, currentUrl);
-      mediaCol.style.setProperty('--product-bg-image', toCssImageUrl(backdropUrl || currentUrl));
-      mediaCol.classList.add('has-backdrop-image');
+      const backdropUrl = getProductBackdropUrl(appState.selectedProduct, item.type === 'image' ? currentUrl : '');
+      mediaCol.style.setProperty('--product-bg-image', toCssImageUrl(backdropUrl || (item.type === 'image' ? currentUrl : '')));
+      mediaCol.classList.toggle('has-backdrop-image', !!(backdropUrl || item.type === 'image'));
     }
     renderActiveProductGallery();
   }
@@ -1497,9 +1603,11 @@
     activeImageGalleryBound = true;
   }
 
-  function startActiveProductImageCycle(urls){
+  function startActiveProductImageCycle(urls, product){
     stopActiveProductImageCycle();
-    activeImageCycleUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
+    const mediaItems = product ? getProductMediaItems(product) : [];
+    activeMediaCycleItems = mediaItems.length ? mediaItems : (Array.isArray(urls) ? urls.filter(Boolean).map(url => ({ type:'image', url })) : []);
+    activeImageCycleUrls = activeMediaCycleItems.map(item => item.url).filter(Boolean);
     bindActiveProductGalleryControls();
     showActiveProductImageAt(0);
   }
@@ -1531,7 +1639,7 @@
     activeLocation.textContent = hasProduct ? (p.ubicacion || '—') : '—';
     if(activeStoreLocation) activeStoreLocation.textContent = hasProduct ? (p.almacen || '—') : '—';
     if(activeProductImageWrap && activeProductImage){
-      startActiveProductImageCycle(getProductImageUrls(p));
+      startActiveProductImageCycle(getProductImageUrls(p), p);
     }
     renderActiveVariantStrip(p);
     if(document.body.classList.contains('search-card-modal-open')) setTimeout(updateExpandedSideCards, 20);
@@ -2512,6 +2620,8 @@
       const iBarras = firstOf('barras','barra') >= 0 ? firstOf('barras','barra') : fallback.barras;
       const iImagen = firstOf('imagen','image','foto','img');
       const iImagen2 = firstOf('imagen 2','imagen2','image 2','image2','foto 2','foto2','img 2','img2');
+      const iFondoCard = firstOf('fondo card','fondo_card','background card','background_card','imagen fondo','imagen_fondo','url fondo','link fondo');
+      const iVideoUrl = firstOf('video','video url','video_url','url video','url_video','link video','link_video','enlace video','enlace_video','video producto','video_producto');
       const iTalla = firstOf('talla','size');
       const iColor = firstOf('color','colour');
       const iUb = firstOf('ubicacion','ubiccaion','ubicaion','ubiccacion') >= 0 ? firstOf('ubicacion','ubiccaion','ubicaion','ubiccacion') : fallback.ubicacion;
@@ -2552,6 +2662,8 @@
         const barras = val(vals, iBarras);
         const imagen = val(vals, iImagen);
         const imagen2 = val(vals, iImagen2);
+        const fondo_card = val(vals, iFondoCard);
+        const video_url = val(vals, iVideoUrl);
         const talla = val(vals, iTalla);
         const color = val(vals, iColor);
 
@@ -2577,6 +2689,7 @@
           imagen,
           imagen2,
           fondo_card,
+          video_url,
           talla,
           color,
           ubicacion: main.raw || ubicacion,
@@ -3864,6 +3977,7 @@
       { id: uid('map'), field:'talla', label:'Talla', header:'' },
       { id: uid('map'), field:'color', label:'Color', header:'' },
       { id: uid('map'), field:'imagen', label:'Imagen principal', header:'' },
+      { id: uid('map'), field:'video_url', label:'Video del producto', header:'' },
       { id: uid('map'), field:'fondo_card', label:'Fondo card', header:'' },
       { id: uid('map'), field:'ubicacion', label:'Ubicación', header:'' },
     ];
@@ -4330,6 +4444,7 @@ function getSheetBranchOpenMap(){
         imagen:['imagen','image','foto','fotografia','fotografía','img','image url','url imagen','url de imagen','link imagen','enlace imagen'],
         imagen2:['imagen 2','imagen2','image 2','image2','foto 2','foto2','img 2','img2','url imagen 2','image url 2','link imagen 2','enlace imagen 2'],
         fondo_card:['fondo card','fondo_card','background card','background_card','imagen fondo','imagen_fondo','fondo','background image','background','url fondo','link fondo'],
+        video_url:['video','video url','video_url','url video','url_video','link video','link_video','enlace video','enlace_video','video producto','video_producto'],
         barras:['barras','barra','barcode','codigo de barras'],
         almacen:['almacen','almacén','warehouse','ubicacion almacen','ubicación almacén','ubicacion en almacen','ubicación en almacén'],
         zona:['zona'],
@@ -4357,7 +4472,7 @@ function getSheetBranchOpenMap(){
       const list = rows.map((row,ri)=>{
         const rec = {};
         (branch.sheetMapRows||[]).forEach(m=>{ if(m.header && m.field) rec[m.field]=getVal(row,m.header); });
-        ['sku','nombre','variante','talla','color','imagen','imagen2','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
+        ['sku','nombre','variante','talla','color','imagen','imagen2','fondo_card','video_url','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
           if(!String(rec[field]||'').trim()) rec[field] = getAliasVal(row, field);
         });
         const ubicacion = normalizeLocationCode(buildImportedLocation(rec, 'main'));
@@ -4374,6 +4489,7 @@ function getSheetBranchOpenMap(){
         const color = String(rec.color || '').trim();
         const imagen2 = String(rec.imagen2 || '').trim();
         const fondo_card = String(rec.fondo_card || '').trim();
+        const video_url = String(rec.video_url || '').trim();
         const almacen = storeParsed.raw || almacenRaw || '';
         return {
           sku,
@@ -4383,6 +4499,7 @@ function getSheetBranchOpenMap(){
           imagen,
           imagen2,
           fondo_card,
+          video_url,
           talla,
           color,
           ubicacion: mainParsed.raw || ubicacion,
@@ -4470,7 +4587,7 @@ function getSheetBranchOpenMap(){
       const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
       const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
-      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen principal</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
+      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen principal</option><option value="video_url" ${row.field==='video_url'?'selected':''}>Video del producto</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
       return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y, si deseas, asigna una imagen de fondo para las cards</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;

@@ -2853,3 +2853,11 @@ body.theme-light .layout-premium-render #layoutSvg .zone-label{stroke:#ffffff;st
 .sheet-branch-card,.company-card,.company-branch-card{background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018));}
 .sheet-map-row select,.sheet-map-row input{min-height:40px}
 body.theme-light .panel,body.theme-light .dashboard-card,body.theme-light .sheet-branch-card,body.theme-light .company-card,body.theme-light .company-branch-card,body.theme-light .company-summary-card{box-shadow:0 14px 28px rgba(11,53,34,.06)}
+
+/* Patch: video en card de producto + miniatura */
+.product-photo.has-video{background:linear-gradient(180deg,rgba(0,0,0,.18),rgba(0,0,0,.34));}
+.active-product-video,.active-product-video-frame{width:100%;height:100%;min-height:260px;border:0;border-radius:inherit;background:#000;display:block;object-fit:contain;box-shadow:0 18px 60px rgba(0,0,0,.35)}
+.search-card.search-card-expanded .active-product-video,
+.search-card.search-card-expanded .active-product-video-frame{min-height:50vh;height:100%;}
+.search-card-thumb.is-video{display:grid;place-items:center;background:linear-gradient(135deg,rgba(39,174,96,.26),rgba(16,24,34,.82));border:1px solid rgba(137,205,175,.24);color:#d7ffe8;font-weight:900;font-size:11px;letter-spacing:.02em}
+.video-thumb-mark{display:inline-grid;place-items:center;padding:6px 8px;border-radius:999px;background:rgba(0,0,0,.32);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
