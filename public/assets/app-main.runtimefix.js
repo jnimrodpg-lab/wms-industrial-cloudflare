@@ -1644,6 +1644,8 @@
     activeProductMeta.textContent = hasProduct ? `Variante activa: talla ${sizeText || '—'}${colorText ? ` • color ${colorText}` : ''}` : 'Selecciona un producto para enfocarlo rápido.';
     activeLocation.textContent = hasProduct ? (p.ubicacion || '—') : '—';
     if(activeStoreLocation) activeStoreLocation.textContent = hasProduct ? (p.almacen || '—') : '—';
+    const activeCard = document.getElementById('activeProductCard');
+    if(activeCard) applyCardLayoutConfigToElement(activeCard, cfg);
     if(activeProductImageWrap && activeProductImage){
       startActiveProductImageCycle(getProductImageUrls(cardProduct), cardProduct);
     }
@@ -4165,6 +4167,15 @@
       videoHeader: pick('video','link video','url video','enlace video'),
       backdropHeader: pick('fondo','background'),
       mediaMode: 'carousel',
+      layout: {
+        width: 1180,
+        height: 820,
+        mediaPosition: 'left',
+        alignX: 'center',
+        alignY: 'top',
+        offsetX: 0,
+        offsetY: 0,
+      },
       showDefaultLocation: true,
       showVariants: true,
       showActions: true,
@@ -4177,6 +4188,25 @@
     };
   }
 
+  function sanitizeCardLayout(layout){
+    const source = layout && typeof layout === 'object' ? layout : {};
+    const clamp = (value, min, max, fallback) => {
+      const n = Number(value);
+      if(!Number.isFinite(n)) return fallback;
+      return Math.max(min, Math.min(max, n));
+    };
+    const allow = (value, list, fallback) => list.includes(value) ? value : fallback;
+    return {
+      width: clamp(source.width, 380, 1600, 1180),
+      height: clamp(source.height, 420, 1200, 820),
+      mediaPosition: allow(String(source.mediaPosition || ''), ['left','right','top'], 'left'),
+      alignX: allow(String(source.alignX || ''), ['left','center','right'], 'center'),
+      alignY: allow(String(source.alignY || ''), ['top','center','bottom'], 'top'),
+      offsetX: clamp(source.offsetX, -320, 320, 0),
+      offsetY: clamp(source.offsetY, -320, 320, 0)
+    };
+  }
+
   function ensureBranchCardConfig(branch){
     if(!branch || typeof branch !== 'object') return defaultCardConfig({});
     const base = defaultCardConfig(branch);
@@ -4185,9 +4215,88 @@
     branch.cardConfig = {
       ...base,
       ...cfg,
+      layout: sanitizeCardLayout(cfg.layout || base.layout),
       fields: fields.map((f, idx) => ({ id:f?.id || uid('cardfld'), label:String(f?.label || `Dato ${idx+1}`), header:String(f?.header || ''), visible:f?.visible !== false }))
     };
     return branch.cardConfig;
+  }
+
+  function getCardLayoutConfig(cfg){
+    return sanitizeCardLayout(cfg?.layout || {});
+  }
+
+  function applyCardLayoutConfigToElement(element, cfg, { preview=false }={}){
+    if(!element) return;
+    const layout = getCardLayoutConfig(cfg);
+    element.dataset.mediaPosition = layout.mediaPosition;
+    element.dataset.previewAlignX = layout.alignX;
+    element.dataset.previewAlignY = layout.alignY;
+    element.style.setProperty('--card-custom-width', `${layout.width}px`);
+    element.style.setProperty('--card-custom-height', `${layout.height}px`);
+    element.style.setProperty('--card-offset-x', `${layout.offsetX}px`);
+    element.style.setProperty('--card-offset-y', `${layout.offsetY}px`);
+    if(preview){
+      element.style.setProperty('--preview-offset-x', `${layout.offsetX}px`);
+      element.style.setProperty('--preview-offset-y', `${layout.offsetY}px`);
+    }
+  }
+
+  function getCardPreviewMediaHtml(item){
+    if(!item || !item.url) return '<div class="designer-preview-empty">Sin imagen ni video</div>';
+    if(item.type === 'video'){
+      if(isDirectVideoUrl(item.url)){
+        return `<video src="${escapeHtml(item.url)}" controls muted playsinline preload="metadata"></video>`;
+      }
+      const embed = getVideoEmbedUrl(item.url);
+      if(embed){
+        return `<iframe src="${escapeHtml(embed)}" title="Video del producto" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
+      }
+      return `<div class="designer-preview-video-placeholder"><div class="play">▶</div><div><b>Video vinculado</b><small>${escapeHtml(item.url)}</small></div></div>`;
+    }
+    return `<img src="${escapeHtml(item.url)}" alt="Imagen del producto">`;
+  }
+
+  function buildCardDesignerPreviewMarkup(product, cfg){
+    const previewProduct = product ? hydrateProductForCard(product) : null;
+    const titleValue = previewProduct ? (productHeaderValue(previewProduct, cfg.titleHeader) || previewProduct.nombre || 'Sin nombre') : 'Sin producto';
+    const subtitleValue = previewProduct ? (productHeaderValue(previewProduct, cfg.subtitleHeader) || previewProduct.sku || '—') : '—';
+    const locationValue = previewProduct ? (previewProduct.ubicacion || '—') : '—';
+    const storeValue = previewProduct ? (previewProduct.almacen || '—') : '—';
+    const sizeValue = previewProduct ? getProductSizeValue(previewProduct) : '';
+    const colorValue = previewProduct ? getProductColorValue(previewProduct) : '';
+    const mediaItems = previewProduct ? getProductMediaItems(previewProduct) : [];
+    const firstMedia = mediaItems[0] || null;
+    const backdropUrl = previewProduct ? getProductBackdropUrl(previewProduct, firstMedia?.type === 'image' ? firstMedia?.url : '') : '';
+    const customRows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header || '').trim()).map(f => {
+      const value = previewProduct ? productHeaderValue(previewProduct, f.header) : '';
+      if(!value) return '';
+      return `<div class="active-card-custom-field"><span>${escapeHtml(f.label || f.header)}</span><b>${escapeHtml(value)}</b></div>`;
+    }).filter(Boolean).join('');
+    const thumbs = mediaItems.map((item, index) => `<button class="search-card-thumb ${index===0?'active':''}" type="button" tabindex="-1"><span>${item.type === 'video' ? '▶' : String(index+1).padStart(2,'0')}</span></button>`).join('');
+    const variantsHtml = cfg.showVariants === false ? '' : `<div class="variant-groups"><div class="variant-group"><div class="variant-group-label">Talla</div><div class="variant-strip">${sizeValue ? `<button class="variant-chip active" type="button">${escapeHtml(sizeValue)}</button>` : '<span class="muted tiny">Sin talla detectada</span>'}</div></div><div class="variant-group"><div class="variant-group-label">Color</div><div class="variant-strip">${colorValue ? `<button class="variant-chip active" type="button">${escapeHtml(colorValue)}</button>` : '<span class="muted tiny">Sin color detectado</span>'}</div></div></div>`;
+    const actionsHtml = cfg.showActions === false ? '' : `<div class="search-card-actions-row"><button class="action-btn secondary search-card-action" type="button">Ver ubicación</button><button class="action-btn primary search-card-action" type="button">Abrir visor</button></div>`;
+    const metaHtml = cfg.showDefaultLocation === false ? '' : `<div class="search-card-meta"><div class="search-meta-block"><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(locationValue)}</span></div><div class="search-meta-block"><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(storeValue)}</span></div></div>`;
+    const layout = getCardLayoutConfig(cfg);
+    return `<div class="card-designer-stage"><div class="card-designer-stage-note tiny muted">Preview editable del card expandido. Ajusta medidas, posición y ubicación desde la configuración.</div><div class="card-designer-preview-host align-x-${layout.alignX} align-y-${layout.alignY}" id="cardDesignerPreviewHost"><div class="search-card search-card-expanded designer-preview-card" id="cardDesignerPreviewCard" style="--product-bg-image:${toCssImageUrl(backdropUrl || (firstMedia?.type === 'image' ? firstMedia.url : ''))};"><div class="search-card-media-col ${backdropUrl || firstMedia?.type==='image' ? 'has-backdrop-image' : ''}"><div class="product-photo ${firstMedia ? '' : 'empty'}">${getCardPreviewMediaHtml(firstMedia)}</div><div class="search-card-gallery">${thumbs}</div><div class="search-card-gallery-nav"><button class="gallery-nav-btn" type="button" tabindex="-1">‹</button><span class="gallery-counter">${String(Math.max(1, mediaItems.length)).padStart(2,'0')} / ${String(Math.max(1, mediaItems.length)).padStart(2,'0')}</span><button class="gallery-nav-btn" type="button" tabindex="-1">›</button></div></div><div class="search-card-body"><div class="search-card-title-row"><div><div class="search-card-kicker">Producto</div><div class="search-card-title">${escapeHtml(titleValue)}</div><div class="search-card-sku">${escapeHtml(subtitleValue)}</div></div></div>${metaHtml}<div>${customRows ? `<div id="activeCardCustomFields" class="active-card-custom-fields">${customRows}</div>` : ''}<div class="muted tiny search-card-variant-copy">Variante activa: talla ${escapeHtml(sizeValue || '—')}${colorValue ? ` • color ${escapeHtml(colorValue)}` : ''}</div>${variantsHtml}</div>${actionsHtml}</div></div></div></div>`;
+  }
+
+  function renderCardDesignerPreviewPane(branch, cfg, product){
+    detailWrap.innerHTML = `<div class="card-designer-preview-shell"><div class="card-designer-preview-meta"><div><div class="tiny muted">Producto usado para vista previa</div><h3>${escapeHtml(product?.nombre || 'Sin producto seleccionado')}</h3><div class="muted tiny">${escapeHtml(product?.sku || '')}</div></div><div class="designer-preview-asset-list"><div><span>Imagen detectada</span><b>${escapeHtml(productHeaderValue(product, cfg.imageHeader) || product?.imagen || '—')}</b></div><div><span>Video detectado</span><b>${escapeHtml(productHeaderValue(product, cfg.videoHeader) || product?.video_url || '—')}</b></div></div></div>${buildCardDesignerPreviewMarkup(product, cfg)}</div>`;
+    const previewCard = document.getElementById('cardDesignerPreviewCard');
+    if(previewCard) applyCardLayoutConfigToElement(previewCard, cfg, { preview:true });
+    fitCardDesignerPreview();
+  }
+
+  function fitCardDesignerPreview(){
+    const host = document.getElementById('cardDesignerPreviewHost');
+    const card = document.getElementById('cardDesignerPreviewCard');
+    if(!host || !card) return;
+    const width = parseFloat(card.style.getPropertyValue('--card-custom-width') || card.style.width || 1180);
+    const height = parseFloat(card.style.getPropertyValue('--card-custom-height') || card.style.height || 820);
+    const rect = host.getBoundingClientRect();
+    if(!rect.width || !rect.height) return;
+    const scale = Math.max(0.22, Math.min((rect.width - 28) / width, (rect.height - 28) / height, 1));
+    card.style.setProperty('--preview-scale', String(Number(scale.toFixed(3))));
   }
 
   function getActiveCardBranch(){
@@ -4293,17 +4402,18 @@
     setUnifiedMapLayout(false);
     contentTitle.textContent = 'Diseño de Card';
     contentSubtitle.textContent = 'Vincula columnas del Sheet al card del producto.';
-    contentStatus.textContent = 'Configura título, multimedia y datos visibles';
+    contentStatus.textContent = 'Preview editable: medidas, posición y ubicación';
     contentFootRight.textContent = 'Card';
-    detailTitle.textContent = 'Vista previa';
-    detailSubtitle.textContent = 'Producto activo';
+    detailTitle.textContent = 'Preview editable';
+    detailSubtitle.textContent = 'Card expandido';
     detailStatus.textContent = 'Preview';
-    detailChip.textContent = 'card';
+    detailChip.textContent = 'layout';
     const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
     const activeIndex = Math.max(0, Math.min(Number(appState.activeBranchIndex || appState.admin?.activeBranch || 0), Math.max(0, branches.length - 1)));
     const branch = branches[activeIndex] || branches[0] || null;
     const cfg = ensureBranchCardConfig(branch || {});
     const headers = getSheetHeaderOptions(branch || {});
+    const layout = getCardLayoutConfig(cfg);
     const optionHtml = (selected='') => `<option value="">— No usar —</option>` + headers.map(h=>`<option value="${escapeHtml(h)}" ${String(selected||'')===String(h)?'selected':''}>${escapeHtml(h)}</option>`).join('');
     const branchOptions = branches.map((b,i)=>`<option value="${i}" ${i===activeIndex?'selected':''}>${escapeHtml(b.name || `Sucursal ${i+1}`)}</option>`).join('');
     const fieldsHtml = (cfg.fields||[]).map((f,i)=>`
@@ -4318,7 +4428,7 @@
         <article class="company-card">
           <div class="section-title"><span>1</span><div><b>Sucursal y headers</b><small>La configuración se guarda por sucursal.</small></div></div>
           <div class="form-grid two">
-            <label>Sucursal<select class="input" id="cardBranchSelect">${branchOptions}</select></label>
+            <label>Sucursal<select class="input card-designer-live" id="cardBranchSelect">${branchOptions}</select></label>
             <label>Headers disponibles<input class="input" value="${headers.length} encabezados leídos" readonly></label>
           </div>
           ${headers.length ? '<div class="tiny muted">Usa “Vincular Sheet → Leer fila 1” si no ves alguna columna nueva.</div>' : '<div class="empty compact"><b>No hay headers cargados.</b><div class="muted tiny">Primero ve a Vincular Sheet y lee la fila 1.</div></div>'}
@@ -4326,12 +4436,12 @@
         <article class="company-card">
           <div class="section-title"><span>2</span><div><b>Campos principales</b><small>Define qué columna alimenta cada zona del card.</small></div></div>
           <div class="form-grid two">
-            <label>Título principal<select class="input" id="cardTitleHeader">${optionHtml(cfg.titleHeader)}</select></label>
-            <label>Subtítulo / código<select class="input" id="cardSubtitleHeader">${optionHtml(cfg.subtitleHeader)}</select></label>
-            <label>Imagen principal<select class="input" id="cardImageHeader">${optionHtml(cfg.imageHeader)}</select></label>
-            <label>Video del producto<select class="input" id="cardVideoHeader">${optionHtml(cfg.videoHeader)}</select></label>
-            <label>Fondo del card<select class="input" id="cardBackdropHeader">${optionHtml(cfg.backdropHeader)}</select></label>
-            <label>Prioridad multimedia<select class="input" id="cardMediaMode"><option value="carousel" ${cfg.mediaMode==='carousel'?'selected':''}>Carrusel imagen + video</option><option value="video-first" ${cfg.mediaMode==='video-first'?'selected':''}>Video primero</option><option value="image-first" ${cfg.mediaMode==='image-first'?'selected':''}>Imagen primero</option></select></label>
+            <label>Título principal<select class="input card-designer-live" id="cardTitleHeader">${optionHtml(cfg.titleHeader)}</select></label>
+            <label>Subtítulo / código<select class="input card-designer-live" id="cardSubtitleHeader">${optionHtml(cfg.subtitleHeader)}</select></label>
+            <label>Imagen principal<select class="input card-designer-live" id="cardImageHeader">${optionHtml(cfg.imageHeader)}</select></label>
+            <label>Video del producto<select class="input card-designer-live" id="cardVideoHeader">${optionHtml(cfg.videoHeader)}</select></label>
+            <label>Fondo del card<select class="input card-designer-live" id="cardBackdropHeader">${optionHtml(cfg.backdropHeader)}</select></label>
+            <label>Prioridad multimedia<select class="input card-designer-live" id="cardMediaMode"><option value="carousel" ${cfg.mediaMode==='carousel'?'selected':''}>Carrusel imagen + video</option><option value="video-first" ${cfg.mediaMode==='video-first'?'selected':''}>Video primero</option><option value="image-first" ${cfg.mediaMode==='image-first'?'selected':''}>Imagen primero</option></select></label>
           </div>
         </article>
         <article class="company-card">
@@ -4342,16 +4452,28 @@
         <article class="company-card">
           <div class="section-title"><span>4</span><div><b>Visibilidad</b><small>Controla bloques fijos del card actual.</small></div></div>
           <div class="check-grid">
-            <label class="switch-line"><input type="checkbox" id="cardShowLocation" ${cfg.showDefaultLocation!==false?'checked':''}> Mostrar ubicación / almacén</label>
-            <label class="switch-line"><input type="checkbox" id="cardShowVariants" ${cfg.showVariants!==false?'checked':''}> Mostrar tallas y colores</label>
-            <label class="switch-line"><input type="checkbox" id="cardShowActions" ${cfg.showActions!==false?'checked':''}> Mostrar botones del card</label>
+            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowLocation" ${cfg.showDefaultLocation!==false?'checked':''}> Mostrar ubicación / almacén</label>
+            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowVariants" ${cfg.showVariants!==false?'checked':''}> Mostrar tallas y colores</label>
+            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowActions" ${cfg.showActions!==false?'checked':''}> Mostrar botones del card</label>
           </div>
+        </article>
+        <article class="company-card">
+          <div class="section-title"><span>5</span><div><b>Layout y preview</b><small>Controla medidas, posición y ubicación del card.</small></div></div>
+          <div class="card-layout-grid">
+            <label>Ancho del card (px)<input class="input card-designer-live" id="cardLayoutWidth" type="number" min="380" max="1600" step="10" value="${layout.width}"></label>
+            <label>Alto del card (px)<input class="input card-designer-live" id="cardLayoutHeight" type="number" min="420" max="1200" step="10" value="${layout.height}"></label>
+            <label>Multimedia<select class="input card-designer-live" id="cardLayoutMediaPosition"><option value="left" ${layout.mediaPosition==='left'?'selected':''}>Izquierda</option><option value="right" ${layout.mediaPosition==='right'?'selected':''}>Derecha</option><option value="top" ${layout.mediaPosition==='top'?'selected':''}>Arriba</option></select></label>
+            <label>Ubicación horizontal<select class="input card-designer-live" id="cardLayoutAlignX"><option value="left" ${layout.alignX==='left'?'selected':''}>Izquierda</option><option value="center" ${layout.alignX==='center'?'selected':''}>Centro</option><option value="right" ${layout.alignX==='right'?'selected':''}>Derecha</option></select></label>
+            <label>Ubicación vertical<select class="input card-designer-live" id="cardLayoutAlignY"><option value="top" ${layout.alignY==='top'?'selected':''}>Arriba</option><option value="center" ${layout.alignY==='center'?'selected':''}>Centro</option><option value="bottom" ${layout.alignY==='bottom'?'selected':''}>Abajo</option></select></label>
+            <label>Offset X (px)<input class="input card-designer-live" id="cardLayoutOffsetX" type="number" min="-320" max="320" step="5" value="${layout.offsetX}"></label>
+            <label>Offset Y (px)<input class="input card-designer-live" id="cardLayoutOffsetY" type="number" min="-320" max="320" step="5" value="${layout.offsetY}"></label>
+          </div>
+          <div class="tiny muted" style="margin-top:10px">La vista previa del panel derecho se actualiza en tiempo real y el layout también se aplica al card activo.</div>
           <div class="toolbar-row" style="margin-top:16px"><button class="btn primary" id="btnSaveCardConfig" type="button">💾 Guardar diseño de card</button><button class="btn secondary" id="btnPreviewCardConfig" type="button">Actualizar vista previa</button></div>
         </article>
       </div>`;
     const products = getBranchPreviewProducts(branch).length ? getBranchPreviewProducts(branch) : appState.products;
     const p = appState.selectedProduct || products[0] || null;
-    detailWrap.innerHTML = `<div class="card"><div class="card-body"><div class="tiny muted">Producto usado para vista previa</div><h3 style="margin:8px 0 4px">${escapeHtml(p?.nombre || 'Sin producto seleccionado')}</h3><div class="muted tiny">${escapeHtml(p?.sku || '')}</div><div style="margin-top:14px" class="kv"><div class="kv-row"><div class="tiny muted">Video detectado</div><div>${escapeHtml(productHeaderValue(p, cfg.videoHeader) || p?.video_url || '—')}</div></div><div class="kv-row"><div class="tiny muted">Imagen detectada</div><div>${escapeHtml(productHeaderValue(p, cfg.imageHeader) || p?.imagen || '—')}</div></div></div></div></div>`;
 
     const readUi = () => {
       cfg.titleHeader = document.getElementById('cardTitleHeader')?.value || '';
@@ -4363,6 +4485,15 @@
       cfg.showDefaultLocation = !!document.getElementById('cardShowLocation')?.checked;
       cfg.showVariants = !!document.getElementById('cardShowVariants')?.checked;
       cfg.showActions = !!document.getElementById('cardShowActions')?.checked;
+      cfg.layout = sanitizeCardLayout({
+        width: document.getElementById('cardLayoutWidth')?.value,
+        height: document.getElementById('cardLayoutHeight')?.value,
+        mediaPosition: document.getElementById('cardLayoutMediaPosition')?.value,
+        alignX: document.getElementById('cardLayoutAlignX')?.value,
+        alignY: document.getElementById('cardLayoutAlignY')?.value,
+        offsetX: document.getElementById('cardLayoutOffsetX')?.value,
+        offsetY: document.getElementById('cardLayoutOffsetY')?.value,
+      });
       cfg.fields = (cfg.fields||[]).map((f,i)=>({
         ...f,
         visible: !!document.querySelector(`[data-card-field-visible="${i}"]`)?.checked,
@@ -4370,12 +4501,30 @@
         header: document.querySelector(`[data-card-field-header="${i}"]`)?.value || ''
       }));
     };
-    const rerenderAfter = () => { readUi(); renderCardDesigner(); updateActiveProductCard(appState.selectedProduct || p); };
+
+    const updatePreviewOnly = () => {
+      readUi();
+      renderCardDesignerPreviewPane(branch, cfg, p);
+      updateActiveProductCard(appState.selectedProduct || p);
+    };
+
+    renderCardDesignerPreviewPane(branch, cfg, p);
+    updateActiveProductCard(appState.selectedProduct || p);
+
     document.getElementById('cardBranchSelect')?.addEventListener('change', (e)=>{ appState.activeBranchIndex = Number(e.target.value || 0); appState.admin.activeBranch = appState.activeBranchIndex; renderCardDesigner(); });
     document.getElementById('btnAddCardField')?.addEventListener('click', ()=>{ readUi(); cfg.fields.push({ id:uid('cardfld'), label:'Nuevo dato', header:'', visible:true }); renderCardDesigner(); });
     contentWrap.querySelectorAll('[data-card-field-remove]').forEach(btn=>btn.addEventListener('click', e=>{ readUi(); cfg.fields.splice(Number(e.currentTarget.dataset.cardFieldRemove),1); renderCardDesigner(); }));
-    document.getElementById('btnPreviewCardConfig')?.addEventListener('click', ()=>{ readUi(); updateActiveProductCard(appState.selectedProduct || p); showToast('Vista previa actualizada.', 'success', 1200); });
+    contentWrap.querySelectorAll('.card-designer-live').forEach(el => {
+      const eventName = (el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'text')) ? 'input' : 'change';
+      el.addEventListener(eventName, updatePreviewOnly);
+    });
+    contentWrap.querySelectorAll('[data-card-field-visible], [data-card-field-label], [data-card-field-header]').forEach(el => {
+      const eventName = (el.tagName === 'INPUT' && el.type !== 'checkbox') ? 'input' : 'change';
+      el.addEventListener(eventName, updatePreviewOnly);
+    });
+    document.getElementById('btnPreviewCardConfig')?.addEventListener('click', ()=>{ updatePreviewOnly(); showToast('Vista previa actualizada.', 'success', 1200); });
     document.getElementById('btnSaveCardConfig')?.addEventListener('click', async ()=>{ readUi(); await saveCardConfigForBranch(activeIndex); });
+    window.requestAnimationFrame(fitCardDesignerPreview);
   }
 
 function getSheetBranchOpenMap(){
