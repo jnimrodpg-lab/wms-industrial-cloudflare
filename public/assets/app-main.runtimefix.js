@@ -1187,6 +1187,8 @@
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
+    const isCardDesignerScreen = screen === 'card';
+    appRoot.classList.toggle('card-designer-layout', isCardDesignerScreen);
     appRoot.classList.toggle('sheet-swap-layout', isSheetLayout);
     appRoot.classList.toggle('sheet-expanded', isSheetLayout && !!appState.ui.sheetExpanded);
     if(showSearch){
@@ -1208,10 +1210,19 @@
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
+      const isCardDesigner = screen === 'card';
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels || isLayoutScreen);
       contentPanel.style.gridColumn = compactViewport ? '' : ((isRackModels || isLayoutScreen) ? '2 / -1' : '');
-      appRoot.style.gridTemplateColumns = compactViewport ? '' : (isRackModels ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr' : 'var(--sidebar-w) 1fr') : (isLayoutScreen ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr' : 'var(--sidebar-w) 1fr') : (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr 320px' : 'var(--sidebar-w) 1fr 320px')));
+      if(compactViewport){
+        appRoot.style.gridTemplateColumns = '';
+      }else if(isRackModels || isLayoutScreen){
+        appRoot.style.gridTemplateColumns = appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(0,1fr)' : 'var(--sidebar-w) minmax(0,1fr)';
+      }else if(isCardDesigner){
+        appRoot.style.gridTemplateColumns = appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(640px,1fr) minmax(640px,1fr)' : 'var(--sidebar-w) minmax(640px,1fr) minmax(640px,1fr)';
+      }else{
+        appRoot.style.gridTemplateColumns = appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 1fr 320px' : 'var(--sidebar-w) 1fr 320px';
+      }
     }
     contentWrap.innerHTML = '';
     detailWrap.innerHTML = '';
