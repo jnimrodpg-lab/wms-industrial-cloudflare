@@ -1585,11 +1585,13 @@
       : (Array.isArray(activeImageCycleUrls) ? activeImageCycleUrls.filter(Boolean).map(url => ({ type:'image', url })) : []);
     const mediaCol = activeProductImageWrap.closest('.search-card-media-col');
     clearActiveProductVideo();
+    const activeCard = document.getElementById('activeProductCard');
     if(!items.length){
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
       activeProductImageWrap.classList.add('empty');
       activeProductImageWrap.classList.remove('has-video');
+      if(activeCard) activeCard.classList.remove('card-video-overlay');
       if(mediaCol){
         mediaCol.style.setProperty('--product-bg-image', 'none');
         mediaCol.classList.remove('has-backdrop-image');
@@ -1601,6 +1603,7 @@
     const item = items[activeImageCycleIndex];
     const currentUrl = item.url;
     activeProductImageWrap.classList.remove('empty');
+    if(activeCard) activeCard.classList.toggle('card-video-overlay', item.type === 'video');
     if(item.type === 'video'){
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
@@ -4345,7 +4348,8 @@
     const actionsHtml = cfg.showActions === false ? '' : `<div class="search-card-actions-row"><button class="action-btn secondary search-card-action" type="button">Ver ubicación</button><button class="action-btn primary search-card-action" type="button">Abrir visor</button></div>`;
     const metaHtml = cfg.showDefaultLocation === false ? '' : `<div class="search-card-meta"><div class="search-meta-block"><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(locationValue)}</span></div><div class="search-meta-block"><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(storeValue)}</span></div></div>`;
     const layout = getCardLayoutConfig(cfg);
-    return `<div class="card-designer-stage"><div class="card-designer-stage-note tiny muted">Preview editable del card expandido. Ajusta medidas, posición y ubicación desde la configuración.</div><div class="card-designer-preview-host align-x-${layout.alignX} align-y-${layout.alignY}" id="cardDesignerPreviewHost"><div class="search-card search-card-expanded designer-preview-card" id="cardDesignerPreviewCard" style="--product-bg-image:${toCssImageUrl(backdropUrl || (firstMedia?.type === 'image' ? firstMedia.url : ''))};"><div class="search-card-media-col ${backdropUrl || firstMedia?.type==='image' ? 'has-backdrop-image' : ''}"><div class="product-photo ${firstMedia ? '' : 'empty'}">${getCardPreviewMediaHtml(firstMedia)}</div><div class="search-card-gallery">${thumbs}</div><div class="search-card-gallery-nav"><button class="gallery-nav-btn" type="button" tabindex="-1">‹</button><span class="gallery-counter">${String(Math.max(1, mediaItems.length)).padStart(2,'0')} / ${String(Math.max(1, mediaItems.length)).padStart(2,'0')}</span><button class="gallery-nav-btn" type="button" tabindex="-1">›</button></div></div><div class="search-card-body"><div class="search-card-title-row"><div><div class="search-card-kicker">Producto</div><div class="search-card-title">${escapeHtml(titleValue)}</div><div class="search-card-sku">${escapeHtml(subtitleValue)}</div></div></div>${metaHtml}<div>${customRows ? `<div id="activeCardCustomFields" class="active-card-custom-fields">${customRows}</div>` : ''}<div class="muted tiny search-card-variant-copy">Variante activa: talla ${escapeHtml(sizeValue || '—')}${colorValue ? ` • color ${escapeHtml(colorValue)}` : ''}</div>${variantsHtml}</div>${actionsHtml}</div></div></div></div>`;
+    const overlayClass = firstMedia?.type === 'video' ? ' card-video-overlay' : '';
+    return `<div class="card-designer-stage"><div class="card-designer-stage-note tiny muted">Preview editable del card expandido. Ajusta medidas, posición y ubicación desde la configuración.</div><div class="card-designer-preview-host align-x-${layout.alignX} align-y-${layout.alignY}" id="cardDesignerPreviewHost"><div class="search-card search-card-expanded designer-preview-card${overlayClass}" id="cardDesignerPreviewCard" style="--product-bg-image:${toCssImageUrl(backdropUrl || (firstMedia?.type === 'image' ? firstMedia.url : ''))};"><div class="search-card-media-col ${backdropUrl || firstMedia?.type==='image' ? 'has-backdrop-image' : ''}"><div class="product-photo ${firstMedia ? '' : 'empty'}">${getCardPreviewMediaHtml(firstMedia)}</div><div class="search-card-gallery">${thumbs}</div><div class="search-card-gallery-nav"><button class="gallery-nav-btn" type="button" tabindex="-1">‹</button><span class="gallery-counter">${String(Math.max(1, mediaItems.length)).padStart(2,'0')} / ${String(Math.max(1, mediaItems.length)).padStart(2,'0')}</span><button class="gallery-nav-btn" type="button" tabindex="-1">›</button></div></div><div class="search-card-body"><div class="search-card-title-row"><div><div class="search-card-kicker">Producto</div><div class="search-card-title">${escapeHtml(titleValue)}</div><div class="search-card-sku">${escapeHtml(subtitleValue)}</div></div></div>${metaHtml}<div>${customRows ? `<div id="activeCardCustomFields" class="active-card-custom-fields">${customRows}</div>` : ''}<div class="muted tiny search-card-variant-copy">Variante activa: talla ${escapeHtml(sizeValue || '—')}${colorValue ? ` • color ${escapeHtml(colorValue)}` : ''}</div>${variantsHtml}</div>${actionsHtml}</div></div></div></div>`;
   }
 
   function renderCardDesignerPreviewPane(branch, cfg, product){
