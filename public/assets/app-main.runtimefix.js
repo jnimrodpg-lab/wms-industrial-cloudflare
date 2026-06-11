@@ -1435,6 +1435,10 @@
     ]);
   }
 
+  function isGifLikeUrl(url){
+    return /\.(gif|apng)(\?|#|$)/i.test(String(url || ''));
+  }
+
   function getVideoEmbedUrl(url){
     const raw = String(url || '').trim();
     if(!raw) return '';
@@ -1443,33 +1447,45 @@
       const host = u.hostname.replace(/^www\./,'').toLowerCase();
       if(host === 'youtu.be'){
         const id = u.pathname.split('/').filter(Boolean)[0];
-        return id ? `https://www.youtube.com/embed/${id}` : raw;
+        return id ? `https://www.youtube.com/embed/${id}` : '';
       }
       if(host.includes('youtube.com')){
         const id = u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
-        return id ? `https://www.youtube.com/embed/${id}` : raw;
+        return id ? `https://www.youtube.com/embed/${id}` : '';
       }
       if(host.includes('vimeo.com')){
         const id = u.pathname.split('/').filter(Boolean).pop();
-        return id ? `https://player.vimeo.com/video/${id}` : raw;
+        return id ? `https://player.vimeo.com/video/${id}` : '';
       }
       if(host.includes('drive.google.com')){
         const parts = u.pathname.split('/').filter(Boolean);
         const fileIdx = parts.indexOf('file');
         const id = fileIdx >= 0 && parts[fileIdx + 2] === 'view' ? parts[fileIdx + 1] : (u.searchParams.get('id') || '');
-        return id ? `https://drive.google.com/file/d/${id}/preview` : raw;
+        return id ? `https://drive.google.com/file/d/${id}/preview` : '';
+      }
+      if(host.includes('dropbox.com')){
+        const direct = new URL(raw);
+        direct.searchParams.set('raw', '1');
+        return direct.toString();
       }
     }catch(_){}
-    return raw;
+    return '';
   }
 
   function isDirectVideoUrl(url){
-    return /\.(mp4|webm|ogg|mov)(\?|#|$)/i.test(String(url || ''));
+    return /\.(mp4|webm|ogg|mov|m4v)(\?|#|$)/i.test(String(url || ''));
+  }
+
+  function canInlineVideoUrl(url){
+    return isDirectVideoUrl(url) || !!getVideoEmbedUrl(url);
   }
 
   function getProductMediaItems(product){
     const images = getProductImageUrls(product).map((url, idx) => ({ type:'image', url, label:`Imagen ${idx + 1}` }));
-    const videos = getProductVideoUrls(product).map((url, idx) => ({ type:'video', url, label:`Video ${idx + 1}` }));
+    const videos = getProductVideoUrls(product).map((url, idx) => isGifLikeUrl(url)
+      ? ({ type:'image', url, label:`Animación ${idx + 1}` })
+      : ({ type:'video', url, label:`Video ${idx + 1}` })
+    );
     const mode = getActiveCardConfig()?.mediaMode || 'carousel';
     if(mode === 'image-first') return [...images, ...videos];
     return [...videos, ...images];
@@ -1565,13 +1581,21 @@
         video.preload = 'metadata';
         activeProductImageWrap.appendChild(video);
       }else{
-        const iframe = document.createElement('iframe');
-        iframe.className = 'active-product-video-frame';
-        iframe.src = getVideoEmbedUrl(currentUrl);
-        iframe.title = 'Video del producto';
-        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-        iframe.allowFullscreen = true;
-        activeProductImageWrap.appendChild(iframe);
+        const embedUrl = getVideoEmbedUrl(currentUrl);
+        if(embedUrl){
+          const iframe = document.createElement('iframe');
+          iframe.className = 'active-product-video-frame';
+          iframe.src = embedUrl;
+          iframe.title = 'Video del producto';
+          iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+          iframe.allowFullscreen = true;
+          activeProductImageWrap.appendChild(iframe);
+        }else{
+          const placeholder = document.createElement('div');
+          placeholder.className = 'active-product-video-placeholder';
+          placeholder.innerHTML = `<div class="play">▶</div><div><b>Video externo</b><small>No se puede incrustar este enlace dentro del card.</small><a href="${escapeHtml(currentUrl)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div>`;
+          activeProductImageWrap.appendChild(placeholder);
+        }
       }
     }else{
       activeProductImageWrap.classList.remove('has-video');
@@ -4251,7 +4275,7 @@
       if(embed){
         return `<iframe src="${escapeHtml(embed)}" title="Video del producto" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
       }
-      return `<div class="designer-preview-video-placeholder"><div class="play">▶</div><div><b>Video vinculado</b><small>${escapeHtml(item.url)}</small></div></div>`;
+      return `<div class="designer-preview-video-placeholder"><div class="play">▶</div><div><b>Video externo</b><small>Este enlace no se puede incrustar dentro del card.</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div></div>`;
     }
     return `<img src="${escapeHtml(item.url)}" alt="Imagen del producto">`;
   }
@@ -4267,7 +4291,8 @@
     const mediaItems = previewProduct ? getProductMediaItems(previewProduct) : [];
     const firstMedia = mediaItems[0] || null;
     const backdropUrl = previewProduct ? getProductBackdropUrl(previewProduct, firstMedia?.type === 'image' ? firstMedia?.url : '') : '';
-    const customRows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header || '').trim()).map(f => {
+    const mediaHeaders = new Set([cfg.imageHeader, cfg.videoHeader, cfg.backdropHeader].map(v => String(v || '').trim()).filter(Boolean));
+    const customRows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header || '').trim() && !mediaHeaders.has(String(f.header || '').trim())).map(f => {
       const value = previewProduct ? productHeaderValue(previewProduct, f.header) : '';
       if(!value) return '';
       return `<div class="active-card-custom-field"><span>${escapeHtml(f.label || f.header)}</span><b>${escapeHtml(value)}</b></div>`;
@@ -4367,7 +4392,8 @@
       else body.appendChild(host);
     }
     const cfg = getActiveCardConfig();
-    const rows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header||'').trim()).map(f => {
+    const mediaHeaders = new Set([cfg.imageHeader, cfg.videoHeader, cfg.backdropHeader].map(v => String(v || '').trim()).filter(Boolean));
+    const rows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header||'').trim() && !mediaHeaders.has(String(f.header || '').trim())).map(f => {
       const value = productHeaderValue(product, f.header);
       if(!value) return '';
       return `<div class="active-card-custom-field"><span>${escapeHtml(f.label || f.header)}</span><b>${escapeHtml(value)}</b></div>`;
