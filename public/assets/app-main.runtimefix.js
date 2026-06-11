@@ -1439,7 +1439,38 @@
     return /\.(gif|apng)(\?|#|$)/i.test(String(url || ''));
   }
 
-  function getVideoEmbedUrl(url){
+  function getDriveFileInfo(url){
+    const raw = String(url || '').trim();
+    if(!raw) return null;
+    try{
+      const u = new URL(raw);
+      const host = u.hostname.replace(/^www\./,'').toLowerCase();
+      if(!host.includes('drive.google.com') && !host.includes('docs.google.com')) return null;
+      const parts = u.pathname.split('/').filter(Boolean);
+      const dIdx = parts.indexOf('d');
+      const fileIdx = parts.indexOf('file');
+      const id = (dIdx >= 0 && parts[dIdx + 1])
+        ? parts[dIdx + 1]
+        : ((fileIdx >= 0 && parts[fileIdx + 2]) ? parts[fileIdx + 2] : (u.searchParams.get('id') || ''));
+      if(!id) return null;
+      const resourcekey = u.searchParams.get('resourcekey') || '';
+      return { id, resourcekey };
+    }catch(_){ return null; }
+  }
+
+  function getDrivePreviewUrl(url){
+    const info = getDriveFileInfo(url);
+    if(!info?.id) return '';
+    return `https://drive.google.com/file/d/${info.id}/preview${info.resourcekey ? `?resourcekey=${encodeURIComponent(info.resourcekey)}` : ''}`;
+  }
+
+  function getDriveDirectVideoUrl(url){
+    const info = getDriveFileInfo(url);
+    if(!info?.id) return '';
+    return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(info.id)}${info.resourcekey ? `&resourcekey=${encodeURIComponent(info.resourcekey)}` : ''}`;
+  }
+
+  function getVideoEmbedUrl(url, { autoplay=false }={}){
     const raw = String(url || '').trim();
     if(!raw) return '';
     try{
@@ -1447,21 +1478,18 @@
       const host = u.hostname.replace(/^www\./,'').toLowerCase();
       if(host === 'youtu.be'){
         const id = u.pathname.split('/').filter(Boolean)[0];
-        return id ? `https://www.youtube.com/embed/${id}` : '';
+        return id ? `https://www.youtube.com/embed/${id}${autoplay ? '?autoplay=1&mute=1&playsinline=1&rel=0' : '?rel=0'}` : '';
       }
       if(host.includes('youtube.com')){
         const id = u.searchParams.get('v') || u.pathname.split('/').filter(Boolean).pop();
-        return id ? `https://www.youtube.com/embed/${id}` : '';
+        return id ? `https://www.youtube.com/embed/${id}${autoplay ? '?autoplay=1&mute=1&playsinline=1&rel=0' : '?rel=0'}` : '';
       }
       if(host.includes('vimeo.com')){
         const id = u.pathname.split('/').filter(Boolean).pop();
-        return id ? `https://player.vimeo.com/video/${id}` : '';
+        return id ? `https://player.vimeo.com/video/${id}${autoplay ? '?autoplay=1&muted=1&playsinline=1' : ''}` : '';
       }
-      if(host.includes('drive.google.com')){
-        const parts = u.pathname.split('/').filter(Boolean);
-        const fileIdx = parts.indexOf('file');
-        const id = fileIdx >= 0 && parts[fileIdx + 2] === 'view' ? parts[fileIdx + 1] : (u.searchParams.get('id') || '');
-        return id ? `https://drive.google.com/file/d/${id}/preview` : '';
+      if(host.includes('drive.google.com') || host.includes('docs.google.com')){
+        return getDrivePreviewUrl(raw);
       }
       if(host.includes('dropbox.com')){
         const direct = new URL(raw);
@@ -1477,7 +1505,7 @@
   }
 
   function canInlineVideoUrl(url){
-    return isDirectVideoUrl(url) || !!getVideoEmbedUrl(url);
+    return isDirectVideoUrl(url) || !!getDriveFileInfo(url) || !!getVideoEmbedUrl(url);
   }
 
   function getProductMediaItems(product){
@@ -1493,7 +1521,7 @@
 
   function clearActiveProductVideo(){
     if(!activeProductImageWrap) return;
-    activeProductImageWrap.querySelectorAll('.active-product-video-frame,.active-product-video').forEach(el => el.remove());
+    activeProductImageWrap.querySelectorAll('.active-product-video-frame,.active-product-video,.active-product-video-placeholder').forEach(el => el.remove());
   }
 
   function stopActiveProductImageCycle(){
@@ -1572,16 +1600,25 @@
       activeProductImage.removeAttribute('src');
       activeProductImage.style.display = 'none';
       activeProductImageWrap.classList.add('has-video');
-      if(isDirectVideoUrl(currentUrl)){
+      const driveDirectUrl = getDriveDirectVideoUrl(currentUrl);
+      if(isDirectVideoUrl(currentUrl) || driveDirectUrl){
         const video = document.createElement('video');
         video.className = 'active-product-video';
-        video.src = currentUrl;
+        video.src = driveDirectUrl || currentUrl;
         video.controls = true;
+        video.autoplay = true;
+        video.muted = true;
+        video.loop = true;
         video.playsInline = true;
-        video.preload = 'metadata';
+        video.preload = 'auto';
+        video.setAttribute('playsinline','');
+        video.setAttribute('webkit-playsinline','');
         activeProductImageWrap.appendChild(video);
+        const tryPlay = () => video.play().catch(()=>{});
+        video.addEventListener('loadedmetadata', tryPlay, { once:true });
+        setTimeout(tryPlay, 160);
       }else{
-        const embedUrl = getVideoEmbedUrl(currentUrl);
+        const embedUrl = getVideoEmbedUrl(currentUrl, { autoplay:true });
         if(embedUrl){
           const iframe = document.createElement('iframe');
           iframe.className = 'active-product-video-frame';
@@ -1593,7 +1630,7 @@
         }else{
           const placeholder = document.createElement('div');
           placeholder.className = 'active-product-video-placeholder';
-          placeholder.innerHTML = `<div class="play">▶</div><div><b>Video externo</b><small>No se puede incrustar este enlace dentro del card.</small><a href="${escapeHtml(currentUrl)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div>`;
+          placeholder.innerHTML = `<div class="play">▶</div><div><b>Video externo</b><small>No se puede reproducir automáticamente este enlace dentro del card.</small><a href="${escapeHtml(currentUrl)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div>`;
           activeProductImageWrap.appendChild(placeholder);
         }
       }
@@ -4268,14 +4305,15 @@
   function getCardPreviewMediaHtml(item){
     if(!item || !item.url) return '<div class="designer-preview-empty">Sin imagen ni video</div>';
     if(item.type === 'video'){
-      if(isDirectVideoUrl(item.url)){
-        return `<video src="${escapeHtml(item.url)}" controls muted playsinline preload="metadata"></video>`;
+      const driveDirectUrl = getDriveDirectVideoUrl(item.url);
+      if(isDirectVideoUrl(item.url) || driveDirectUrl){
+        return `<video src="${escapeHtml(driveDirectUrl || item.url)}" controls autoplay muted loop playsinline preload="auto"></video>`;
       }
-      const embed = getVideoEmbedUrl(item.url);
+      const embed = getVideoEmbedUrl(item.url, { autoplay:true });
       if(embed){
         return `<iframe src="${escapeHtml(embed)}" title="Video del producto" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`;
       }
-      return `<div class="designer-preview-video-placeholder"><div class="play">▶</div><div><b>Video externo</b><small>Este enlace no se puede incrustar dentro del card.</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div></div>`;
+      return `<div class="designer-preview-video-placeholder"><div class="play">▶</div><div><b>Video externo</b><small>Este enlace no se puede reproducir automáticamente dentro del card.</small><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">Abrir video</a></div></div>`;
     }
     return `<img src="${escapeHtml(item.url)}" alt="Imagen del producto">`;
   }

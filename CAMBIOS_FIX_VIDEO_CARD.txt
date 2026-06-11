@@ -1,0 +1,11 @@
+Correcciones aplicadas al card de producto:
+- Ya no se incrustan páginas web genéricas dentro del área de video.
+- Solo se incrustan videos compatibles:
+  - YouTube
+  - Vimeo
+  - Google Drive (preview)
+  - archivos directos .mp4 .webm .ogg .mov .m4v
+- Si el enlace no es compatible para incrustar, el card ahora muestra una tarjeta limpia con botón "Abrir video" en lugar de mostrar una página rara dentro del iframe.
+- Los archivos .gif / .apng vinculados desde el campo de video ahora se tratan como imagen/animación visual, no como iframe de video.
+- Los campos adicionales del card ya no repiten como texto los headers usados en Imagen principal, Video del producto o Fondo del card.
+- Se actualizó la versión del script para evitar caché en Cloudflare.
