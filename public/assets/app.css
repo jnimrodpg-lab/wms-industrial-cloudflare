@@ -3098,3 +3098,149 @@ body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-o
   body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-title,
   .designer-preview-card.card-video-overlay .search-card-title{font-size:clamp(30px,8vw,48px)}
 }
+
+/* Refinamiento overlay + glass effect para características sobre video */
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-body,
+.designer-preview-card.card-video-overlay .search-card-body{
+  top:24px;
+  right:24px;
+  bottom:24px;
+  width:min(38%, 430px);
+  padding:20px;
+  gap:12px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.12) 0%,rgba(255,255,255,.04) 12%,rgba(10,18,30,.32) 24%,rgba(7,14,24,.58) 55%,rgba(4,10,18,.78) 100%);
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:
+    0 24px 80px rgba(0,0,0,.34),
+    inset 0 1px 0 rgba(255,255,255,.12),
+    inset 0 -1px 0 rgba(255,255,255,.03);
+  backdrop-filter:blur(20px) saturate(1.16);
+  -webkit-backdrop-filter:blur(20px) saturate(1.16);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-body::before,
+.designer-preview-card.card-video-overlay .search-card-body::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  background:radial-gradient(circle at top left,rgba(143,235,198,.15),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.04),transparent 26%);
+  pointer-events:none;
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-body > *,
+.designer-preview-card.card-video-overlay .search-card-body > *{position:relative;z-index:1}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-title-row,
+.designer-preview-card.card-video-overlay .search-card-title-row{
+  position:sticky;
+  top:-2px;
+  margin:-4px -4px 2px;
+  padding:4px 4px 10px;
+  background:linear-gradient(180deg,rgba(5,12,20,.44),rgba(5,12,20,.08));
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-kicker,
+.designer-preview-card.card-video-overlay .search-card-kicker{color:#b6f3d2;letter-spacing:.14em;text-shadow:0 0 18px rgba(111,224,161,.18)}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-title,
+.designer-preview-card.card-video-overlay .search-card-title{
+  font-size:clamp(38px,3.8vw,64px);
+  letter-spacing:-.035em;
+  text-wrap:balance;
+  text-shadow:0 10px 24px rgba(0,0,0,.28);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-sku,
+.designer-preview-card.card-video-overlay .search-card-sku{opacity:.82}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-meta,
+.designer-preview-card.card-video-overlay .search-card-meta{gap:10px;margin-top:2px}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-meta-block,
+.designer-preview-card.card-video-overlay .search-meta-block,
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .active-card-custom-field,
+.designer-preview-card.card-video-overlay .active-card-custom-field{
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.035));
+  border:1px solid rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08), 0 10px 24px rgba(0,0,0,.12);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-meta-block,
+.designer-preview-card.card-video-overlay .search-meta-block{border-radius:18px}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-meta-label,
+.designer-preview-card.card-video-overlay .search-meta-label{color:#8de1b4}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-meta-value,
+.designer-preview-card.card-video-overlay .search-meta-value{min-height:auto;font-size:14px;line-height:1.35}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .active-card-custom-fields,
+.designer-preview-card.card-video-overlay .active-card-custom-fields{gap:10px}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .variant-groups,
+.designer-preview-card.card-video-overlay .variant-groups{
+  padding:12px 14px;
+  border-radius:20px;
+  background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03));
+  border:1px solid rgba(255,255,255,.11);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .variant-group,
+.designer-preview-card.card-video-overlay .variant-group{gap:8px}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .variant-chip,
+.designer-preview-card.card-video-overlay .variant-chip{
+  background:rgba(10,16,24,.4);
+  border-color:rgba(255,255,255,.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .variant-chip.active,
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .variant-chip:hover,
+.designer-preview-card.card-video-overlay .variant-chip.active,
+.designer-preview-card.card-video-overlay .variant-chip:hover{
+  background:linear-gradient(180deg,rgba(111,224,161,.26),rgba(111,224,161,.12));
+  border-color:rgba(111,224,161,.46);
+  box-shadow:0 0 0 1px rgba(111,224,161,.12) inset,0 8px 18px rgba(44,126,86,.14);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-variant-copy,
+.designer-preview-card.card-video-overlay .search-card-variant-copy{opacity:.9}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-actions-row,
+.designer-preview-card.card-video-overlay .search-card-actions-row{
+  position:sticky;
+  bottom:-4px;
+  padding-top:12px;
+  margin-top:auto;
+  background:linear-gradient(180deg,rgba(5,12,20,0),rgba(5,12,20,.48) 28%,rgba(5,12,20,.76));
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-action,
+.designer-preview-card.card-video-overlay .search-card-action{
+  min-height:48px;
+  border-radius:16px;
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-gallery,
+.designer-preview-card.card-video-overlay .search-card-gallery,
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-gallery-nav,
+.designer-preview-card.card-video-overlay .search-card-gallery-nav{
+  left:24px;
+}
+body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-thumb,
+.designer-preview-card.card-video-overlay .search-card-thumb{
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 10px 28px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.08);
+}
+@media (max-width:1180px){
+  body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-body,
+  .designer-preview-card.card-video-overlay .search-card-body{width:min(42%, 410px)}
+}
+@media (max-width:820px){
+  body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-body,
+  .designer-preview-card.card-video-overlay .search-card-body{
+    left:14px;
+    right:14px;
+    bottom:14px;
+    width:auto;
+    max-height:54%;
+    padding:16px;
+  }
+  body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .search-card-title,
+  .designer-preview-card.card-video-overlay .search-card-title{font-size:clamp(28px,7vw,42px)}
+  body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-overlay .active-card-custom-fields,
+  .designer-preview-card.card-video-overlay .active-card-custom-fields{grid-template-columns:1fr}
+}
