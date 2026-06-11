@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v5-import-50000-search-api';
+const BUILD_MARK = 'cloudflare-v6-card-designer-video';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -851,7 +851,8 @@ async function ensureSchema(db, env) {
           sheetStatusText: '',
           sheetHeaderIndex: 0,
           sheetPreviewProducts: [],
-          sheetMapRows: null
+          sheetMapRows: null,
+          cardConfig: null
         }],
         activeBranch: 0
       }),
@@ -945,7 +946,8 @@ async function createCompanyBundle(db, { companyName, username, password, role =
         sheetStatusText: '',
         sheetHeaderIndex: 0,
         sheetPreviewProducts: [],
-        sheetMapRows: null
+        sheetMapRows: null,
+        cardConfig: null
       }],
       activeBranch: 0
     }),
@@ -1053,7 +1055,8 @@ async function buildAdminStateFromDb(db, companyId = 1, savedAdmin = null) {
       sheetMapRows: safeJsonParse(
         sheet.sheet_map_json,
         Array.isArray(savedBranch.sheetMapRows) ? savedBranch.sheetMapRows : null
-      )
+      ),
+      cardConfig: savedBranch.cardConfig && typeof savedBranch.cardConfig === 'object' ? savedBranch.cardConfig : null
     });
   }
 

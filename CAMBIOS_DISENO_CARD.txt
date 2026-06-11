@@ -1,0 +1,15 @@
+CAMBIOS - Diseño de Card
+
+- Nueva pestaña Administrador > Diseño de Card.
+- Permite vincular headers del Sheet al título, subtítulo, imagen, video y fondo del card.
+- Permite agregar datos adicionales visibles en el card, con etiqueta personalizada.
+- Permite ocultar ubicación/almacén, variantes y botones.
+- La configuración se guarda por sucursal dentro del estado de la app en Cloudflare.
+- La importación ahora conserva una copia _raw de cada fila para poder leer cualquier header del Sheet en el card.
+
+Uso:
+1. Subir a GitHub y desplegar en Cloudflare.
+2. Entrar como admin.
+3. Ir a Vincular Sheet > Leer fila 1.
+4. Importar productos con Reemplazar para guardar _raw y columnas nuevas.
+5. Ir a Diseño de Card y mapear la columna Video/Imagen/etc.

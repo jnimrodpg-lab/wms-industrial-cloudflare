@@ -1224,6 +1224,7 @@
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
+      else if(screen === 'card') renderCardDesigner();
       else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
@@ -1414,13 +1415,13 @@
 
   function getProductImageUrls(product){
     if(!product) return [];
-    return splitMediaValues([product.imagen, product.image, product.imagen_url, product.image_url, product.foto, product.img, product.imagen2, product.image2, product.foto2, product.img2]);
+    return splitMediaValues([product._card_image_url, product.imagen, product.image, product.imagen_url, product.image_url, product.foto, product.img, product.imagen2, product.image2, product.foto2, product.img2]);
   }
 
   function getProductBackdropUrl(product, fallbackUrl=''){
     if(!product) return fallbackUrl || '';
     const raw = splitMediaValues([
-      product.fondo_card, product.background_card, product.imagen_fondo, product.background_image,
+      product._card_backdrop_url, product.fondo_card, product.background_card, product.imagen_fondo, product.background_image,
       product.fondo, product.backdrop, product.backdrop_url
     ]);
     return raw[0] || fallbackUrl || '';
@@ -1429,7 +1430,7 @@
   function getProductVideoUrls(product){
     if(!product) return [];
     return splitMediaValues([
-      product.video, product.video_url, product.video_link, product.link_video, product.enlace_video,
+      product._card_video_url, product.video, product.video_url, product.video_link, product.link_video, product.enlace_video,
       product.url_video, product.video_producto, product.product_video
     ]);
   }
@@ -1467,10 +1468,11 @@
   }
 
   function getProductMediaItems(product){
-    const items = [];
-    getProductVideoUrls(product).forEach((url, idx) => items.push({ type:'video', url, label:`Video ${idx + 1}` }));
-    getProductImageUrls(product).forEach((url, idx) => items.push({ type:'image', url, label:`Imagen ${idx + 1}` }));
-    return items;
+    const images = getProductImageUrls(product).map((url, idx) => ({ type:'image', url, label:`Imagen ${idx + 1}` }));
+    const videos = getProductVideoUrls(product).map((url, idx) => ({ type:'video', url, label:`Video ${idx + 1}` }));
+    const mode = getActiveCardConfig()?.mediaMode || 'carousel';
+    if(mode === 'image-first') return [...images, ...videos];
+    return [...videos, ...images];
   }
 
   function clearActiveProductVideo(){
@@ -1631,16 +1633,21 @@
   function updateActiveProductCard(p){
     if(!activeProductName) return;
     const hasProduct = !!p;
-    activeProductName.textContent = hasProduct ? (p.nombre || 'Sin nombre') : '—';
-    if(activeProductSku) activeProductSku.textContent = hasProduct ? `SKU ${p.sku || '—'}` : 'SKU —';
+    const cfg = getActiveCardConfig();
+    const cardProduct = hasProduct ? hydrateProductForCard(p) : p;
+    const titleValue = hasProduct ? (productHeaderValue(p, cfg.titleHeader) || p.nombre || 'Sin nombre') : '—';
+    const subtitleValue = hasProduct ? (productHeaderValue(p, cfg.subtitleHeader) || p.sku || '—') : '—';
+    activeProductName.textContent = titleValue;
+    if(activeProductSku) activeProductSku.textContent = hasProduct ? `${cfg.subtitleHeader ? cfg.subtitleHeader + ': ' : 'SKU '}${subtitleValue}` : 'SKU —';
     const sizeText = hasProduct ? getProductSizeValue(p) : '';
     const colorText = hasProduct ? getProductColorValue(p) : '';
     activeProductMeta.textContent = hasProduct ? `Variante activa: talla ${sizeText || '—'}${colorText ? ` • color ${colorText}` : ''}` : 'Selecciona un producto para enfocarlo rápido.';
     activeLocation.textContent = hasProduct ? (p.ubicacion || '—') : '—';
     if(activeStoreLocation) activeStoreLocation.textContent = hasProduct ? (p.almacen || '—') : '—';
     if(activeProductImageWrap && activeProductImage){
-      startActiveProductImageCycle(getProductImageUrls(p), p);
+      startActiveProductImageCycle(getProductImageUrls(cardProduct), cardProduct);
     }
+    renderActiveCardCustomFields(p);
     renderActiveVariantStrip(p);
     if(document.body.classList.contains('search-card-modal-open')) setTimeout(updateExpandedSideCards, 20);
   }
@@ -2656,6 +2663,8 @@
 
       const dataRows = rowValues.slice(headerRowIndex + 1);
       const parsed = dataRows.map((vals, dataIndex) => {
+        const rawRecord = {};
+        headerVals.forEach((h, hi) => { if(String(h||'').trim()) rawRecord[String(h).trim()] = String(vals[hi] || '').trim(); });
         const sku = val(vals, iSKU);
         const nombre = val(vals, iNombre);
         const variante = val(vals, iVar);
@@ -2702,6 +2711,7 @@
           slot: main.slot,
           nivelStore: store.nivel,
           slotStore: store.slot,
+          _raw: rawRecord,
           _rowIndex: headerRowIndex + 1 + dataIndex
         };
       }).filter(x => x.sku || x.nombre || x.barras);
@@ -4124,6 +4134,7 @@
       sheetHeaderIndex: Number.isFinite(Number(b.sheetHeaderIndex)) ? Number(b.sheetHeaderIndex) : 0,
       sheetPreviewProducts: Array.isArray(b.sheetPreviewProducts) ? b.sheetPreviewProducts : [],
       sheetMapRows: Array.isArray(b.sheetMapRows) && b.sheetMapRows.length ? b.sheetMapRows : defaultSheetMapRows(),
+      cardConfig: b.cardConfig && typeof b.cardConfig === 'object' ? b.cardConfig : null,
       sheetMeta: {
         status: b?.sheetMeta?.status || '',
         lastHeadersReadAt: Number(b?.sheetMeta?.lastHeadersReadAt || 0),
@@ -4134,7 +4145,7 @@
         loadingMessage: b?.sheetMeta?.loadingMessage || ''
       },
     }));
-    appState.admin.branches.forEach(branch => ensureBranchMeta(branch));
+    appState.admin.branches.forEach(branch => { ensureBranchMeta(branch); ensureBranchCardConfig(branch); });
   }
 
   
@@ -4142,6 +4153,229 @@
     const explicit = Array.isArray(branch?.sheetHeaders) ? branch.sheetHeaders.filter(Boolean) : [];
     const mapped = Array.isArray(branch?.sheetMapRows) ? branch.sheetMapRows.map(r => String(r?.header||'').trim()).filter(Boolean) : [];
     return Array.from(new Set([...explicit, ...mapped]));
+  }
+
+  function defaultCardConfig(branch){
+    const headers = getSheetHeaderOptions(branch || {});
+    const pick = (...keys) => headers.find(h => keys.some(k => norm(h).includes(norm(k)))) || '';
+    return {
+      titleHeader: pick('nombre','producto','descripcion') || 'Nombre',
+      subtitleHeader: pick('sku','cod','modelo','barras') || 'Sku',
+      imageHeader: pick('imagen','foto','image','img'),
+      videoHeader: pick('video','link video','url video','enlace video'),
+      backdropHeader: pick('fondo','background'),
+      mediaMode: 'carousel',
+      showDefaultLocation: true,
+      showVariants: true,
+      showActions: true,
+      fields: [
+        { id: uid('cardfld'), label:'Marca', header: pick('marca','brand'), visible: !!pick('marca','brand') },
+        { id: uid('cardfld'), label:'Categoría', header: pick('categoria','categoría','category'), visible: !!pick('categoria','categoría','category') },
+        { id: uid('cardfld'), label:'Precio', header: pick('p.lista','precio','price'), visible: !!pick('p.lista','precio','price') },
+        { id: uid('cardfld'), label:'Restock', header: pick('restock','stock','cantidad'), visible: !!pick('restock','stock','cantidad') }
+      ]
+    };
+  }
+
+  function ensureBranchCardConfig(branch){
+    if(!branch || typeof branch !== 'object') return defaultCardConfig({});
+    const base = defaultCardConfig(branch);
+    const cfg = branch.cardConfig && typeof branch.cardConfig === 'object' ? branch.cardConfig : {};
+    const fields = Array.isArray(cfg.fields) ? cfg.fields : base.fields;
+    branch.cardConfig = {
+      ...base,
+      ...cfg,
+      fields: fields.map((f, idx) => ({ id:f?.id || uid('cardfld'), label:String(f?.label || `Dato ${idx+1}`), header:String(f?.header || ''), visible:f?.visible !== false }))
+    };
+    return branch.cardConfig;
+  }
+
+  function getActiveCardBranch(){
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const idx = Number.isFinite(Number(appState.activeBranchIndex)) ? Number(appState.activeBranchIndex) : Number(appState.admin?.activeBranch || 0);
+    return branches[idx] || branches[0] || null;
+  }
+
+  function getActiveCardConfig(){
+    return ensureBranchCardConfig(getActiveCardBranch());
+  }
+
+  function productHeaderValue(product, header){
+    if(!product || !header) return '';
+    const h = String(header || '').trim();
+    if(!h) return '';
+    if(product._raw && Object.prototype.hasOwnProperty.call(product._raw, h)) return String(product._raw[h] ?? '').trim();
+    const branch = getActiveCardBranch();
+    const mapped = Array.isArray(branch?.sheetMapRows) ? branch.sheetMapRows.find(r => String(r?.header||'').trim() === h) : null;
+    if(mapped?.field && product[mapped.field] != null) return String(product[mapped.field] ?? '').trim();
+    const compact = norm(h).replace(/[^a-z0-9]+/g,'');
+    const aliases = {
+      sku:['sku','codigo','codmodelo','codigomodelo','modelo'],
+      nombre:['nombre','producto','descripcion','description','name'],
+      variante:['variante','variant','linea'],
+      talla:['talla','size'],
+      color:['color','colour'],
+      barras:['barras','barra','barcode','codigobarras'],
+      imagen:['imagen','image','foto','fotografia','img','urlimagen','linkimagen'],
+      imagen2:['imagen2','image2','foto2','img2','urlimagen2','linkimagen2'],
+      video_url:['video','videourl','urlvideo','linkvideo','enlacevideo','videoproducto'],
+      fondo_card:['fondocard','backgroundcard','imagenfondo','urlfondo','linkfondo'],
+      ubicacion:['ubicacion','ubicacionfinal','location'],
+      almacen:['almacen','ubicacionalmacen','warehouse'],
+      zona:['zona'], estante:['estante','rack'], nivel:['nivel'], slot:['slot','posicion'],
+      marca:['marca','brand'], categoria:['categoria','category'], genero:['genero','gender'], estado:['estado','status'], linea:['linea'], precio:['precio','plistaigv','plistamasigv','plist'], restock:['cantrestock','restock','stock','cantidad']
+    };
+    for(const [field, keys] of Object.entries(aliases)){
+      if(keys.includes(compact) && product[field] != null) return String(product[field] ?? '').trim();
+    }
+    const directKey = Object.keys(product).find(k => norm(k).replace(/[^a-z0-9]+/g,'') === compact);
+    return directKey ? String(product[directKey] ?? '').trim() : '';
+  }
+
+  function hydrateProductForCard(product){
+    if(!product) return product;
+    const cfg = getActiveCardConfig();
+    const copy = { ...product };
+    const img = productHeaderValue(product, cfg.imageHeader);
+    const vid = productHeaderValue(product, cfg.videoHeader);
+    const back = productHeaderValue(product, cfg.backdropHeader);
+    if(img) copy._card_image_url = img;
+    if(vid) copy._card_video_url = vid;
+    if(back) copy._card_backdrop_url = back;
+    return copy;
+  }
+
+  function renderActiveCardCustomFields(product){
+    const body = document.querySelector('#activeProductCard .search-card-body');
+    if(!body) return;
+    let host = document.getElementById('activeCardCustomFields');
+    if(!host){
+      host = document.createElement('div');
+      host.id = 'activeCardCustomFields';
+      host.className = 'active-card-custom-fields';
+      const meta = document.getElementById('activeProductMeta');
+      if(meta && meta.parentNode) meta.parentNode.insertBefore(host, meta.nextSibling);
+      else body.appendChild(host);
+    }
+    const cfg = getActiveCardConfig();
+    const rows = (cfg.fields || []).filter(f => f.visible !== false && String(f.header||'').trim()).map(f => {
+      const value = productHeaderValue(product, f.header);
+      if(!value) return '';
+      return `<div class="active-card-custom-field"><span>${escapeHtml(f.label || f.header)}</span><b>${escapeHtml(value)}</b></div>`;
+    }).filter(Boolean);
+    host.innerHTML = rows.join('');
+    host.style.display = rows.length ? '' : 'none';
+    const metaWrap = document.querySelector('#activeProductCard .search-card-meta');
+    if(metaWrap) metaWrap.style.display = cfg.showDefaultLocation === false ? 'none' : '';
+    const variants = document.querySelector('#activeProductCard .variant-groups');
+    if(variants) variants.style.display = cfg.showVariants === false ? 'none' : '';
+    const actions = document.querySelector('#activeProductCard .search-card-actions-row');
+    if(actions) actions.style.display = cfg.showActions === false ? 'none' : '';
+  }
+
+  async function saveCardConfigForBranch(index){
+    ensureBranchSheetFields();
+    const branch = appState.admin.branches[index];
+    if(!branch) return;
+    ensureBranchCardConfig(branch);
+    saveAdminState();
+    if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
+      await saveRemoteAppState('Diseño de card');
+    }
+    updateActiveProductCard(appState.selectedProduct);
+    showToast('Diseño de card guardado.', 'success');
+  }
+
+  function renderCardDesigner(){
+    ensureBranchSheetFields();
+    appState.admin.branches.forEach(b => ensureBranchCardConfig(b));
+    renderViewerMenu();
+    setUnifiedMapLayout(false);
+    contentTitle.textContent = 'Diseño de Card';
+    contentSubtitle.textContent = 'Vincula columnas del Sheet al card del producto.';
+    contentStatus.textContent = 'Configura título, multimedia y datos visibles';
+    contentFootRight.textContent = 'Card';
+    detailTitle.textContent = 'Vista previa';
+    detailSubtitle.textContent = 'Producto activo';
+    detailStatus.textContent = 'Preview';
+    detailChip.textContent = 'card';
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const activeIndex = Math.max(0, Math.min(Number(appState.activeBranchIndex || appState.admin?.activeBranch || 0), Math.max(0, branches.length - 1)));
+    const branch = branches[activeIndex] || branches[0] || null;
+    const cfg = ensureBranchCardConfig(branch || {});
+    const headers = getSheetHeaderOptions(branch || {});
+    const optionHtml = (selected='') => `<option value="">— No usar —</option>` + headers.map(h=>`<option value="${escapeHtml(h)}" ${String(selected||'')===String(h)?'selected':''}>${escapeHtml(h)}</option>`).join('');
+    const branchOptions = branches.map((b,i)=>`<option value="${i}" ${i===activeIndex?'selected':''}>${escapeHtml(b.name || `Sucursal ${i+1}`)}</option>`).join('');
+    const fieldsHtml = (cfg.fields||[]).map((f,i)=>`
+      <div class="card-map-row" data-card-field-row="${i}">
+        <label class="switch-line"><input type="checkbox" data-card-field-visible="${i}" ${f.visible!==false?'checked':''}> Mostrar</label>
+        <input class="input" data-card-field-label="${i}" value="${escapeHtml(f.label||'')}" placeholder="Etiqueta">
+        <select class="input" data-card-field-header="${i}">${optionHtml(f.header)}</select>
+        <button class="btn small danger" type="button" data-card-field-remove="${i}">Quitar</button>
+      </div>`).join('');
+    contentWrap.innerHTML = `
+      <div class="card-designer-shell">
+        <article class="company-card">
+          <div class="section-title"><span>1</span><div><b>Sucursal y headers</b><small>La configuración se guarda por sucursal.</small></div></div>
+          <div class="form-grid two">
+            <label>Sucursal<select class="input" id="cardBranchSelect">${branchOptions}</select></label>
+            <label>Headers disponibles<input class="input" value="${headers.length} encabezados leídos" readonly></label>
+          </div>
+          ${headers.length ? '<div class="tiny muted">Usa “Vincular Sheet → Leer fila 1” si no ves alguna columna nueva.</div>' : '<div class="empty compact"><b>No hay headers cargados.</b><div class="muted tiny">Primero ve a Vincular Sheet y lee la fila 1.</div></div>'}
+        </article>
+        <article class="company-card">
+          <div class="section-title"><span>2</span><div><b>Campos principales</b><small>Define qué columna alimenta cada zona del card.</small></div></div>
+          <div class="form-grid two">
+            <label>Título principal<select class="input" id="cardTitleHeader">${optionHtml(cfg.titleHeader)}</select></label>
+            <label>Subtítulo / código<select class="input" id="cardSubtitleHeader">${optionHtml(cfg.subtitleHeader)}</select></label>
+            <label>Imagen principal<select class="input" id="cardImageHeader">${optionHtml(cfg.imageHeader)}</select></label>
+            <label>Video del producto<select class="input" id="cardVideoHeader">${optionHtml(cfg.videoHeader)}</select></label>
+            <label>Fondo del card<select class="input" id="cardBackdropHeader">${optionHtml(cfg.backdropHeader)}</select></label>
+            <label>Prioridad multimedia<select class="input" id="cardMediaMode"><option value="carousel" ${cfg.mediaMode==='carousel'?'selected':''}>Carrusel imagen + video</option><option value="video-first" ${cfg.mediaMode==='video-first'?'selected':''}>Video primero</option><option value="image-first" ${cfg.mediaMode==='image-first'?'selected':''}>Imagen primero</option></select></label>
+          </div>
+        </article>
+        <article class="company-card">
+          <div class="section-title"><span>3</span><div><b>Datos adicionales del card</b><small>Agrega columnas como marca, precio, categoría o restock.</small></div></div>
+          <div class="card-map-list" id="cardFieldsList">${fieldsHtml || '<div class="muted tiny">Sin campos adicionales.</div>'}</div>
+          <div class="toolbar-row" style="margin-top:12px"><button class="btn secondary" id="btnAddCardField" type="button">+ Agregar dato</button></div>
+        </article>
+        <article class="company-card">
+          <div class="section-title"><span>4</span><div><b>Visibilidad</b><small>Controla bloques fijos del card actual.</small></div></div>
+          <div class="check-grid">
+            <label class="switch-line"><input type="checkbox" id="cardShowLocation" ${cfg.showDefaultLocation!==false?'checked':''}> Mostrar ubicación / almacén</label>
+            <label class="switch-line"><input type="checkbox" id="cardShowVariants" ${cfg.showVariants!==false?'checked':''}> Mostrar tallas y colores</label>
+            <label class="switch-line"><input type="checkbox" id="cardShowActions" ${cfg.showActions!==false?'checked':''}> Mostrar botones del card</label>
+          </div>
+          <div class="toolbar-row" style="margin-top:16px"><button class="btn primary" id="btnSaveCardConfig" type="button">💾 Guardar diseño de card</button><button class="btn secondary" id="btnPreviewCardConfig" type="button">Actualizar vista previa</button></div>
+        </article>
+      </div>`;
+    const products = getBranchPreviewProducts(branch).length ? getBranchPreviewProducts(branch) : appState.products;
+    const p = appState.selectedProduct || products[0] || null;
+    detailWrap.innerHTML = `<div class="card"><div class="card-body"><div class="tiny muted">Producto usado para vista previa</div><h3 style="margin:8px 0 4px">${escapeHtml(p?.nombre || 'Sin producto seleccionado')}</h3><div class="muted tiny">${escapeHtml(p?.sku || '')}</div><div style="margin-top:14px" class="kv"><div class="kv-row"><div class="tiny muted">Video detectado</div><div>${escapeHtml(productHeaderValue(p, cfg.videoHeader) || p?.video_url || '—')}</div></div><div class="kv-row"><div class="tiny muted">Imagen detectada</div><div>${escapeHtml(productHeaderValue(p, cfg.imageHeader) || p?.imagen || '—')}</div></div></div></div></div>`;
+
+    const readUi = () => {
+      cfg.titleHeader = document.getElementById('cardTitleHeader')?.value || '';
+      cfg.subtitleHeader = document.getElementById('cardSubtitleHeader')?.value || '';
+      cfg.imageHeader = document.getElementById('cardImageHeader')?.value || '';
+      cfg.videoHeader = document.getElementById('cardVideoHeader')?.value || '';
+      cfg.backdropHeader = document.getElementById('cardBackdropHeader')?.value || '';
+      cfg.mediaMode = document.getElementById('cardMediaMode')?.value || 'carousel';
+      cfg.showDefaultLocation = !!document.getElementById('cardShowLocation')?.checked;
+      cfg.showVariants = !!document.getElementById('cardShowVariants')?.checked;
+      cfg.showActions = !!document.getElementById('cardShowActions')?.checked;
+      cfg.fields = (cfg.fields||[]).map((f,i)=>({
+        ...f,
+        visible: !!document.querySelector(`[data-card-field-visible="${i}"]`)?.checked,
+        label: document.querySelector(`[data-card-field-label="${i}"]`)?.value || f.label || '',
+        header: document.querySelector(`[data-card-field-header="${i}"]`)?.value || ''
+      }));
+    };
+    const rerenderAfter = () => { readUi(); renderCardDesigner(); updateActiveProductCard(appState.selectedProduct || p); };
+    document.getElementById('cardBranchSelect')?.addEventListener('change', (e)=>{ appState.activeBranchIndex = Number(e.target.value || 0); appState.admin.activeBranch = appState.activeBranchIndex; renderCardDesigner(); });
+    document.getElementById('btnAddCardField')?.addEventListener('click', ()=>{ readUi(); cfg.fields.push({ id:uid('cardfld'), label:'Nuevo dato', header:'', visible:true }); renderCardDesigner(); });
+    contentWrap.querySelectorAll('[data-card-field-remove]').forEach(btn=>btn.addEventListener('click', e=>{ readUi(); cfg.fields.splice(Number(e.currentTarget.dataset.cardFieldRemove),1); renderCardDesigner(); }));
+    document.getElementById('btnPreviewCardConfig')?.addEventListener('click', ()=>{ readUi(); updateActiveProductCard(appState.selectedProduct || p); showToast('Vista previa actualizada.', 'success', 1200); });
+    document.getElementById('btnSaveCardConfig')?.addEventListener('click', async ()=>{ readUi(); await saveCardConfigForBranch(activeIndex); });
   }
 
 function getSheetBranchOpenMap(){
@@ -4471,6 +4705,8 @@ function getSheetBranchOpenMap(){
       };
       const list = rows.map((row,ri)=>{
         const rec = {};
+        const rawRecord = {};
+        headers.forEach((h, hi) => { if(String(h||'').trim()) rawRecord[String(h).trim()] = String(row[hi] || '').trim(); });
         (branch.sheetMapRows||[]).forEach(m=>{ if(m.header && m.field) rec[m.field]=getVal(row,m.header); });
         ['sku','nombre','variante','talla','color','imagen','imagen2','fondo_card','video_url','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
           if(!String(rec[field]||'').trim()) rec[field] = getAliasVal(row, field);
@@ -4512,6 +4748,7 @@ function getSheetBranchOpenMap(){
           rackStore: storeParsed.rackId,
           nivelStore: storeParsed.level,
           slotStore: storeParsed.slot,
+          _raw: rawRecord,
           _rowIndex:ri + headerIndex + 2
         };
       }).filter(p=>p.sku || p.nombre || p.barras || p.ubicacion || p.almacen);
@@ -8900,6 +9137,7 @@ function zoomLayout(factor, center){
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
     else if(appState.screen === 'layout') renderLayoutEditor();
     else if(appState.screen === 'racks') renderRackModels();
+    else if(appState.screen === 'card') renderCardDesigner();
   }
 
   function applyUiTheme(theme){
