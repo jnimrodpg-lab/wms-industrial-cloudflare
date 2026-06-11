@@ -1465,9 +1465,14 @@
   }
 
   function getDriveDirectVideoUrl(url){
-    const info = getDriveFileInfo(url);
+    const raw = String(url || '').trim();
+    const info = getDriveFileInfo(raw);
     if(!info?.id) return '';
-    return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(info.id)}${info.resourcekey ? `&resourcekey=${encodeURIComponent(info.resourcekey)}` : ''}`;
+    const qp = new URLSearchParams();
+    qp.set('id', info.id);
+    if(info.resourcekey) qp.set('resourcekey', info.resourcekey);
+    qp.set('source', raw);
+    return `/api/drive-video?${qp.toString()}`;
   }
 
   function getVideoEmbedUrl(url, { autoplay=false }={}){

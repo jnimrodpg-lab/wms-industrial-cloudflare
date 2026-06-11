@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v6-card-designer-video';
+const BUILD_MARK = 'cloudflare-v10-drive-video-proxy';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -29,6 +29,11 @@ export async function onRequest(context) {
         runtime: 'cloudflare-pages',
         build: BUILD_MARK
       });
+    }
+
+    if (path === '/drive-video' && request.method === 'GET') {
+      await requireAuth(request, env.DB);
+      return proxyGoogleDriveVideo(request, url);
     }
 
     if (path === '/session' && request.method === 'GET') {
@@ -1103,6 +1108,97 @@ function normalizeBranch(row) {
     created_at: row.created_at,
     updated_at: row.updated_at
   };
+}
+
+function getDriveFileInfoFromAny(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    if (!host.includes('drive.google.com') && !host.includes('docs.google.com')) return null;
+    const parts = u.pathname.split('/').filter(Boolean);
+    const dIdx = parts.indexOf('d');
+    const fileIdx = parts.indexOf('file');
+    const id = (dIdx >= 0 && parts[dIdx + 1])
+      ? parts[dIdx + 1]
+      : ((fileIdx >= 0 && parts[fileIdx + 2]) ? parts[fileIdx + 2] : (u.searchParams.get('id') || ''));
+    if (!id) return null;
+    return { id, resourcekey: u.searchParams.get('resourcekey') || '' };
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeDriveFileId(value) {
+  const text = String(value || '').trim();
+  return /^[A-Za-z0-9_-]{10,}$/.test(text) ? text : '';
+}
+
+async function proxyGoogleDriveVideo(request, currentUrl) {
+  const explicitId = safeDriveFileId(currentUrl.searchParams.get('id'));
+  const sourceInfo = getDriveFileInfoFromAny(currentUrl.searchParams.get('source') || currentUrl.searchParams.get('url'));
+  const id = explicitId || sourceInfo?.id || '';
+  const resourcekey = String(currentUrl.searchParams.get('resourcekey') || sourceInfo?.resourcekey || '').trim();
+  if (!id) return withJson({ ok: false, error: 'ID de video de Google Drive inválido', build: BUILD_MARK }, 400);
+
+  const upstreamUrl = new URL('https://drive.google.com/uc');
+  upstreamUrl.searchParams.set('export', 'download');
+  upstreamUrl.searchParams.set('id', id);
+  if (resourcekey) upstreamUrl.searchParams.set('resourcekey', resourcekey);
+
+  const range = request.headers.get('range');
+  const fetchHeaders = new Headers();
+  if (range) fetchHeaders.set('range', range);
+  fetchHeaders.set('user-agent', 'Mozilla/5.0 WMS-Drive-Video-Proxy');
+
+  let upstream = await fetch(upstreamUrl.toString(), {
+    method: 'GET',
+    headers: fetchHeaders,
+    redirect: 'follow'
+  });
+
+  const contentType = upstream.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    const html = await upstream.text();
+    const confirm = html.match(/confirm=([0-9A-Za-z_\-]+)/)?.[1] || html.match(/name="confirm" value="([^"]+)"/)?.[1] || '';
+    if (confirm) {
+      upstreamUrl.searchParams.set('confirm', confirm);
+      upstream = await fetch(upstreamUrl.toString(), {
+        method: 'GET',
+        headers: fetchHeaders,
+        redirect: 'follow'
+      });
+    } else {
+      return new Response('Google Drive no entregó el archivo como video público. Verifica que esté en “Cualquier usuario con el vínculo → Lector”.', {
+        status: 403,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-wms-drive-proxy': 'html-access-blocked'
+        }
+      });
+    }
+  }
+
+  const headers = new Headers();
+  const pass = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+  for (const key of pass) {
+    const value = upstream.headers.get(key);
+    if (value) headers.set(key, value);
+  }
+  if (!headers.has('content-type')) headers.set('content-type', 'video/mp4');
+  headers.set('cache-control', 'public, max-age=3600');
+  headers.set('x-wms-drive-proxy', 'ok');
+  headers.set('access-control-allow-origin', '*');
+  headers.set('access-control-allow-methods', 'GET, HEAD, OPTIONS');
+  headers.set('access-control-allow-headers', 'Range, Content-Type');
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers
+  });
 }
 
 async function getSession(request, db, allowAnonymous = false) {
