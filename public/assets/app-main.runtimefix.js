@@ -1322,6 +1322,38 @@
     return cleaned;
   }
 
+
+  function getViewerProductFamilyItems(product){
+    if(!product) return [];
+    const list = Array.isArray(appState.products) ? appState.products : [];
+    const nameKey = norm(product.nombre || '');
+    const variantKey = norm(product.variante || '');
+    const skuBase = norm(String(product.sku || '').replace(/[-_ ]?(?:xs|s|m|l|xl|xxl|xxxl|\d+)$/i,''));
+    const sameName = nameKey ? list.filter(p => norm(p?.nombre || '') === nameKey) : [];
+    if(sameName.length > 1) return sameName;
+    if(skuBase){
+      const sameSkuBase = list.filter(p => norm(String(p?.sku || '').replace(/[-_ ]?(?:xs|s|m|l|xl|xxl|xxxl|\d+)$/i,'')) === skuBase);
+      if(sameSkuBase.length > 1) return sameSkuBase;
+    }
+    if(variantKey && nameKey){
+      const fuzzy = list.filter(p => norm(p?.nombre || '') === nameKey || norm(p?.variante || '') === variantKey);
+      if(fuzzy.length > 1) return fuzzy;
+    }
+    return [product];
+  }
+
+  function getViewerProductFamilySummary(product){
+    const items = getViewerProductFamilyItems(product);
+    const sizes = Array.from(new Set(items.map(p => getProductSizeValue(p)).filter(Boolean)));
+    sizes.sort((a,b) => {
+      const rank = getLogicalSizeRank(a) - getLogicalSizeRank(b);
+      return rank || String(a).localeCompare(String(b), 'es', { sensitivity:'base', numeric:true });
+    });
+    const colors = Array.from(new Set(items.map(p => getProductColorValue(p)).filter(Boolean)));
+    colors.sort((a,b) => String(a).localeCompare(String(b), 'es', { sensitivity:'base', numeric:true }));
+    return { items, sizes, colors };
+  }
+
   function normalizeVariantValue(value){
     return norm(String(value || '').trim());
   }
@@ -5408,27 +5440,57 @@ function getSheetBranchOpenMap(){
     const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
     const sizeValue = getProductSizeValue(prod) || '—';
     const colorValue = getProductColorValue(prod) || '—';
+    const family = getViewerProductFamilySummary(prod);
+    const sizesHtml = family.sizes.length
+      ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
+      : '<span class="muted tiny">Sin tallas detectadas</span>';
+    const colorsHtml = family.colors.length
+      ? family.colors.map(color => `<span class="viewer-variant-chip color">${escapeHtml(color)}</span>`).join('')
+      : '<span class="muted tiny">Sin colores detectados</span>';
     detailWrap.innerHTML = `
-      <div class="viewer-product-info-card viewer-product-premium-card">
-        <div class="viewer-product-media ${img ? '' : 'empty'}">
-          ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
-          ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit">
+        <div class="viewer-product-top-layout">
+          <div class="viewer-media-col">
+            <div class="viewer-product-media ${img ? '' : 'empty'}">
+              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+            </div>
+            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
+          </div>
+          <div class="viewer-side-col">
+            <div class="viewer-product-copy tight">
+              <div class="search-card-kicker">Producto</div>
+              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
+            </div>
+            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid">
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
+              <div class="search-meta-block"><span class="viewer-info-icon">▤</span><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
+              <div class="search-meta-block"><span class="viewer-info-icon">≋</span><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
+              <div class="search-meta-block"><span class="viewer-info-icon">◇</span><span class="search-meta-label">Variante actual</span><span class="search-meta-value">${escapeHtml(prod.variante || '—')}</span></div>
+              <div class="search-meta-block"><span class="viewer-info-icon">▣</span><span class="search-meta-label">Rack almacén</span><span class="search-meta-value">${escapeHtml(ctx.storeRackId || '—')}</span></div>
+            </div>
+          </div>
         </div>
-        ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
-        <div class="viewer-product-copy">
-          <div class="search-card-kicker">Producto</div>
-          <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
-          <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
-        </div>
-        <div class="viewer-info-grid viewer-info-icon-grid">
-          <div class="search-meta-block"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">▤</span><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">≋</span><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">◇</span><span class="search-meta-label">Variante</span><span class="search-meta-value">${escapeHtml(prod.variante || '—')}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">T</span><span class="search-meta-label">Talla</span><span class="search-meta-value">${escapeHtml(sizeValue)}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon color-dot"></span><span class="search-meta-label">Color</span><span class="search-meta-value">${escapeHtml(colorValue)}</span></div>
-          <div class="search-meta-block"><span class="viewer-info-icon">▣</span><span class="search-meta-label">Almacén</span><span class="search-meta-value">${escapeHtml(ctx.storeRackId || '—')}</span></div>
+        <div class="viewer-bottom-info">
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas del modelo</b><small>${family.sizes.length || 0} registradas</small></div></div>
+            <div class="viewer-variant-chip-wrap">${sizesHtml}</div>
+          </div>
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon color-dot"></span><div><b>Colores del modelo</b><small>${family.colors.length || 0} registrados</small></div></div>
+            <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
+          </div>
+          <div class="viewer-variant-panel compact-meta">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">◧</span><div><b>Ficha rápida</b><small>Datos del producto activo</small></div></div>
+            <div class="viewer-quick-meta-grid">
+              <div><span>Talla actual</span><b>${escapeHtml(sizeValue)}</b></div>
+              <div><span>Color actual</span><b>${escapeHtml(colorValue)}</b></div>
+              <div><span>Almacén</span><b>${escapeHtml(ctx.storeRackId || '—')}</b></div>
+              <div><span>Modelo</span><b>${escapeHtml(prod.sku || '—')}</b></div>
+            </div>
+          </div>
         </div>
         <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button>
       </div>`;
