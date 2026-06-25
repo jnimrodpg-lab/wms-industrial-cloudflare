@@ -1,8 +1,0 @@
-Corrección aplicada:
-- Los videos de Google Drive ahora intentan reproducirse dentro del card con etiqueta <video>, usando autoplay + muted + loop + playsinline.
-- Se agregó extracción robusta del ID de Google Drive para links tipo /file/d/.../view y links con id=.
-- Se conserva fallback con iframe para YouTube, Vimeo y Drive preview.
-- Si el navegador bloquea autoplay, el video queda con controles visibles para reproducir manualmente.
-- Se actualizó el cache-buster del script para Cloudflare.
-
-Nota: por políticas del navegador, el autoplay solo funciona de forma confiable cuando el video está silenciado (muted). Por eso queda muted por defecto.
