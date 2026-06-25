@@ -1573,8 +1573,22 @@ function productSearchHaystack(product) {
   ].join(' '));
 }
 
+function isImageHeaderName(header) {
+  const key = String(header || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  return /^(imagen|image|foto|fotografia|img)(\d+)?$/.test(key)
+    || /^(urlimagen|imagenurl|linkimagen|enlaceimagen)(\d+)?$/.test(key)
+    || /^(imageurl|urlimage|linkimage)(\d+)?$/.test(key);
+}
+
 function productHasImage(product) {
-  return !!productValue(product, ['imagen', 'image', 'foto', 'imagen2', 'image2', 'foto2']);
+  if (productValue(product, ['imagen', 'imagen1', 'image', 'image1', 'foto', 'foto1', 'imagen2', 'image2', 'foto2', 'imagen3', 'image3', 'foto3', 'imagen4', 'image4', 'foto4'])) return true;
+  if (Array.isArray(product?.imagenes) && product.imagenes.some((v) => String(v || '').trim())) return true;
+  const raw = product && typeof product._raw === 'object' ? product._raw : null;
+  return !!(raw && Object.entries(raw).some(([header, value]) => isImageHeaderName(header) && String(value || '').trim()));
 }
 
 function productHasLocation(product) {
