@@ -1469,6 +1469,38 @@
     return { items, sizes, colors };
   }
 
+
+  function getViewerColorChipStyle(colorName){
+    const key = norm(colorName || '');
+    const palette = {
+      'amarillo': { bg:'#f3cf4f', text:'#3f2c00', border:'#f7dd80' },
+      'arena': { bg:'#cfbfa0', text:'#352b1a', border:'#dfd1b5' },
+      'azalea': { bg:'#c9b3e6', text:'#352450', border:'#dac9ef' },
+      'blanco': { bg:'#f3f4f6', text:'#31353b', border:'#ffffff' },
+      'melon': { bg:'#d6dd88', text:'#334015', border:'#e4e8ae' },
+      'negro': { bg:'#23272f', text:'#f3f7fb', border:'#4a5360' },
+      'plomo': { bg:'#858b95', text:'#10151d', border:'#aab0b8' },
+      'coral': { bg:'#ff9478', text:'#4b2115', border:'#ffb39f' },
+      'rojo': { bg:'#de5a54', text:'#fff5f4', border:'#ea827d' },
+      'beige': { bg:'#dac8ab', text:'#342a1b', border:'#e7dbc7' },
+      'palo rosa': { bg:'#d792a7', text:'#472434', border:'#e7b7c5' },
+      'azul': { bg:'#6a93d8', text:'#f4f8ff', border:'#8cb0ea' },
+      'verde': { bg:'#71bf8d', text:'#143322', border:'#95d2aa' },
+      'lila': { bg:'#c3abdd', text:'#352549', border:'#d6c5ea' },
+      'rosado': { bg:'#efb6c9', text:'#4a2330', border:'#f3cad7' },
+      'fucsia': { bg:'#d964a8', text:'#fff4fb', border:'#e58abf' },
+      'marron': { bg:'#8b6148', text:'#fff8f4', border:'#a67a5d' },
+      'chocolate': { bg:'#6f5238', text:'#fff8f1', border:'#8d6b4c' },
+      'indigo': { bg:'#6674b8', text:'#f5f7ff', border:'#8894cd' },
+      'índigo': { bg:'#6674b8', text:'#f5f7ff', border:'#8894cd' },
+      'perla': { bg:'#ece7da', text:'#3b3730', border:'#faf6ea' },
+      'melange': { bg:'#b6b6b1', text:'#21242b', border:'#d0d0ca' },
+      'gris': { bg:'#9aa1ab', text:'#151922', border:'#bbc0c7' }
+    };
+    const tone = palette[key] || { bg:'rgba(255,255,255,.08)', text:'#effbf4', border:'rgba(255,255,255,.16)' };
+    return `background:${tone.bg};color:${tone.text};border-color:${tone.border};`;
+  }
+
   function normalizeVariantValue(value){
     return norm(String(value || '').trim());
   }
@@ -5606,7 +5638,7 @@ function getSheetBranchOpenMap(){
       ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
       : '<span class="muted tiny">Sin tallas detectadas</span>';
     const colorsHtml = family.colors.length
-      ? family.colors.map(color => `<span class="viewer-variant-chip color">${escapeHtml(color)}</span>`).join('')
+      ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('')
       : '<span class="muted tiny">Sin colores detectados</span>';
     detailWrap.innerHTML = `
       <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel">

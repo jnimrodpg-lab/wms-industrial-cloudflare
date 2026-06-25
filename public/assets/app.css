@@ -4348,3 +4348,42 @@ body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::before
 @media(max-width:1400px){.category-pinterest-grid{column-count:3}.app.viewer-product-layout .searchbar{grid-template-columns:minmax(0,1fr) 58px minmax(140px,170px) minmax(160px,220px)!important}}
 @media(max-width:980px){.category-pinterest-grid{column-count:2}.category-pinterest-head{flex-direction:column}.category-pinterest-toolbar{align-items:stretch;flex-direction:column}.category-pinterest-toolbar input{width:100%}.app.viewer-product-layout .searchbar{grid-template-columns:1fr 52px!important}.category-filter-btn,.app.viewer-product-layout .searchbar .action-btn{grid-column:1 / -1}}
 @media(max-width:620px){.category-pinterest-backdrop{padding:10px}.category-pinterest-shell{height:96vh;border-radius:22px}.category-pinterest-grid{column-count:1;padding:16px}.category-pinterest-head{padding:18px}.category-pinterest-head h2{font-size:28px}}
+
+/* V27: ubicación, tallas y colores apilados + cápsulas de color reales */
+.product-only-panel .viewer-product-top-layout{
+  grid-template-columns:minmax(280px,1fr) minmax(250px,.86fr);
+  align-items:start;
+}
+.product-only-panel .viewer-info-grid.location-only-grid{
+  grid-template-columns:1fr !important;
+  gap:14px;
+}
+.product-only-panel .viewer-info-grid.location-only-grid .search-meta-block{
+  min-height:108px;
+}
+.viewer-bottom-info.product-variants-only{
+  grid-template-columns:1fr !important;
+  gap:14px;
+}
+.viewer-bottom-info.product-variants-only .viewer-variant-panel{
+  min-height:auto;
+}
+.product-only-panel .viewer-variant-chip-wrap{
+  max-height:none;
+  overflow:visible;
+  padding-right:0;
+}
+.viewer-variant-chip.color{
+  border-width:1px;
+  border-style:solid;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 14px rgba(0,0,0,.10);
+  text-shadow:none;
+}
+.viewer-variant-chip.color:hover{
+  transform:translateY(-1px);
+}
+@media(max-width:1500px){
+  .product-only-panel .viewer-info-grid.location-only-grid{
+    grid-template-columns:1fr !important;
+  }
+}
