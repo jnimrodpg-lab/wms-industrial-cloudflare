@@ -3,6 +3,7 @@
   const $$ = (s,el=document)=>[...el.querySelectorAll(s)];
   const appRoot = $('#appRoot');
   const toggleSidebar = $('#toggleSidebar');
+  $$('.menu-item[data-screen="card"]').forEach(el => el.remove());
   const menuItems = $$('.menu-item');
   const searchInput = $('#searchInput');
   const btnSearch = $('#btnSearch');
@@ -105,6 +106,9 @@
       showZones: true,
       showLabels: true,
       showMiniMap: true,
+      snapEnabled: true,
+      snapSize: 2,
+      dimFontSize: 32,
       rightPanelOpen: true,
       stackMenu: { open:false, rackId:'', x:0, y:0 },
       inspectorStackOpen: false,
@@ -197,7 +201,7 @@
       appState.editor = {
         mode:'select', dragging:null, offset:{x:0,y:0}, viewBox:{x:0,y:0,w:900,h:620}, sectionVisible:true,
         racksVisible:true, rackPropsOpen:true, sectionCuts:{ x:{pos:.5,dir:1}, y:{pos:.5,dir:1} }, view:'ortho',
-        zonesLocked:false, showDims:true, stackMenu:{ open:false, rackId:'', x:0, y:0 }, inspectorStackOpen:false,
+        zonesLocked:false, showDims:true, snapEnabled:true, snapSize:2, dimFontSize:32, stackMenu:{ open:false, rackId:'', x:0, y:0 }, inspectorStackOpen:false,
         dragSelect:{ active:false, additive:false, start:null, end:null }, snapPreview:null, viewBoxCustomized:false
       };
     }
@@ -1137,7 +1141,15 @@
   }
   function rackFullyInsideZone(rack, zone){ return !!(rack && zone) && rackCorners(rack).every(pt => pointInPoly(pt, zone.pts) || pointNearPolygonEdge(pt, zone.pts, 1)); }
   function collectSnapPoints(exceptZoneId = ''){ const out = []; (appState.layout?.zones || []).forEach(zone => zone.pts.forEach((pt, idx) => { if(zone.id !== exceptZoneId) out.push({ x:pt.x, y:pt.y, zoneId:zone.id, idx }); })); return out; }
-  function snapPointAdvanced(point, { zoneId = '', keepAxis = null, origin = null } = {}){ let x = snapGrid(point.x), y = snapGrid(point.y); const threshold = 14; if(keepAxis === 'x' && origin) y = origin.y; if(keepAxis === 'y' && origin) x = origin.x; collectSnapPoints(zoneId).forEach(pt => { if(Math.abs(pt.x - x) <= threshold) x = pt.x; if(Math.abs(pt.y - y) <= threshold) y = pt.y; }); return { x, y }; }
+  function snapPointAdvanced(point, { zoneId = '', keepAxis = null, origin = null } = {}){
+    let x = snapGrid(point.x), y = snapGrid(point.y);
+    if(keepAxis === 'x' && origin) y = origin.y;
+    if(keepAxis === 'y' && origin) x = origin.x;
+    if(!isSnapEnabled()) return { x, y };
+    const threshold = Math.max(4, Math.min(20, getSnapSize() * 1.6));
+    collectSnapPoints(zoneId).forEach(pt => { if(Math.abs(pt.x - x) <= threshold) x = pt.x; if(Math.abs(pt.y - y) <= threshold) y = pt.y; });
+    return { x, y };
+  }
   function getRackOccupancy(rackId){ let total = 0; for(const p of (appState.products || [])){ if(p.rack === rackId || p.rackStore === rackId) total++; } return total; }
 
   function seedState(){
@@ -1178,6 +1190,7 @@
 
   function setScreen(screen){
     ensureAppRuntimeState();
+    if(screen === 'card') screen = 'sheet';
     if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){
       appState.ui = appState.ui || {};
       appState.ui.pendingScreenAfterLogin = screen;
@@ -1192,7 +1205,7 @@
     const showSearch = ['sheet','viewer'].includes(screen);
     const compactViewport = isCompactViewport();
     const isSheetLayout = screen === 'sheet';
-    const isCardDesignerScreen = screen === 'card';
+    const isCardDesignerScreen = false;
     appRoot.classList.toggle('card-designer-layout', isCardDesignerScreen);
     appRoot.classList.toggle('sheet-swap-layout', isSheetLayout);
     appRoot.classList.toggle('sheet-expanded', isSheetLayout && !!appState.ui.sheetExpanded);
@@ -1215,7 +1228,7 @@
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
-      const isCardDesigner = screen === 'card';
+      const isCardDesigner = false;
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels || isLayoutScreen);
       contentPanel.style.gridColumn = compactViewport ? '' : ((isRackModels || isLayoutScreen) ? '2 / -1' : '');
@@ -1240,7 +1253,6 @@
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
       else if(screen === 'layout') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
-      else if(screen === 'card') renderCardDesigner();
       else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
@@ -1429,9 +1441,51 @@
     return out;
   }
 
+  function imageHeaderRank(header){
+    const key = norm(header).replace(/[^a-z0-9]+/g,'');
+    if(!key) return null;
+    const patterns = [
+      /^(imagen|image|foto|fotografia|img)(\d+)?$/,
+      /^(urlimagen|imagenurl|linkimagen|enlaceimagen)(\d+)?$/,
+      /^(imageurl|urlimage|linkimage)(\d+)?$/
+    ];
+    for(const rx of patterns){
+      const m = key.match(rx);
+      if(m) return m[2] ? Number(m[2]) : 1;
+    }
+    return null;
+  }
+
+  function isImageHeaderName(header){
+    return imageHeaderRank(header) !== null;
+  }
+
+  function getRawImageValues(product){
+    const raw = product && product._raw && typeof product._raw === 'object' ? product._raw : null;
+    if(!raw) return [];
+    return Object.entries(raw)
+      .map(([header, value], idx) => ({ header, value:String(value || '').trim(), idx, rank:imageHeaderRank(header) }))
+      .filter(item => item.value && item.rank !== null)
+      .sort((a,b) => (a.rank - b.rank) || (a.idx - b.idx))
+      .map(item => item.value);
+  }
+
   function getProductImageUrls(product){
     if(!product) return [];
-    return splitMediaValues([product._card_image_url, product.imagen, product.image, product.imagen_url, product.image_url, product.foto, product.img, product.imagen2, product.image2, product.foto2, product.img2]);
+    const explicit = [
+      product._card_image_url,
+      product.imagen, product.imagen1, product.image, product.image1, product.imagen_url, product.image_url, product.foto, product.foto1, product.img, product.img1,
+      product.imagen2, product.image2, product.foto2, product.img2,
+      product.imagen3, product.image3, product.foto3, product.img3,
+      product.imagen4, product.image4, product.foto4, product.img4,
+      product.imagen5, product.image5, product.foto5, product.img5,
+      product.imagen6, product.image6, product.foto6, product.img6,
+      product.imagen7, product.image7, product.foto7, product.img7,
+      product.imagen8, product.image8, product.foto8, product.img8,
+      ...(Array.isArray(product.imagenes) ? product.imagenes : []),
+      ...getRawImageValues(product)
+    ];
+    return splitMediaValues(explicit);
   }
 
   function getProductBackdropUrl(product, fallbackUrl=''){
@@ -1530,14 +1584,7 @@
   }
 
   function getProductMediaItems(product){
-    const images = getProductImageUrls(product).map((url, idx) => ({ type:'image', url, label:`Imagen ${idx + 1}` }));
-    const videos = getProductVideoUrls(product).map((url, idx) => isGifLikeUrl(url)
-      ? ({ type:'image', url, label:`Animación ${idx + 1}` })
-      : ({ type:'video', url, label:`Video ${idx + 1}` })
-    );
-    const mode = getActiveCardConfig()?.mediaMode || 'carousel';
-    if(mode === 'image-first') return [...images, ...videos];
-    return [...videos, ...images];
+    return getProductImageUrls(product).map((url, idx) => ({ type:'image', url, label:`Imagen ${idx + 1}` }));
   }
 
   function clearActiveProductVideo(){
@@ -2410,8 +2457,25 @@
     return target;
   }
 
-  const GRID_SIZE = 20;
-  function snapGrid(n){ return Math.round(n / GRID_SIZE) * GRID_SIZE; }
+  const DEFAULT_GRID_SIZE = 2;
+  const DEFAULT_DIM_FONT_SIZE = 32;
+  function isSnapEnabled(){ return appState.editor?.snapEnabled !== false; }
+  function getSnapSize(){
+    const raw = Number(appState.editor?.snapSize);
+    if(!Number.isFinite(raw) || raw <= 0) return DEFAULT_GRID_SIZE;
+    return Math.max(1, Math.min(80, raw));
+  }
+  function getDimFontSize(){
+    const raw = Number(appState.editor?.dimFontSize);
+    if(!Number.isFinite(raw) || raw <= 0) return DEFAULT_DIM_FONT_SIZE;
+    return Math.max(14, Math.min(72, raw));
+  }
+  function snapGrid(n){
+    const value = Number(n) || 0;
+    if(!isSnapEnabled()) return value;
+    const step = getSnapSize();
+    return Math.round(value / step) * step;
+  }
   function normalizeAngle(a){ return (((Number(a) || 0) % 360) + 360) % 360; }
   function getRackBaseSize(modelId){
     const m = rackModel(modelId);
@@ -2712,10 +2776,11 @@
       const iNombre = firstOf('nombre') >= 0 ? firstOf('nombre') : fallback.nombre;
       const iVar = firstOf('variante') >= 0 ? firstOf('variante') : fallback.variante;
       const iBarras = firstOf('barras','barra') >= 0 ? firstOf('barras','barra') : fallback.barras;
-      const iImagen = firstOf('imagen','image','foto','img');
+      const iImagen = firstOf('imagen','imagen 1','imagen1','image','image 1','image1','foto','foto 1','foto1','img','img 1','img1');
       const iImagen2 = firstOf('imagen 2','imagen2','image 2','image2','foto 2','foto2','img 2','img2');
+      const iImagen3 = firstOf('imagen 3','imagen3','image 3','image3','foto 3','foto3','img 3','img3');
+      const iImagen4 = firstOf('imagen 4','imagen4','image 4','image4','foto 4','foto4','img 4','img4');
       const iFondoCard = firstOf('fondo card','fondo_card','background card','background_card','imagen fondo','imagen_fondo','url fondo','link fondo');
-      const iVideoUrl = firstOf('video','video url','video_url','url video','url_video','link video','link_video','enlace video','enlace_video','video producto','video_producto');
       const iTalla = firstOf('talla','size');
       const iColor = firstOf('color','colour');
       const iUb = firstOf('ubicacion','ubiccaion','ubicaion','ubiccacion') >= 0 ? firstOf('ubicacion','ubiccaion','ubicaion','ubiccacion') : fallback.ubicacion;
@@ -2758,8 +2823,10 @@
         const barras = val(vals, iBarras);
         const imagen = val(vals, iImagen);
         const imagen2 = val(vals, iImagen2);
+        const imagen3 = val(vals, iImagen3);
+        const imagen4 = val(vals, iImagen4);
+        const imagenes = [imagen, imagen2, imagen3, imagen4].filter(Boolean);
         const fondo_card = val(vals, iFondoCard);
-        const video_url = val(vals, iVideoUrl);
         const talla = val(vals, iTalla);
         const color = val(vals, iColor);
 
@@ -2784,8 +2851,10 @@
           variante,
           imagen,
           imagen2,
+          imagen3,
+          imagen4,
+          imagenes,
           fondo_card,
-          video_url,
           talla,
           color,
           ubicacion: main.raw || ubicacion,
@@ -3191,12 +3260,19 @@
   }
   function keepRackSnapped(rack, zone){
     if(!rack || !zone) return;
+    if(!isSnapEnabled()){
+      clearRackSnapPreview();
+      resolveRackOverlap(rack, zone);
+      keepRackInsideZone(rack, zone);
+      recalcAllRackStackHeights();
+      return;
+    }
     snapRackToZoneEdges(rack, zone);
     snapRackToNeighbors(rack, zone);
     resolveRackOverlap(rack, zone);
     keepRackInsideZone(rack, zone);
-    snapRackToZoneEdges(rack, zone, 6);
-    snapRackToNeighbors(rack, zone, 10);
+    snapRackToZoneEdges(rack, zone, Math.max(3, getSnapSize() * 0.6));
+    snapRackToNeighbors(rack, zone, Math.max(5, getSnapSize()));
     recalcAllRackStackHeights();
   }
   function renameRackByZone(rack, zoneId, seq){
@@ -3373,13 +3449,15 @@
     const tx = (ax1+ax2)/2 + nx*settings.textGap;
     const ty = (ay1+ay2)/2 + ny*settings.textGap;
     const textValue = typeof formatter === 'function' ? formatter(label) : String(Math.round(label));
-    const text = svgEl('text',{x:tx,y:ty+1,class:'ortho-dim-text','text-anchor':'middle'});
+    const text = svgEl('text',{x:tx,y:ty+1,class:'ortho-dim-text','text-anchor':'middle',style:`font-size:${getDimFontSize()}px`});
     text.textContent = textValue;
     const angDeg = ang*180/Math.PI + (Math.abs(ang) > Math.PI/2 ? 180 : 0);
     text.setAttribute('transform',`rotate(${angDeg} ${tx} ${ty+1})`);
     if(settings.showTextBox){
-      const bgW = Math.max(56, Math.min(120, textValue.length * 7.2 + 18));
-      const bg = svgEl('rect',{x:tx-bgW/2,y:ty-12,width:bgW,height:18,rx:'6',fill:'rgba(8,18,30,.92)',stroke:color,'stroke-width':'1'});
+      const fontSize = getDimFontSize();
+      const bgW = Math.max(72, Math.min(220, textValue.length * fontSize * .68 + 26));
+      const bgH = Math.max(26, fontSize + 12);
+      const bg = svgEl('rect',{x:tx-bgW/2,y:ty-bgH/2,width:bgW,height:bgH,rx:'8',fill:'rgba(8,18,30,.92)',stroke:color,'stroke-width':'1'});
       bg.setAttribute('transform',`rotate(${angDeg} ${tx} ${ty+1})`);
       layer.appendChild(bg);
     }
@@ -4073,8 +4151,9 @@
       { id: uid('map'), field:'variante', label:'Variante', header:'' },
       { id: uid('map'), field:'talla', label:'Talla', header:'' },
       { id: uid('map'), field:'color', label:'Color', header:'' },
-      { id: uid('map'), field:'imagen', label:'Imagen principal', header:'' },
-      { id: uid('map'), field:'video_url', label:'Video del producto', header:'' },
+      { id: uid('map'), field:'imagen', label:'Imagen 1', header:'' },
+      { id: uid('map'), field:'imagen2', label:'Imagen 2', header:'' },
+      { id: uid('map'), field:'imagen3', label:'Imagen 3', header:'' },
       { id: uid('map'), field:'fondo_card', label:'Fondo card', header:'' },
       { id: uid('map'), field:'ubicacion', label:'Ubicación', header:'' },
     ];
@@ -4220,7 +4299,7 @@
       sheetStatusText: b.sheetStatusText || '',
       sheetHeaderIndex: Number.isFinite(Number(b.sheetHeaderIndex)) ? Number(b.sheetHeaderIndex) : 0,
       sheetPreviewProducts: Array.isArray(b.sheetPreviewProducts) ? b.sheetPreviewProducts : [],
-      sheetMapRows: Array.isArray(b.sheetMapRows) && b.sheetMapRows.length ? b.sheetMapRows : defaultSheetMapRows(),
+      sheetMapRows: (Array.isArray(b.sheetMapRows) && b.sheetMapRows.length ? b.sheetMapRows : defaultSheetMapRows()).filter(row => row?.field !== 'video_url'),
       cardConfig: b.cardConfig && typeof b.cardConfig === 'object' ? b.cardConfig : null,
       sheetMeta: {
         status: b?.sheetMeta?.status || '',
@@ -4232,7 +4311,7 @@
         loadingMessage: b?.sheetMeta?.loadingMessage || ''
       },
     }));
-    appState.admin.branches.forEach(branch => { ensureBranchMeta(branch); ensureBranchCardConfig(branch); });
+    appState.admin.branches.forEach(branch => { if(!Array.isArray(branch.sheetMapRows) || !branch.sheetMapRows.length) branch.sheetMapRows = defaultSheetMapRows(); ensureBranchMeta(branch); ensureBranchCardConfig(branch); });
   }
 
   
@@ -4249,9 +4328,9 @@
       titleHeader: pick('nombre','producto','descripcion') || 'Nombre',
       subtitleHeader: pick('sku','cod','modelo','barras') || 'Sku',
       imageHeader: pick('imagen','foto','image','img'),
-      videoHeader: pick('video','link video','url video','enlace video'),
+      videoHeader: '',
       backdropHeader: pick('fondo','background'),
-      mediaMode: 'carousel',
+      mediaMode: 'image-first',
       layout: {
         width: 1180,
         height: 820,
@@ -4296,10 +4375,13 @@
     if(!branch || typeof branch !== 'object') return defaultCardConfig({});
     const base = defaultCardConfig(branch);
     const cfg = branch.cardConfig && typeof branch.cardConfig === 'object' ? branch.cardConfig : {};
-    const fields = Array.isArray(cfg.fields) ? cfg.fields : base.fields;
+    const isVideoHeader = (value) => ['video','video url','video_url','url video','url_video','link video','link_video','enlace video','enlace_video','video producto','video_producto'].includes(norm(value));
+    const fields = (Array.isArray(cfg.fields) ? cfg.fields : base.fields).filter(f => !isVideoHeader(f?.header) && !isVideoHeader(f?.label));
     branch.cardConfig = {
       ...base,
       ...cfg,
+      videoHeader: '',
+      mediaMode: 'image-first',
       layout: sanitizeCardLayout(cfg.layout || base.layout),
       fields: fields.map((f, idx) => ({ id:f?.id || uid('cardfld'), label:String(f?.label || `Dato ${idx+1}`), header:String(f?.header || ''), visible:f?.visible !== false }))
     };
@@ -4413,9 +4495,12 @@
       talla:['talla','size'],
       color:['color','colour'],
       barras:['barras','barra','barcode','codigobarras'],
-      imagen:['imagen','image','foto','fotografia','img','urlimagen','linkimagen'],
+      imagen:['imagen','imagen1','image','image1','foto','foto1','fotografia','img','img1','urlimagen','linkimagen'],
       imagen2:['imagen2','image2','foto2','img2','urlimagen2','linkimagen2'],
-      video_url:['video','videourl','urlvideo','linkvideo','enlacevideo','videoproducto'],
+      imagen3:['imagen3','image3','foto3','img3','urlimagen3','linkimagen3'],
+      imagen4:['imagen4','image4','foto4','img4','urlimagen4','linkimagen4'],
+      imagen5:['imagen5','image5','foto5','img5','urlimagen5','linkimagen5'],
+      imagen6:['imagen6','image6','foto6','img6','urlimagen6','linkimagen6'],
       fondo_card:['fondocard','backgroundcard','imagenfondo','urlfondo','linkfondo'],
       ubicacion:['ubicacion','ubicacionfinal','location'],
       almacen:['almacen','ubicacionalmacen','warehouse'],
@@ -4434,10 +4519,8 @@
     const cfg = getActiveCardConfig();
     const copy = { ...product };
     const img = productHeaderValue(product, cfg.imageHeader);
-    const vid = productHeaderValue(product, cfg.videoHeader);
     const back = productHeaderValue(product, cfg.backdropHeader);
     if(img) copy._card_image_url = img;
-    if(vid) copy._card_video_url = vid;
     if(back) copy._card_backdrop_url = back;
     return copy;
   }
@@ -4478,142 +4561,14 @@
     ensureBranchCardConfig(branch);
     saveAdminState();
     if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
-      await saveRemoteAppState('Diseño de card');
+      await saveRemoteAppState('Configuración');
     }
     updateActiveProductCard(appState.selectedProduct);
-    showToast('Diseño de card guardado.', 'success');
+    showToast('Configuración guardada.', 'success');
   }
 
   function renderCardDesigner(){
-    ensureBranchSheetFields();
-    appState.admin.branches.forEach(b => ensureBranchCardConfig(b));
-    renderViewerMenu();
-    setUnifiedMapLayout(false);
-    contentTitle.textContent = 'Diseño de Card';
-    contentSubtitle.textContent = 'Vincula columnas del Sheet al card del producto.';
-    contentStatus.textContent = 'Preview editable: medidas, posición y ubicación';
-    contentFootRight.textContent = 'Card';
-    detailTitle.textContent = 'Preview editable';
-    detailSubtitle.textContent = 'Card expandido';
-    detailStatus.textContent = 'Preview';
-    detailChip.textContent = 'layout';
-    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
-    const activeIndex = Math.max(0, Math.min(Number(appState.activeBranchIndex || appState.admin?.activeBranch || 0), Math.max(0, branches.length - 1)));
-    const branch = branches[activeIndex] || branches[0] || null;
-    const cfg = ensureBranchCardConfig(branch || {});
-    const headers = getSheetHeaderOptions(branch || {});
-    const layout = getCardLayoutConfig(cfg);
-    const optionHtml = (selected='') => `<option value="">— No usar —</option>` + headers.map(h=>`<option value="${escapeHtml(h)}" ${String(selected||'')===String(h)?'selected':''}>${escapeHtml(h)}</option>`).join('');
-    const branchOptions = branches.map((b,i)=>`<option value="${i}" ${i===activeIndex?'selected':''}>${escapeHtml(b.name || `Sucursal ${i+1}`)}</option>`).join('');
-    const fieldsHtml = (cfg.fields||[]).map((f,i)=>`
-      <div class="card-map-row" data-card-field-row="${i}">
-        <label class="switch-line"><input type="checkbox" data-card-field-visible="${i}" ${f.visible!==false?'checked':''}> Mostrar</label>
-        <input class="input" data-card-field-label="${i}" value="${escapeHtml(f.label||'')}" placeholder="Etiqueta">
-        <select class="input" data-card-field-header="${i}">${optionHtml(f.header)}</select>
-        <button class="btn small danger" type="button" data-card-field-remove="${i}">Quitar</button>
-      </div>`).join('');
-    contentWrap.innerHTML = `
-      <div class="card-designer-shell">
-        <article class="company-card">
-          <div class="section-title"><span>1</span><div><b>Sucursal y headers</b><small>La configuración se guarda por sucursal.</small></div></div>
-          <div class="form-grid two">
-            <label>Sucursal<select class="input card-designer-live" id="cardBranchSelect">${branchOptions}</select></label>
-            <label>Headers disponibles<input class="input" value="${headers.length} encabezados leídos" readonly></label>
-          </div>
-          ${headers.length ? '<div class="tiny muted">Usa “Vincular Sheet → Leer fila 1” si no ves alguna columna nueva.</div>' : '<div class="empty compact"><b>No hay headers cargados.</b><div class="muted tiny">Primero ve a Vincular Sheet y lee la fila 1.</div></div>'}
-        </article>
-        <article class="company-card">
-          <div class="section-title"><span>2</span><div><b>Campos principales</b><small>Define qué columna alimenta cada zona del card.</small></div></div>
-          <div class="form-grid two">
-            <label>Título principal<select class="input card-designer-live" id="cardTitleHeader">${optionHtml(cfg.titleHeader)}</select></label>
-            <label>Subtítulo / código<select class="input card-designer-live" id="cardSubtitleHeader">${optionHtml(cfg.subtitleHeader)}</select></label>
-            <label>Imagen principal<select class="input card-designer-live" id="cardImageHeader">${optionHtml(cfg.imageHeader)}</select></label>
-            <label>Video del producto<select class="input card-designer-live" id="cardVideoHeader">${optionHtml(cfg.videoHeader)}</select></label>
-            <label>Fondo del card<select class="input card-designer-live" id="cardBackdropHeader">${optionHtml(cfg.backdropHeader)}</select></label>
-            <label>Prioridad multimedia<select class="input card-designer-live" id="cardMediaMode"><option value="carousel" ${cfg.mediaMode==='carousel'?'selected':''}>Carrusel imagen + video</option><option value="video-first" ${cfg.mediaMode==='video-first'?'selected':''}>Video primero</option><option value="image-first" ${cfg.mediaMode==='image-first'?'selected':''}>Imagen primero</option></select></label>
-          </div>
-        </article>
-        <article class="company-card">
-          <div class="section-title"><span>3</span><div><b>Datos adicionales del card</b><small>Agrega columnas como marca, precio, categoría o restock.</small></div></div>
-          <div class="card-map-list" id="cardFieldsList">${fieldsHtml || '<div class="muted tiny">Sin campos adicionales.</div>'}</div>
-          <div class="toolbar-row" style="margin-top:12px"><button class="btn secondary" id="btnAddCardField" type="button">+ Agregar dato</button></div>
-        </article>
-        <article class="company-card">
-          <div class="section-title"><span>4</span><div><b>Visibilidad</b><small>Controla bloques fijos del card actual.</small></div></div>
-          <div class="check-grid">
-            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowLocation" ${cfg.showDefaultLocation!==false?'checked':''}> Mostrar ubicación / almacén</label>
-            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowVariants" ${cfg.showVariants!==false?'checked':''}> Mostrar tallas y colores</label>
-            <label class="switch-line"><input type="checkbox" class="card-designer-live" id="cardShowActions" ${cfg.showActions!==false?'checked':''}> Mostrar botones del card</label>
-          </div>
-        </article>
-        <article class="company-card">
-          <div class="section-title"><span>5</span><div><b>Layout y preview</b><small>Controla medidas, posición y ubicación del card.</small></div></div>
-          <div class="card-layout-grid">
-            <label>Ancho del card (px)<input class="input card-designer-live" id="cardLayoutWidth" type="number" min="380" max="1600" step="10" value="${layout.width}"></label>
-            <label>Alto del card (px)<input class="input card-designer-live" id="cardLayoutHeight" type="number" min="420" max="1200" step="10" value="${layout.height}"></label>
-            <label>Multimedia<select class="input card-designer-live" id="cardLayoutMediaPosition"><option value="left" ${layout.mediaPosition==='left'?'selected':''}>Izquierda</option><option value="right" ${layout.mediaPosition==='right'?'selected':''}>Derecha</option><option value="top" ${layout.mediaPosition==='top'?'selected':''}>Arriba</option></select></label>
-            <label>Ubicación horizontal<select class="input card-designer-live" id="cardLayoutAlignX"><option value="left" ${layout.alignX==='left'?'selected':''}>Izquierda</option><option value="center" ${layout.alignX==='center'?'selected':''}>Centro</option><option value="right" ${layout.alignX==='right'?'selected':''}>Derecha</option></select></label>
-            <label>Ubicación vertical<select class="input card-designer-live" id="cardLayoutAlignY"><option value="top" ${layout.alignY==='top'?'selected':''}>Arriba</option><option value="center" ${layout.alignY==='center'?'selected':''}>Centro</option><option value="bottom" ${layout.alignY==='bottom'?'selected':''}>Abajo</option></select></label>
-            <label>Offset X (px)<input class="input card-designer-live" id="cardLayoutOffsetX" type="number" min="-320" max="320" step="5" value="${layout.offsetX}"></label>
-            <label>Offset Y (px)<input class="input card-designer-live" id="cardLayoutOffsetY" type="number" min="-320" max="320" step="5" value="${layout.offsetY}"></label>
-          </div>
-          <div class="tiny muted" style="margin-top:10px">La vista previa del panel derecho se actualiza en tiempo real y el layout también se aplica al card activo.</div>
-          <div class="toolbar-row" style="margin-top:16px"><button class="btn primary" id="btnSaveCardConfig" type="button">💾 Guardar diseño de card</button><button class="btn secondary" id="btnPreviewCardConfig" type="button">Actualizar vista previa</button></div>
-        </article>
-      </div>`;
-    const products = getBranchPreviewProducts(branch).length ? getBranchPreviewProducts(branch) : appState.products;
-    const p = appState.selectedProduct || products[0] || null;
-
-    const readUi = () => {
-      cfg.titleHeader = document.getElementById('cardTitleHeader')?.value || '';
-      cfg.subtitleHeader = document.getElementById('cardSubtitleHeader')?.value || '';
-      cfg.imageHeader = document.getElementById('cardImageHeader')?.value || '';
-      cfg.videoHeader = document.getElementById('cardVideoHeader')?.value || '';
-      cfg.backdropHeader = document.getElementById('cardBackdropHeader')?.value || '';
-      cfg.mediaMode = document.getElementById('cardMediaMode')?.value || 'carousel';
-      cfg.showDefaultLocation = !!document.getElementById('cardShowLocation')?.checked;
-      cfg.showVariants = !!document.getElementById('cardShowVariants')?.checked;
-      cfg.showActions = !!document.getElementById('cardShowActions')?.checked;
-      cfg.layout = sanitizeCardLayout({
-        width: document.getElementById('cardLayoutWidth')?.value,
-        height: document.getElementById('cardLayoutHeight')?.value,
-        mediaPosition: document.getElementById('cardLayoutMediaPosition')?.value,
-        alignX: document.getElementById('cardLayoutAlignX')?.value,
-        alignY: document.getElementById('cardLayoutAlignY')?.value,
-        offsetX: document.getElementById('cardLayoutOffsetX')?.value,
-        offsetY: document.getElementById('cardLayoutOffsetY')?.value,
-      });
-      cfg.fields = (cfg.fields||[]).map((f,i)=>({
-        ...f,
-        visible: !!document.querySelector(`[data-card-field-visible="${i}"]`)?.checked,
-        label: document.querySelector(`[data-card-field-label="${i}"]`)?.value || f.label || '',
-        header: document.querySelector(`[data-card-field-header="${i}"]`)?.value || ''
-      }));
-    };
-
-    const updatePreviewOnly = () => {
-      readUi();
-      renderCardDesignerPreviewPane(branch, cfg, p);
-      updateActiveProductCard(appState.selectedProduct || p);
-    };
-
-    renderCardDesignerPreviewPane(branch, cfg, p);
-    updateActiveProductCard(appState.selectedProduct || p);
-
-    document.getElementById('cardBranchSelect')?.addEventListener('change', (e)=>{ appState.activeBranchIndex = Number(e.target.value || 0); appState.admin.activeBranch = appState.activeBranchIndex; renderCardDesigner(); });
-    document.getElementById('btnAddCardField')?.addEventListener('click', ()=>{ readUi(); cfg.fields.push({ id:uid('cardfld'), label:'Nuevo dato', header:'', visible:true }); renderCardDesigner(); });
-    contentWrap.querySelectorAll('[data-card-field-remove]').forEach(btn=>btn.addEventListener('click', e=>{ readUi(); cfg.fields.splice(Number(e.currentTarget.dataset.cardFieldRemove),1); renderCardDesigner(); }));
-    contentWrap.querySelectorAll('.card-designer-live').forEach(el => {
-      const eventName = (el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'text')) ? 'input' : 'change';
-      el.addEventListener(eventName, updatePreviewOnly);
-    });
-    contentWrap.querySelectorAll('[data-card-field-visible], [data-card-field-label], [data-card-field-header]').forEach(el => {
-      const eventName = (el.tagName === 'INPUT' && el.type !== 'checkbox') ? 'input' : 'change';
-      el.addEventListener(eventName, updatePreviewOnly);
-    });
-    document.getElementById('btnPreviewCardConfig')?.addEventListener('click', ()=>{ updatePreviewOnly(); showToast('Vista previa actualizada.', 'success', 1200); });
-    document.getElementById('btnSaveCardConfig')?.addEventListener('click', async ()=>{ readUi(); await saveCardConfigForBranch(activeIndex); });
-    window.requestAnimationFrame(fitCardDesignerPreview);
+    setScreen('sheet');
   }
 
 function getSheetBranchOpenMap(){
@@ -4913,10 +4868,13 @@ function getSheetBranchOpenMap(){
         variante:['variante','variant','linea'],
         talla:['talla','size'],
         color:['color','colour'],
-        imagen:['imagen','image','foto','fotografia','fotografía','img','image url','url imagen','url de imagen','link imagen','enlace imagen'],
+        imagen:['imagen','imagen 1','imagen1','image','image 1','image1','foto','foto 1','foto1','fotografia','fotografía','img','img 1','img1','image url','url imagen','url de imagen','link imagen','enlace imagen'],
         imagen2:['imagen 2','imagen2','image 2','image2','foto 2','foto2','img 2','img2','url imagen 2','image url 2','link imagen 2','enlace imagen 2'],
+        imagen3:['imagen 3','imagen3','image 3','image3','foto 3','foto3','img 3','img3','url imagen 3','image url 3','link imagen 3','enlace imagen 3'],
+        imagen4:['imagen 4','imagen4','image 4','image4','foto 4','foto4','img 4','img4','url imagen 4','image url 4','link imagen 4','enlace imagen 4'],
+        imagen5:['imagen 5','imagen5','image 5','image5','foto 5','foto5','img 5','img5','url imagen 5','image url 5','link imagen 5','enlace imagen 5'],
+        imagen6:['imagen 6','imagen6','image 6','image6','foto 6','foto6','img 6','img6','url imagen 6','image url 6','link imagen 6','enlace imagen 6'],
         fondo_card:['fondo card','fondo_card','background card','background_card','imagen fondo','imagen_fondo','fondo','background image','background','url fondo','link fondo'],
-        video_url:['video','video url','video_url','url video','url_video','link video','link_video','enlace video','enlace_video','video producto','video_producto'],
         barras:['barras','barra','barcode','codigo de barras'],
         almacen:['almacen','almacén','warehouse','ubicacion almacen','ubicación almacén','ubicacion en almacen','ubicación en almacén'],
         zona:['zona'],
@@ -4946,7 +4904,7 @@ function getSheetBranchOpenMap(){
         const rawRecord = {};
         headers.forEach((h, hi) => { if(String(h||'').trim()) rawRecord[String(h).trim()] = String(row[hi] || '').trim(); });
         (branch.sheetMapRows||[]).forEach(m=>{ if(m.header && m.field) rec[m.field]=getVal(row,m.header); });
-        ['sku','nombre','variante','talla','color','imagen','imagen2','fondo_card','video_url','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
+        ['sku','nombre','variante','talla','color','imagen','imagen2','imagen3','imagen4','imagen5','imagen6','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
           if(!String(rec[field]||'').trim()) rec[field] = getAliasVal(row, field);
         });
         const ubicacion = normalizeLocationCode(buildImportedLocation(rec, 'main'));
@@ -4962,8 +4920,12 @@ function getSheetBranchOpenMap(){
         const talla = String(rec.talla || '').trim();
         const color = String(rec.color || '').trim();
         const imagen2 = String(rec.imagen2 || '').trim();
+        const imagen3 = String(rec.imagen3 || '').trim();
+        const imagen4 = String(rec.imagen4 || '').trim();
+        const imagen5 = String(rec.imagen5 || '').trim();
+        const imagen6 = String(rec.imagen6 || '').trim();
+        const imagenes = [imagen, imagen2, imagen3, imagen4, imagen5, imagen6].filter(Boolean);
         const fondo_card = String(rec.fondo_card || '').trim();
-        const video_url = String(rec.video_url || '').trim();
         const almacen = storeParsed.raw || almacenRaw || '';
         return {
           sku,
@@ -4972,8 +4934,10 @@ function getSheetBranchOpenMap(){
           barras,
           imagen,
           imagen2,
+          imagen3,
+          imagen4,
+          imagenes,
           fondo_card,
-          video_url,
           talla,
           color,
           ubicacion: mainParsed.raw || ubicacion,
@@ -5062,9 +5026,9 @@ function getSheetBranchOpenMap(){
       const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
       const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
-      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen principal</option><option value="video_url" ${row.field==='video_url'?'selected':''}>Video del producto</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
+      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen 1</option><option value="imagen2" ${row.field==='imagen2'?'selected':''}>Imagen 2</option><option value="imagen3" ${row.field==='imagen3'?'selected':''}>Imagen 3</option><option value="imagen4" ${row.field==='imagen4'?'selected':''}>Imagen 4</option><option value="imagen5" ${row.field==='imagen5'?'selected':''}>Imagen 5</option><option value="imagen6" ${row.field==='imagen6'?'selected':''}>Imagen 6</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
-      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar y, si deseas, asigna una imagen de fondo para las cards</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
+      return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar para producto, ubicación e imágenes</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;
 
     contentWrap.querySelectorAll('[data-sheet-toggle]').forEach(el=>el.onclick=async (e)=>{ const i=+e.currentTarget.dataset.sheetToggle; const wasOpen=!!openMap[i]; Object.keys(openMap).forEach(k=>{openMap[k]=false;}); openMap[i]=!wasOpen; if(openMap[i]){ await activateBranchSelection(i); } renderSheetScreen(); });
@@ -5427,7 +5391,7 @@ function getSheetBranchOpenMap(){
     ],{fill:'rgba(255,255,255,.025)',stroke:'rgba(255,255,255,.08)','stroke-width':'2'});
     root.appendChild(floor);
     const isoGrid = svgEl('g',{opacity:'.36'});
-    const gridStep = GRID_SIZE * 2;
+    const gridStep = Math.max(4, getSnapSize() * 2);
     for(let gx = Math.floor(floorRect.x / gridStep) * gridStep; gx <= floorRect.x + floorRect.w; gx += gridStep){
       const a = toIso(gx, floorRect.y, 0);
       const b = toIso(gx, floorRect.y + floorRect.h, 0);
@@ -6846,6 +6810,18 @@ function getSheetBranchOpenMap(){
     if(appState.editor.racksVisible === undefined) appState.editor.racksVisible = true;
     if(appState.editor.showDims === undefined) appState.editor.showDims = true;
     if(appState.editor.showMiniMap === undefined) appState.editor.showMiniMap = true;
+    if(appState.editor.snapEnabled === undefined) appState.editor.snapEnabled = true;
+    // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
+    if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
+      appState.editor.snapSize = DEFAULT_GRID_SIZE;
+      appState.editor.snapPrecisionMigrated = true;
+    }
+    if(!appState.editor.dimFontMigrated && Number(appState.editor.dimFontSize || 0) <= 20){
+      appState.editor.dimFontSize = DEFAULT_DIM_FONT_SIZE;
+      appState.editor.dimFontMigrated = true;
+    }
+    appState.editor.snapSize = getSnapSize();
+    appState.editor.dimFontSize = getDimFontSize();
     if(appState.editor.rightPanelOpen === undefined) appState.editor.rightPanelOpen = true;
   }
 
@@ -7007,6 +6983,16 @@ function getSheetBranchOpenMap(){
           </div>
         </section>
         <section class="layout-prop-card">
+          <div class="layout-prop-title">Snap y precisión</div>
+          <div class="layout-prop-grid two">
+            <label>Snap<input id="rpSnapEnabled" type="checkbox" ${isSnapEnabled()?'checked':''}></label>
+            <label>Tamaño snap<input id="rpSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
+            <label>Tamaño letra cotas<input id="rpDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
+            <label>Estado<input value="${isSnapEnabled() ? 'Activo' : 'Desactivado'}" disabled></label>
+          </div>
+          <div class="tiny muted" style="margin-top:8px">Menor número = más precisión. Recomendado: 2, 5 o 10 unidades.</div>
+        </section>
+        <section class="layout-prop-card">
           <div class="layout-prop-title">Plantillas rápidas</div>
           <div class="layout-template-grid">
             <button class="seg-btn" id="tplZoneRack">Zona + rack</button>
@@ -7068,6 +7054,14 @@ function getSheetBranchOpenMap(){
     bindCheck('lyLabels','showLabels');
     bindCheck('lyDims','showDims');
     bindCheck('lyMini','showMiniMap');
+    if($('#rpSnapEnabled')) $('#rpSnapEnabled').onchange = e => { appState.editor.snapEnabled = !!e.target.checked; clearRackSnapPreview(); persistActiveLayout(); renderLayoutEditor(); };
+    const updateSnapSize = value => { appState.editor.snapSize = Math.max(1, Math.min(80, Number(value || DEFAULT_GRID_SIZE) || DEFAULT_GRID_SIZE)); appState.editor.snapPrecisionMigrated = true; persistActiveLayout(); renderLayoutEditor(); };
+    const updateDimFont = value => { appState.editor.dimFontSize = Math.max(14, Math.min(72, Number(value || DEFAULT_DIM_FONT_SIZE) || DEFAULT_DIM_FONT_SIZE)); appState.editor.dimFontMigrated = true; persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpSnapSize')) $('#rpSnapSize').onchange = e => updateSnapSize(e.target.value);
+    if($('#rpDimFontSize')) $('#rpDimFontSize').onchange = e => updateDimFont(e.target.value);
+    if($('#layoutSnapEnabled')) $('#layoutSnapEnabled').onchange = e => { appState.editor.snapEnabled = !!e.target.checked; clearRackSnapPreview(); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#layoutSnapSize')) $('#layoutSnapSize').onchange = e => updateSnapSize(e.target.value);
+    if($('#layoutDimFontSize')) $('#layoutDimFontSize').onchange = e => updateDimFont(e.target.value);
     const zone = findZoneById(appState.selectedZoneId);
     const rack = findRackById(appState.selectedRackLayoutId);
     const applyZoneGeometry = () => {
@@ -7135,6 +7129,7 @@ function getSheetBranchOpenMap(){
       { label:'Seleccionar', active: appState.editor.mode === 'select', action:'toggle-select' },
       { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
       { label:'Bloquear zonas', active: !!appState.editor.zonesLocked, action:'toggle-lock-zones' },
+      { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
       { label:'Racks', active: appState.editor.racksVisible !== false, action:'toggle-racks' },
@@ -7170,6 +7165,15 @@ function getSheetBranchOpenMap(){
                 </div>` : ''}
               </div>
               <div id="layoutSidebarInspector"></div>
+              <div class="layout-tool-group" style="margin-top:2px">
+                <div class="layout-tool-group-title">Snap / precisión</div>
+                <label class="layout-check-row"><input type="checkbox" id="layoutSnapEnabled" ${isSnapEnabled()?'checked':''}> Snap activo</label>
+                <div class="layout-inline-2">
+                  <label class="layout-mini-field">Snap<input id="layoutSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
+                  <label class="layout-mini-field">Cotas<input id="layoutDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
+                </div>
+                <div class="tiny muted">Usa 1–2 para máxima precisión.</div>
+              </div>
               <div class="layout-tool-group" style="margin-top:2px">
                 <div class="layout-tool-group-title">Zoom</div>
                 <div class="layout-inline-3">
@@ -7380,6 +7384,7 @@ function getSheetBranchOpenMap(){
     if(!svg) return;
     appState.editor.view = 'ortho';
     svg.innerHTML = '';
+    svg.style.setProperty('--layout-dim-font-size', `${getDimFontSize()}px`);
     const vb = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
     const renderVb = getLayoutRenderViewBox(svg, vb);
     svg.setAttribute('viewBox', `${renderVb.x} ${renderVb.y} ${renderVb.w} ${renderVb.h}`);
@@ -7395,7 +7400,7 @@ function getSheetBranchOpenMap(){
       svg.setPointerCapture?.(evt.pointerId);
     });
     const contentBounds = getLayoutContentBounds();
-    const gridStep = GRID_SIZE * 2;
+    const gridStep = Math.max(4, getSnapSize() * 2);
     const gridPad = 2400;
     const gridMinX = Math.floor(Math.min(renderVb.x, contentBounds.x) - gridPad);
     const gridMaxX = Math.ceil(Math.max(renderVb.x + renderVb.w, contentBounds.x + contentBounds.w) + gridPad);
@@ -7903,6 +7908,7 @@ function zoomLayout(factor, center){
       else if(action === 'toggle-nav') appState.editor.mode = appState.editor.mode === 'navigate' ? 'select' : 'navigate';
       else if(action === 'toggle-lock-zones') appState.editor.zonesLocked = !appState.editor.zonesLocked;
       else if(action === 'toggle-dims') appState.editor.showDims = !appState.editor.showDims;
+      else if(action === 'toggle-snap') { appState.editor.snapEnabled = !isSnapEnabled(); clearRackSnapPreview(); }
       else if(action === 'toggle-section') appState.editor.sectionVisible = !appState.editor.sectionVisible;
       else if(action === 'toggle-racks') appState.editor.racksVisible = appState.editor.racksVisible === false ? true : false;
       else if(action === 'toggle-zone-props') appState.editor.inspectorZoneOpen = !appState.editor.inspectorZoneOpen;
@@ -9668,7 +9674,6 @@ function zoomLayout(factor, center){
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
     else if(appState.screen === 'layout') renderLayoutEditor();
     else if(appState.screen === 'racks') renderRackModels();
-    else if(appState.screen === 'card') renderCardDesigner();
   }
 
   function applyUiTheme(theme){
@@ -9704,7 +9709,10 @@ function zoomLayout(factor, center){
       if(appState && appState.screen) setScreen(appState.screen);
     }, 90);
   });
-  menuItems.forEach(item => { item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; }; });
+  menuItems.forEach(item => {
+    if(item.dataset.screen === 'card'){ item.remove(); return; }
+    item.onclick = (e) => { e.preventDefault(); e.stopPropagation(); setScreen(item.dataset.screen); return false; };
+  });
   if(btnSearch) btnSearch.addEventListener('click', (e)=>{ e.preventDefault(); filterProducts(); });
   if(searchInput){
     searchInput.addEventListener('input', debounce(filterProducts, 90));

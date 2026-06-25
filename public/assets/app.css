@@ -2863,7 +2863,7 @@ body.theme-light .panel,body.theme-light .dashboard-card,body.theme-light .sheet
 .video-thumb-mark{display:inline-grid;place-items:center;padding:6px 8px;border-radius:999px;background:rgba(0,0,0,.32);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
 
 
-/* Diseño de Card */
+/* Configuración legacy oculta */
 .card-designer-shell{display:grid;gap:16px;padding:18px;max-width:1100px;margin:0 auto}
 .card-map-list{display:grid;gap:10px}
 .card-map-row{display:grid;grid-template-columns:110px minmax(140px,.7fr) minmax(180px,1fr) auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.025)}
@@ -2878,7 +2878,7 @@ body.theme-light .panel,body.theme-light .dashboard-card,body.theme-light .sheet
 @media(max-width:900px){.card-map-row{grid-template-columns:1fr}.active-card-custom-fields{grid-template-columns:1fr}}
 
 
-/* Diseño de Card — preview editable */
+/* Preview legacy oculto */
 body.search-card-modal-open #activeProductCard.search-card-expanded{
   width:min(var(--card-custom-width,1180px),92vw);
   max-width:92vw;
@@ -3245,7 +3245,7 @@ body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-o
   .designer-preview-card.card-video-overlay .active-card-custom-fields{grid-template-columns:1fr}
 }
 
-/* V13: mejor distribución para Diseño de Card */
+/* V13 legacy oculto */
 .card-designer-shell{
   max-width:none;
   width:100%;
@@ -3356,7 +3356,7 @@ body.search-card-modal-open #activeProductCard.search-card-expanded.card-video-o
   .card-designer-stage{min-height:560px}
 }
 
-/* V14: Diseño de Card con paneles equilibrados + preview visible */
+/* V14 legacy oculto */
 .app.card-designer-layout{
   grid-template-columns:var(--sidebar-w) minmax(640px,1fr) minmax(640px,1fr) !important;
 }
@@ -3631,3 +3631,35 @@ body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::before
   .layout-premium-render .layout-shell.layout-shell-with-right{grid-template-columns:1fr!important;grid-template-rows:auto minmax(520px,1fr) auto}
   .layout-right-panel{min-height:420px}
 }
+
+/* V18: snap configurable + cotas más legibles */
+.layout-prop-grid input[type="checkbox"]{
+  width:22px;
+  height:22px;
+  min-height:22px;
+  accent-color:var(--accent);
+  justify-self:start;
+}
+.layout-prop-card .layout-prop-grid.two label:has(input[type="checkbox"]){
+  align-content:center;
+}
+.layout-premium-render #layoutSvg .ortho-dim-text,
+.layout-premium-render #layoutSvg .measure-text{
+  font-size:var(--layout-dim-font-size,20px) !important;
+  font-weight:950 !important;
+  stroke:rgba(5,10,18,.92) !important;
+  stroke-width:5px !important;
+  paint-order:stroke !important;
+}
+.layout-premium-render #layoutSvg .ortho-dim-text{
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.34));
+}
+
+/* V19: limpieza final sin panel legacy + controles visibles de snap */
+.menu-item[data-screen="card"]{display:none!important}
+.layout-inline-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+.layout-mini-field{display:grid;gap:5px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.layout-mini-field input{min-width:0;width:100%;min-height:38px;border-radius:12px;background:rgba(5,16,28,.86);border:1px solid rgba(176,228,204,.12);color:var(--text);padding:8px 10px;font-weight:800}
+.layout-check-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid rgba(176,228,204,.10);border-radius:12px;background:rgba(255,255,255,.025);font-weight:800;color:var(--text)}
+.ortho-dim-text{font-weight:1000!important;paint-order:stroke;stroke:rgba(2,8,13,.92);stroke-width:4px;stroke-linejoin:round;fill:#ffd16a!important;letter-spacing:.02em}
+.ortho-dim-label-bg{opacity:.92!important}

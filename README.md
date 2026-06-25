@@ -33,3 +33,12 @@ App WMS preparada para desplegar en GitHub + Cloudflare Pages/Functions.
 ## Nota
 
 El archivo `public/assets/app-main.js` legacy fue eliminado porque `public/index.html` usa `app-main.runtimefix.js`.
+
+## V17 - Card sin diseñador y carrusel por imágenes
+
+- Se eliminó la pantalla **Diseño de Card** del menú administrador.
+- El card del producto ya no usa video como media principal.
+- El carrusel del card toma imágenes desde los headers del Sheet: `Imagen`, `Imagen 1`, `Imagen 2`, `Imagen 3`, etc.
+- En **Vincular Sheet** ahora se pueden mapear `Imagen 1` a `Imagen 6`.
+- Los mapeos antiguos de video se ignoran para evitar que aparezcan videos dentro del card.
+
