@@ -1,60 +1,31 @@
-# WMS Branch Viewer App
+# WMS Industrial Cloudflare
 
-Versión optimizada sin cambiar la base tecnológica principal.
+App WMS preparada para desplegar en GitHub + Cloudflare Pages/Functions.
 
-## Mejoras aplicadas
+## Qué incluye esta versión
 
-- Persistencia reforzada con tabla `products` en SQLite.
-- Sincronización automática de productos importados desde `branch_sheet_config` hacia `products`.
-- Nuevos índices para acelerar búsquedas por sucursal, SKU, código de barras, rack, almacén y zona.
-- Nuevos endpoints para búsqueda paginada:
-  - `GET /api/branches/:id/products`
-  - `GET /api/products/search`
-  - `GET /api/branches/:id/products-summary`
-- Extracción del CSS principal a `public/assets/app.css` para mejorar orden y cacheo.
-- Extracción del JS principal a `public/assets/app-main.js` para reducir el peso del `index.html` y preparar modularización futura.
+- Frontend en `public/index.html`.
+- CSS principal en `public/assets/app.css`.
+- JS principal activo en `public/assets/app-main.runtimefix.js`.
+- Functions/API en `functions/api`.
+- Migración D1 en `migrations/0001_init.sql`.
+- Ejemplo de Sheet en `public/ejemplo-sheet.csv`.
 
-## Ejecutar localmente
+## Cambios V15
 
-```bash
-npm install
-npm run dev
-```
+- Se eliminó la franja/sombra decorativa que aparecía en la parte inferior del editor de layout.
+- Se dejó el canvas de edición más limpio: grilla visible, fondo técnico y sin overlay oscuro.
+- Se actualizó el cache del script para Cloudflare.
+- Se retiraron archivos históricos y duplicados que no eran necesarios para el deploy.
 
-App: `http://localhost:3000`
+## Despliegue
 
-## Despliegue gratis
+1. Sube este contenido a tu repositorio de GitHub.
+2. En Cloudflare Pages, conecta el repositorio.
+3. Usa la carpeta raíz del proyecto.
+4. Si Cloudflare solicita comando de build y no usas build, déjalo vacío o usa el flujo de Pages Functions según tu configuración.
+5. Aplica la migración D1 incluida en `migrations/0001_init.sql` si tu proyecto usa D1.
 
-### Opción actual
-- Render o un VPS/local con Node.js + SQLite.
+## Nota
 
-### Evolución sugerida
-- Frontend en Cloudflare Pages.
-- API/DB en Cloudflare Workers + D1.
-
-## Notas
-
-- No se modificó la lógica funcional del editor de layout ni del editor de racks.
-- La app sigue siendo compatible con el flujo actual basado en Google Sheets.
-- `localStorage` puede seguir usándose como apoyo visual, pero la base persistente ya queda mejor preparada en SQLite.
-
-
-## Fase 2 aplicada
-
-Se añadió una segunda capa de optimización enfocada en rendimiento de búsqueda y carga:
-
-- Endpoints paginados para productos por sucursal.
-- Endpoint de búsqueda por API (`/api/products/search`).
-- Endpoint de resumen por sucursal (`/api/branches/:id/products-summary`).
-- Serialización de productos desde SQLite al formato que ya usa el frontend.
-- El frontend ahora intenta cargar productos por API antes de usar caché local.
-- Búsqueda del listado conectada al backend cuando hay sesión activa.
-- Paginación visible en la barra del listado.
-- Caché local reducida a un respaldo ligero, ya no como fuente principal del catálogo.
-
-### Resultado esperado
-
-- Menos carga inicial del navegador.
-- Menos lag al buscar.
-- Menos dependencia de `localStorage` para productos.
-- Mejor base para seguir agregando filtros reales por backend.
+El archivo `public/assets/app-main.js` legacy fue eliminado porque `public/index.html` usa `app-main.runtimefix.js`.

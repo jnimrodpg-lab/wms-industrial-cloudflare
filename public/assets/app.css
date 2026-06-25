@@ -3479,3 +3479,33 @@ body.search-card-modal-open #activeProductCard.search-card-expanded:not(.card-vi
     min-height:70vh;
   }
 }
+
+/* V15: limpieza del canvas de Edición de Layout
+   Quita la franja/sombra inferior decorativa que interfería con la edición.
+   Se conserva la grilla y el aspecto industrial sin overlays dramáticos. */
+.layout-premium-render .layout-canvas-card.detail-stage::after{
+  display:none !important;
+  content:none !important;
+  background:none !important;
+}
+.layout-premium-render .layout-canvas-card.detail-stage::before{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 12%),
+    repeating-linear-gradient(90deg, transparent 0 38px, rgba(255,255,255,.018) 38px 40px),
+    repeating-linear-gradient(0deg, transparent 0 38px, rgba(255,255,255,.018) 38px 40px),
+    linear-gradient(180deg, rgba(79,86,94,.95), rgba(68,75,83,.97)) !important;
+  opacity:.92 !important;
+}
+body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::after{
+  display:none !important;
+  content:none !important;
+  background:none !important;
+}
+body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::before{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.10),transparent 14%),
+    repeating-linear-gradient(90deg, transparent 0 38px, rgba(0,0,0,.04) 38px 40px),
+    repeating-linear-gradient(0deg, transparent 0 38px, rgba(0,0,0,.04) 38px 40px),
+    linear-gradient(180deg,#cfd4d8,#bfc7cc) !important;
+  opacity:.98 !important;
+}
