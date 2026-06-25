@@ -1,8 +1,0 @@
-Cambios aplicados:
-- Cuando el media activo es video, el card entra en modo "full-bleed".
-- El video ahora ocupa todo el tamaño del card expandido.
-- Las características del producto se muestran sobre el video en una capa flotante lateral.
-- Se conservaron ubicación, atributos, tallas, colores y botones sobre el video.
-- La galería de miniaturas y navegación quedan superpuestas sobre el video.
-- También se refleja este comportamiento en el preview del Diseñador de Card cuando el primer media es video.
-- Se actualizó la versión del script para evitar caché en Cloudflare.
