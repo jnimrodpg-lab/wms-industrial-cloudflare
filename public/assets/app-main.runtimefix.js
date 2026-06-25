@@ -516,6 +516,121 @@
     // Filtros avanzados ocultos en esta versión estable: se conserva solo buscador principal.
     ensureProductFilterBar();
     updateFilterSummaryChip();
+    updateCategoryFilterButton();
+  }
+
+  function getProductCategoryValue(product){
+    const p = product || {};
+    return String(p.category || p.categoria || p.categoría || p.Categoria || p.Categoría || '').trim();
+  }
+
+  function getCategoryDisplayName(value){
+    const raw = String(value || '').trim();
+    return raw || 'Sin categoría';
+  }
+
+  function getCategoryStats(){
+    const products = Array.isArray(appState.products) ? appState.products : [];
+    const groups = new Map();
+    products.forEach(p => {
+      const raw = getProductCategoryValue(p);
+      const key = raw ? norm(raw) : '__sin_categoria__';
+      if(!groups.has(key)) groups.set(key, { key, value: raw, label: getCategoryDisplayName(raw), count:0, families:new Set(), images:[] });
+      const g = groups.get(key);
+      g.count += 1;
+      g.families.add(norm(p?.nombre || '') || String(p?.sku || ''));
+      if(g.images.length < 4){
+        const img = getProductImageUrls(p)[0] || '';
+        if(img && !g.images.includes(img)) g.images.push(img);
+      }
+    });
+    return Array.from(groups.values()).map(g => ({ ...g, familiesCount:g.families.size })).sort((a,b) => {
+      if(a.key === '__sin_categoria__') return 1;
+      if(b.key === '__sin_categoria__') return -1;
+      return b.familiesCount - a.familiesCount || b.count - a.count || a.label.localeCompare(b.label, 'es', { sensitivity:'base' });
+    });
+  }
+
+  function updateCategoryFilterButton(){
+    const btn = document.getElementById('btnOpenCategoryPinterest');
+    if(!btn) return;
+    const active = String(appState.productFilters?.category || '').trim();
+    btn.classList.toggle('active', !!active);
+    btn.innerHTML = active ? `Categoría: <span>${escapeHtml(active)}</span>` : 'Categorías';
+    btn.title = active ? `Filtro activo: ${active}` : 'Filtrar por categoría';
+  }
+
+  function openCategoryPinterestModal(){
+    const existing = document.getElementById('categoryPinterestModal');
+    if(existing) existing.remove();
+    const categories = getCategoryStats();
+    const active = String(appState.productFilters?.category || '').trim();
+    const totalProducts = Array.isArray(appState.products) ? appState.products.length : 0;
+    const cards = categories.map((cat, idx) => {
+      const isActive = active && cat.value === active;
+      const media = cat.images.length
+        ? `<div class="category-pinterest-media count-${Math.min(cat.images.length,4)}">${cat.images.slice(0,4).map(url => `<img src="${escapeHtml(url)}" alt="${escapeHtml(cat.label)}">`).join('')}</div>`
+        : `<div class="category-pinterest-media empty"><span>${escapeHtml(cat.label.slice(0,2).toUpperCase())}</span></div>`;
+      return `<button class="category-pinterest-card ${isActive ? 'active' : ''} size-${(idx % 5) + 1}" type="button" data-category-value="${escapeHtml(cat.value)}">
+        ${media}
+        <div class="category-pinterest-card-body">
+          <div><b>${escapeHtml(cat.label)}</b><small>${cat.familiesCount.toLocaleString('es-PE')} producto${cat.familiesCount === 1 ? '' : 's'} • ${cat.count.toLocaleString('es-PE')} variante${cat.count === 1 ? '' : 's'}</small></div>
+          <span>${isActive ? 'Activo' : 'Filtrar'}</span>
+        </div>
+      </button>`;
+    }).join('');
+    const modal = document.createElement('div');
+    modal.id = 'categoryPinterestModal';
+    modal.className = 'category-pinterest-backdrop show';
+    modal.innerHTML = `
+      <div class="category-pinterest-shell">
+        <div class="category-pinterest-head">
+          <div>
+            <div class="search-card-kicker">Filtro visual</div>
+            <h2>Categorías</h2>
+            <p>Selecciona una categoría para filtrar el listado de productos. Vista tipo Pinterest para navegar más rápido.</p>
+          </div>
+          <div class="category-pinterest-actions">
+            <span class="chip">${totalProducts.toLocaleString('es-PE')} registros</span>
+            <button class="btn secondary" id="btnClearCategoryFilter" type="button">Todas</button>
+            <button class="location-modal-close" type="button" id="btnCloseCategoryPinterest" aria-label="Cerrar">✕</button>
+          </div>
+        </div>
+        <div class="category-pinterest-toolbar">
+          <input id="categoryPinterestSearch" placeholder="Buscar categoría..." autocomplete="off">
+          <span class="muted tiny">${categories.length.toLocaleString('es-PE')} categorías detectadas</span>
+        </div>
+        <div class="category-pinterest-grid" id="categoryPinterestGrid">
+          ${cards || '<div class="empty compact"><b>No hay categorías detectadas</b><div class="muted tiny">Verifica que el Sheet tenga un header como Categoria, Categoría o category.</div></div>'}
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelector('#btnCloseCategoryPinterest')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    modal.querySelector('#btnClearCategoryFilter')?.addEventListener('click', () => {
+      appState.productFilters.category = '';
+      close();
+      filterProducts();
+      updateCategoryFilterButton();
+    });
+    modal.querySelectorAll('[data-category-value]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        appState.productFilters.category = String(btn.dataset.categoryValue || '').trim();
+        close();
+        filterProducts();
+        updateCategoryFilterButton();
+      });
+    });
+    const search = modal.querySelector('#categoryPinterestSearch');
+    search?.addEventListener('input', () => {
+      const q = norm(search.value || '');
+      modal.querySelectorAll('[data-category-value]').forEach(card => {
+        const label = norm(card.textContent || '');
+        card.style.display = !q || label.includes(q) ? '' : 'none';
+      });
+    });
+    window.setTimeout(() => search?.focus(), 80);
   }
 
   function updateProductAnalyticsSummary(){
@@ -10025,6 +10140,7 @@ function zoomLayout(factor, center){
     searchInput.addEventListener('input', debounce(filterProducts, 90));
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
+  if($('#btnOpenCategoryPinterest')) { $('#btnOpenCategoryPinterest').addEventListener('click', openCategoryPinterestModal); updateCategoryFilterButton(); }
   if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.add('active'); $('#toggleGroupProducts').textContent = 'Productos'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = true; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
