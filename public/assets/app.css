@@ -4202,3 +4202,93 @@ body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::before
   .app.viewer-product-layout .viewer-info-grid.viewer-info-icon-grid.top-right-grid,
   .viewer-quick-meta-grid{grid-template-columns:1fr}
 }
+
+/* V24: controles de rotación de zona */
+.zone-rotate-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+.zone-rotate-grid .seg-btn{min-height:38px;}
+
+
+/* V25: Viewer enfocado en Producto. Tabla por familia + propiedades solo de ubicación y variantes */
+.app.viewer-product-layout #toggleGroupProducts{
+  pointer-events:none;
+  opacity:.72;
+}
+.app.viewer-product-layout .product-head,
+.app.viewer-product-layout .product-row{
+  grid-template-columns:minmax(260px,1.05fr) minmax(360px,1.8fr) minmax(170px,.62fr) !important;
+}
+.app.viewer-product-layout .product-head > :nth-child(3){
+  text-transform:uppercase;
+}
+.app.viewer-product-layout .product-row .variant-chip{
+  min-width:120px;
+  text-align:center;
+}
+
+/* Panel derecho compacto sin ficha rápida, rack, nivel ni variante actual */
+.viewer-product-premium-card.product-only-panel{
+  grid-template-rows:minmax(0,1fr) auto auto;
+  gap:14px;
+}
+.product-only-panel .viewer-product-top-layout{
+  grid-template-columns:minmax(280px,1fr) minmax(260px,.92fr);
+  gap:16px;
+}
+.product-only-panel .viewer-side-col{
+  grid-template-rows:auto auto;
+  align-content:start;
+}
+.product-only-panel .viewer-info-grid.location-only-grid{
+  grid-template-columns:1fr;
+  gap:12px;
+}
+.product-only-panel .viewer-info-grid.location-only-grid .search-meta-block{
+  min-height:98px;
+  padding:16px;
+  border-radius:18px;
+}
+.product-only-panel .viewer-info-grid.location-only-grid .search-meta-label{
+  font-size:11px;
+}
+.product-only-panel .viewer-info-grid.location-only-grid .search-meta-value{
+  font-size:17px;
+}
+.viewer-bottom-info.product-variants-only{
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.viewer-bottom-info.product-variants-only .viewer-variant-panel{
+  min-height:112px;
+}
+.product-only-panel .viewer-variant-chip-wrap{
+  max-height:118px;
+  overflow:auto;
+  padding-right:2px;
+}
+.product-only-panel .viewer-location-btn{
+  min-height:56px;
+}
+
+/* En pantallas altas normales, todo debe entrar sin scroll */
+.app.viewer-product-layout .detail-wrap{
+  overflow:hidden;
+}
+@media(max-width:1500px){
+  .product-only-panel .viewer-product-top-layout{
+    grid-template-columns:1fr;
+  }
+  .product-only-panel .viewer-media-col{
+    grid-template-rows:minmax(220px,260px) auto;
+  }
+  .product-only-panel .viewer-info-grid.location-only-grid{
+    grid-template-columns:1fr 1fr;
+  }
+}
+@media(max-width:1280px){
+  .app.viewer-product-layout .detail-wrap{
+    overflow:auto;
+  }
+  .viewer-bottom-info.product-variants-only{
+    grid-template-columns:1fr;
+  }
+}

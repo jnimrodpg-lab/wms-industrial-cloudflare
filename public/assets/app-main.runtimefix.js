@@ -1946,7 +1946,7 @@
     list = Array.isArray(list) ? list : [];
     const frag = document.createDocumentFragment();
     const forceIndividual = shouldForceIndividualView(list);
-    const groupedMode = !!appState.ui.productGroupMode && !forceIndividual;
+    const groupedMode = true; // V25: el listado del viewer siempre trabaja por producto/familia
     const maxRows = groupedMode ? 220 : 450;
     const items = [];
     const sortedList = (Array.isArray(list) ? list.slice() : []).sort(compareProductsAZ);
@@ -1977,7 +1977,7 @@
         row.innerHTML = `
           <div class="product-cell-sku"><span class="product-select-box"></span>${thumb ? `<img class="product-row-thumb" src="${escapeHtml(thumb)}" alt="${escapeHtml(g.nombre)}">` : '<span class="product-row-thumb empty"></span>'}<b>${escapeHtml(first.sku || '—')}</b></div>
           <div class="product-cell-name">${escapeHtml(g.nombre)}</div>
-          <div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'} • ${ubicaciones.length} ubicaci${ubicaciones.length === 1 ? 'ón' : 'ones'}</span></div>
+          <div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'}</span></div>
           <div><span class="loc-pill">${escapeHtml(first.ubicacion || '—')}</span></div>
           <div>${escapeHtml(first.almacen || '—')}</div>`;
         row.title = 'Familia agrupada por nombre de producto';
@@ -2687,6 +2687,54 @@
       rack.zoneId = host.id;
     }
   }
+
+  function rotatePointAround(point, center, degrees){
+    const rad = (Number(degrees) || 0) * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const dx = (Number(point?.x) || 0) - center.x;
+    const dy = (Number(point?.y) || 0) - center.y;
+    return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
+  }
+
+  function getZoneRotationDegrees(zone){
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 2) return 0;
+    const a = zone.pts[0], b = zone.pts[1];
+    return normalizeAngle(Math.atan2((Number(b.y)||0) - (Number(a.y)||0), (Number(b.x)||0) - (Number(a.x)||0)) * 180 / Math.PI);
+  }
+
+  function rotateZoneWithContents(zoneId, deltaDegrees, { persist=true, rerender=true } = {}){
+    const zone = findZoneById(zoneId);
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return;
+    const delta = Number(deltaDegrees) || 0;
+    if(!delta) return;
+    const center = polygonCentroid(zone.pts);
+    zone.pts = zone.pts.map(pt => rotatePointAround(pt, center, delta));
+    (appState.layout.racks || []).filter(r => r.zoneId === zone.id).forEach(rack => {
+      const oldCx = (Number(rack.x)||0) + (Number(rack.w)||0) / 2;
+      const oldCy = (Number(rack.y)||0) + (Number(rack.h)||0) / 2;
+      const nextCenter = rotatePointAround({ x:oldCx, y:oldCy }, center, delta);
+      rack.rot = normalizeAngle((Number(rack.rot)||0) + delta);
+      syncRackFootprint(rack, false);
+      rack.x = nextCenter.x - (Number(rack.w)||0) / 2;
+      rack.y = nextCenter.y - (Number(rack.h)||0) / 2;
+      rack.zoneId = zone.id;
+    });
+    appState.selectedZoneId = zone.id;
+    clearRackSnapPreview();
+    if(persist) persistActiveLayout();
+    if(rerender) renderLayoutEditor();
+  }
+
+  function setZoneRotation(zoneId, targetDegrees){
+    const zone = findZoneById(zoneId);
+    if(!zone) return;
+    const current = getZoneRotationDegrees(zone);
+    let delta = (Number(targetDegrees) || 0) - current;
+    if(delta > 180) delta -= 360;
+    if(delta < -180) delta += 360;
+    rotateZoneWithContents(zoneId, delta);
+  }
+
   function ensureRackProps(){
     if(appState.editor.racksVisible !== false) appState.layout.racks.forEach(r => {
       r.rot = normalizeAngle(r.rot || 0);
@@ -5428,18 +5476,16 @@ function getSheetBranchOpenMap(){
     const ctx = getViewerProductLocationContext(appState.selectedProduct);
     const prod = appState.selectedProduct || null;
     detailTitle.textContent = 'Información del producto';
-    detailSubtitle.textContent = prod ? 'Detalles, ubicación y acceso rápido' : 'Selecciona un producto desde la lista central.';
+    detailSubtitle.textContent = prod ? 'Producto, ubicación y variantes del modelo' : 'Selecciona un producto desde la lista central.';
     detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
     detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
     if(!prod){
-      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver su ubicación.</div></div></div>`;
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver sus variantes.</div></div></div>`;
       return;
     }
     const images = getProductImageUrls(prod).filter(Boolean);
     const img = images[0] || '';
     const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
-    const sizeValue = getProductSizeValue(prod) || '—';
-    const colorValue = getProductColorValue(prod) || '—';
     const family = getViewerProductFamilySummary(prod);
     const sizesHtml = family.sizes.length
       ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
@@ -5448,7 +5494,7 @@ function getSheetBranchOpenMap(){
       ? family.colors.map(color => `<span class="viewer-variant-chip color">${escapeHtml(color)}</span>`).join('')
       : '<span class="muted tiny">Sin colores detectados</span>';
     detailWrap.innerHTML = `
-      <div class="viewer-product-info-card viewer-product-premium-card compact-fit">
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel">
         <div class="viewer-product-top-layout">
           <div class="viewer-media-col">
             <div class="viewer-product-media ${img ? '' : 'empty'}">
@@ -5463,17 +5509,13 @@ function getSheetBranchOpenMap(){
               <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
               <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
             </div>
-            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid">
+            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid location-only-grid">
               <div class="search-meta-block emphasis"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
               <div class="search-meta-block emphasis"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
-              <div class="search-meta-block"><span class="viewer-info-icon">▤</span><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
-              <div class="search-meta-block"><span class="viewer-info-icon">≋</span><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
-              <div class="search-meta-block"><span class="viewer-info-icon">◇</span><span class="search-meta-label">Variante actual</span><span class="search-meta-value">${escapeHtml(prod.variante || '—')}</span></div>
-              <div class="search-meta-block"><span class="viewer-info-icon">▣</span><span class="search-meta-label">Rack almacén</span><span class="search-meta-value">${escapeHtml(ctx.storeRackId || '—')}</span></div>
             </div>
           </div>
         </div>
-        <div class="viewer-bottom-info">
+        <div class="viewer-bottom-info product-variants-only">
           <div class="viewer-variant-panel">
             <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas del modelo</b><small>${family.sizes.length || 0} registradas</small></div></div>
             <div class="viewer-variant-chip-wrap">${sizesHtml}</div>
@@ -5481,15 +5523,6 @@ function getSheetBranchOpenMap(){
           <div class="viewer-variant-panel">
             <div class="viewer-variant-head"><span class="viewer-info-icon color-dot"></span><div><b>Colores del modelo</b><small>${family.colors.length || 0} registrados</small></div></div>
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
-          </div>
-          <div class="viewer-variant-panel compact-meta">
-            <div class="viewer-variant-head"><span class="viewer-info-icon">◧</span><div><b>Ficha rápida</b><small>Datos del producto activo</small></div></div>
-            <div class="viewer-quick-meta-grid">
-              <div><span>Talla actual</span><b>${escapeHtml(sizeValue)}</b></div>
-              <div><span>Color actual</span><b>${escapeHtml(colorValue)}</b></div>
-              <div><span>Almacén</span><b>${escapeHtml(ctx.storeRackId || '—')}</b></div>
-              <div><span>Modelo</span><b>${escapeHtml(prod.sku || '—')}</b></div>
-            </div>
           </div>
         </div>
         <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button>
@@ -7279,8 +7312,10 @@ function getSheetBranchOpenMap(){
             <label>Alto<input id="rpZoneH" type="number" min="40" value="${formatUnitNumber(zoneB.maxY-zoneB.minY)}"></label>
             <label>Color<input id="rpZoneColor" type="color" value="${escapeHtml(zone.color||'#6ff0a8')}"></label>
             <label>Escala cm/u<input id="rpScaleCm" type="number" min="0.1" step="0.1" value="${getScaleCmPerUnit()}"></label>
+            <label>Rotación zona<input id="rpZoneRot" type="number" step="1" value="${Math.round(getZoneRotationDegrees(zone))}"></label>
+            <label>Contenido<input value="${(appState.layout.racks||[]).filter(r => r.zoneId === zone.id).length} racks vinculados" disabled></label>
           </div>
-          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button></div>
+          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px"><button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button></div>
         </section>` : ''}
         ${rack ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Rack</div>
@@ -7332,8 +7367,13 @@ function getSheetBranchOpenMap(){
     ['rpZoneX','rpZoneY','rpZoneW','rpZoneH'].forEach(id=>{ const el=$('#'+id); if(el) el.onchange = applyZoneGeometry; });
     if($('#rpZoneColor')) $('#rpZoneColor').oninput = e => { zone.color=e.target.value; persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpScaleCm')) $('#rpScaleCm').onchange = e => { ensureLayoutMeta(); appState.layout.meta.scaleCmPerUnit = Math.max(0.1, Number(e.target.value||1)||1); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpZoneRot')) $('#rpZoneRot').onchange = e => { if(zone) setZoneRotation(zone.id, Number(e.target.value || 0) || 0); };
+    if($('#rpZoneMinus15')) $('#rpZoneMinus15').onclick = () => { if(zone) rotateZoneWithContents(zone.id, -15); };
+    if($('#rpZone15')) $('#rpZone15').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 15); };
+    if($('#rpZone45')) $('#rpZone45').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 45); };
+    if($('#rpZone90')) $('#rpZone90').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 90); };
     if($('#rpDuplicateZone')) $('#rpDuplicateZone').onclick = () => duplicateSelectedZone();
-    if($('#rpLockZones')) $('#rpLockZones').onclick = () => { appState.editor.zonesLocked = !appState.editor.zonesLocked; renderLayoutEditor(); };
+    if($('#rpLockZones')) $('#rpLockZones').onclick = () => { appState.editor.zonesLocked = !appState.editor.zonesLocked; persistActiveLayout(); renderLayoutEditor(); };
 
     const applyRackPosition = () => {
       if(!rack) return;
@@ -7416,10 +7456,18 @@ function getSheetBranchOpenMap(){
                 <button class="seg-btn" id="btnSaveLayoutRemote">Guardar layout</button>
                 ${selectedRack ? `
                 <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
-                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido</div>
+                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido rack</div>
                 <div class="tag-row">
                   <button class="seg-btn quick-angle" data-angle="45">45°</button>
                   <button class="seg-btn quick-angle" data-angle="90">90°</button>
+                </div>` : ''}
+                ${(!selectedRack && appState.selectedZoneId) ? `
+                <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
+                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido zona</div>
+                <div class="tag-row">
+                  <button class="seg-btn quick-zone-angle" data-angle="-15">-15°</button>
+                  <button class="seg-btn quick-zone-angle" data-angle="15">15°</button>
+                  <button class="seg-btn quick-zone-angle" data-angle="90">90°</button>
                 </div>` : ''}
               </div>
               <div id="layoutSidebarInspector"></div>
@@ -8750,6 +8798,7 @@ function zoomLayout(factor, center){
     if($('#insSectionRangeX')) $('#insSectionRangeX').onchange = e => { setSectionCutDepth('x', Math.max(10, Number(e.target.value||10)||10)); persistActiveLayout(); renderLayoutEditor(); };
     if($('#insSectionRangeY')) $('#insSectionRangeY').onchange = e => { setSectionCutDepth('y', Math.max(10, Number(e.target.value||10)||10)); persistActiveLayout(); renderLayoutEditor(); };
     $$('.quick-angle').forEach(btn => btn.onclick = () => { if(!rack) return; rack.rot = normalizeAngle((Number(rack.rot || 0) || 0) + (Number(btn.dataset.angle||0)||0)); syncRackFootprint(rack, true); const host=findZoneById(rack.zoneId); if(host){ keepRackSnapped(rack, host); } persistActiveLayout(); renderLayoutEditor(); });
+    $$('.quick-zone-angle').forEach(btn => btn.onclick = () => { const zoneId = appState.selectedZoneId; if(!zoneId) return; rotateZoneWithContents(zoneId, Number(btn.dataset.angle || 0) || 0); });
     $$('.rotate-step').forEach(btn => btn.onclick = () => { if(!rack) return; rack.rot = normalizeAngle((Number(rack.rot || 0) || 0) + (Number(btn.dataset.step || 0) || 0)); syncRackFootprint(rack, true); const host=findZoneById(rack.zoneId); if(host){ keepRackSnapped(rack, host); } persistActiveLayout(); renderLayoutEditor(); });
     if($('#insDupRack')) $('#insDupRack').onclick = () => { if(!rack) return; duplicateRackLayout(rack.id); };
     if($('#insDupZone')) $('#insDupZone').onclick = () => { if(zone) duplicateZone(zone.id); else if(rack) duplicateZone(rack.zoneId); };
@@ -9976,7 +10025,7 @@ function zoomLayout(factor, center){
     searchInput.addEventListener('input', debounce(filterProducts, 90));
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
-  if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = !appState.ui.productGroupMode; $('#toggleGroupProducts').classList.toggle('active', appState.ui.productGroupMode); $('#toggleGroupProducts').textContent = appState.ui.productGroupMode ? 'Ver individual' : 'Agrupar familias'; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
+  if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.add('active'); $('#toggleGroupProducts').textContent = 'Productos'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = true; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
   btnStopScanner.addEventListener('click', stopScanner);
