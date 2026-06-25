@@ -1941,9 +1941,10 @@
         const first = g.items[0];
         const variantes = Array.from(new Set(g.items.map(p => (p.variante || '').trim()).filter(Boolean)));
         const ubicaciones = Array.from(new Set(g.items.map(p => (p.ubicacion || '').trim()).filter(Boolean)));
+        const thumb = (getProductImageUrls(first)[0] || '').trim();
         row.innerHTML = `
-          <div><b>${escapeHtml(first.sku || '—')}</b></div>
-          <div>${escapeHtml(g.nombre)}</div>
+          <div class="product-cell-sku"><span class="product-select-box"></span>${thumb ? `<img class="product-row-thumb" src="${escapeHtml(thumb)}" alt="${escapeHtml(g.nombre)}">` : '<span class="product-row-thumb empty"></span>'}<b>${escapeHtml(first.sku || '—')}</b></div>
+          <div class="product-cell-name">${escapeHtml(g.nombre)}</div>
           <div><span class="variant-chip muted" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${variantes.length} variante${variantes.length === 1 ? '' : 's'} • ${ubicaciones.length} ubicaci${ubicaciones.length === 1 ? 'ón' : 'ones'}</span></div>
           <div><span class="loc-pill">${escapeHtml(first.ubicacion || '—')}</span></div>
           <div>${escapeHtml(first.almacen || '—')}</div>`;
@@ -1952,12 +1953,13 @@
       } else {
         const p = entry.data;
         row.setAttribute('data-product-key', getProductIdentityKey(p));
+        const thumb = (getProductImageUrls(p)[0] || '').trim();
         row.innerHTML = `
-          <div><b>${p.sku}</b></div>
-          <div>${p.nombre}</div>
+          <div class="product-cell-sku"><span class="product-select-box"></span>${thumb ? `<img class="product-row-thumb" src="${escapeHtml(thumb)}" alt="${escapeHtml(p.nombre || 'Producto')}">` : '<span class="product-row-thumb empty"></span>'}<b>${escapeHtml(p.sku || '—')}</b></div>
+          <div class="product-cell-name">${escapeHtml(p.nombre || 'Sin nombre')}</div>
           <div><span class="variant-chip muted ${getVariantToneKey(p.variante)}" style="padding:6px 10px;border-radius:10px;min-width:auto;cursor:default">${escapeHtml(p.variante || '—')}</span></div>
-          <div><span class="loc-pill">${p.ubicacion}</span></div>
-          <div>${p.almacen}</div>`;
+          <div><span class="loc-pill">${escapeHtml(p.ubicacion || '—')}</span></div>
+          <div>${escapeHtml(p.almacen || '—')}</div>`;
         row.addEventListener('click', () => selectProduct(p));
       }
       frag.appendChild(row);
@@ -5394,36 +5396,41 @@ function getSheetBranchOpenMap(){
     const ctx = getViewerProductLocationContext(appState.selectedProduct);
     const prod = appState.selectedProduct || null;
     detailTitle.textContent = 'Información del producto';
-    detailSubtitle.textContent = prod ? 'Datos, ubicación y acceso rápido a la vista 3D.' : 'Selecciona un producto desde la lista central.';
+    detailSubtitle.textContent = prod ? 'Detalles, ubicación y acceso rápido' : 'Selecciona un producto desde la lista central.';
     detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
     detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
     if(!prod){
       detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver su ubicación.</div></div></div>`;
       return;
     }
-    const images = getProductImageUrls(prod);
+    const images = getProductImageUrls(prod).filter(Boolean);
     const img = images[0] || '';
+    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
+    const sizeValue = getProductSizeValue(prod) || '—';
+    const colorValue = getProductColorValue(prod) || '—';
     detailWrap.innerHTML = `
-      <div class="viewer-product-info-card">
-        <div class="viewer-product-media ${img ? '' : 'empty'}">${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}</div>
+      <div class="viewer-product-info-card viewer-product-premium-card">
+        <div class="viewer-product-media ${img ? '' : 'empty'}">
+          ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+          ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+        </div>
+        ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
         <div class="viewer-product-copy">
           <div class="search-card-kicker">Producto</div>
           <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
-          <div class="muted tiny">${escapeHtml(prod.sku || 'SKU —')}</div>
+          <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
         </div>
-        <div class="viewer-info-grid">
-          <div class="search-meta-block"><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
-          <div class="search-meta-block"><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
-          <div class="search-meta-block"><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
-          <div class="search-meta-block"><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
+        <div class="viewer-info-grid viewer-info-icon-grid">
+          <div class="search-meta-block"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">▤</span><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">≋</span><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">◇</span><span class="search-meta-label">Variante</span><span class="search-meta-value">${escapeHtml(prod.variante || '—')}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">T</span><span class="search-meta-label">Talla</span><span class="search-meta-value">${escapeHtml(sizeValue)}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon color-dot"></span><span class="search-meta-label">Color</span><span class="search-meta-value">${escapeHtml(colorValue)}</span></div>
+          <div class="search-meta-block"><span class="viewer-info-icon">▣</span><span class="search-meta-label">Almacén</span><span class="search-meta-value">${escapeHtml(ctx.storeRackId || '—')}</span></div>
         </div>
-        <div class="viewer-info-extra">
-          <div><span>Variante</span><b>${escapeHtml(prod.variante || '—')}</b></div>
-          <div><span>Talla</span><b>${escapeHtml(getProductSizeValue(prod) || '—')}</b></div>
-          <div><span>Color</span><b>${escapeHtml(getProductColorValue(prod) || '—')}</b></div>
-          <div><span>Almacén</span><b>${escapeHtml(ctx.storeRackId || '—')}</b></div>
-        </div>
-        <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal">Ver ubicación</button>
+        <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
   }
