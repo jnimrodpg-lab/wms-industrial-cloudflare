@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v10-drive-video-proxy';
+const BUILD_MARK = 'cloudflare-v16-layout-tools';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

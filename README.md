@@ -11,12 +11,16 @@ App WMS preparada para desplegar en GitHub + Cloudflare Pages/Functions.
 - Migración D1 en `migrations/0001_init.sql`.
 - Ejemplo de Sheet en `public/ejemplo-sheet.csv`.
 
-## Cambios V15
+## Cambios V16
 
-- Se eliminó la franja/sombra decorativa que aparecía en la parte inferior del editor de layout.
-- Se dejó el canvas de edición más limpio: grilla visible, fondo técnico y sin overlay oscuro.
-- Se actualizó el cache del script para Cloudflare.
-- Se retiraron archivos históricos y duplicados que no eran necesarios para el deploy.
+- Se mantiene el canvas de edición limpio, con grilla visible y sin overlay oscuro.
+- Se agregó panel derecho de propiedades para zonas y racks.
+- Se agregaron capas visibles/ocultas: grilla, zonas, racks, etiquetas, cotas y mini mapa.
+- Se agregaron plantillas rápidas para crear zona + rack, almacén, fila de racks y distribuir racks.
+- Se agregó soporte para imagen de fondo del plano.
+- Se agregó mini mapa del layout.
+- Se eliminaron archivos auxiliares no usados para evitar conflictos en Cloudflare Functions.
+- Se actualizó el cache/build a `cloudflare-v16-layout-tools`.
 
 ## Despliegue
 

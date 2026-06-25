@@ -1,0 +1,12 @@
+Cambios V16 aplicados al plano/layout:
+- Se agregó panel derecho de propiedades para trabajar con zonas, racks, capas, plantillas rápidas, fondo de plano y mini mapa.
+- Se agregaron capas visibles/ocultas: grilla, zonas, racks, etiquetas, cotas y mini mapa.
+- Se agregó edición directa de medidas de zona: X, Y, ancho y alto.
+- Se agregó edición directa de rack: modelo, rotación, X, Y y altura.
+- Se agregaron plantillas rápidas: Zona + rack, Almacén, Fila de racks y Distribuir racks.
+- Se agregó opción para subir una imagen de fondo del plano y calcar encima.
+- Se agregó mini mapa del layout en el panel derecho.
+- Se reorganizó el layout del editor en tres columnas: herramientas, canvas y propiedades.
+- Se eliminó ruido visual del canvas manteniendo la grilla clara.
+- Se eliminaron archivos TS/API auxiliares no usados para evitar conflictos con el catch-all de Cloudflare Functions.
+- Se actualizó el build/cache a cloudflare-v16-layout-tools.
