@@ -1212,19 +1212,35 @@
     if(showSearch){
       document.querySelector('.search-panel').style.display='';
       const isViewer = screen === 'viewer';
-      detailPanel.style.display = (isSheetLayout || isViewer) ? 'none' : '';
-      contentPanel.classList.remove('full-span');
-      contentPanel.style.gridColumn = '';
-      contentPanel.style.gridRow = '';
-      if(detailPanel){
-        detailPanel.style.gridColumn = '';
-        detailPanel.style.gridRow = '';
+      appRoot.classList.toggle('viewer-product-layout', isViewer);
+      if(isViewer){
+        if(contentPanel) contentPanel.style.display = 'none';
+        if(detailPanel) detailPanel.style.display = '';
+        contentPanel.classList.remove('full-span');
+        contentPanel.style.gridColumn = '';
+        contentPanel.style.gridRow = '';
+        if(detailPanel){
+          detailPanel.style.gridColumn = '';
+          detailPanel.style.gridRow = '';
+        }
+        appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(520px,1fr) minmax(430px,520px)' : 'var(--sidebar-w) minmax(520px,1fr) minmax(430px,520px)');
+      }else{
+        if(contentPanel) contentPanel.style.display = '';
+        detailPanel.style.display = isSheetLayout ? 'none' : '';
+        contentPanel.classList.remove('full-span');
+        contentPanel.style.gridColumn = '';
+        contentPanel.style.gridRow = '';
+        if(detailPanel){
+          detailPanel.style.gridColumn = '';
+          detailPanel.style.gridRow = '';
+        }
+        appRoot.style.gridTemplateColumns = compactViewport ? '' : '';
       }
-      appRoot.style.gridTemplateColumns = compactViewport ? '' : (isViewer ? (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) 680px minmax(0,1fr)' : 'var(--sidebar-w) 680px minmax(0,1fr)') : '');
-      if(isViewer && detailPanel) detailPanel.style.display = 'none';
     }else{
       appRoot.classList.remove('sheet-swap-layout');
       appRoot.classList.remove('sheet-expanded');
+      appRoot.classList.remove('viewer-product-layout');
+      if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
       const isLayoutScreen = screen === 'layout';
@@ -5246,6 +5262,172 @@ function getSheetBranchOpenMap(){
     }));
   }
 
+
+  function getViewerProductLocationContext(product = appState.selectedProduct){
+    const layoutBranchIndex = getActiveLayoutBranchIndex();
+    const branches = appState.admin?.branches || [];
+    const activeBranch = branches[layoutBranchIndex] || branches[getActiveSheetBranchIndex()] || null;
+    const rackIdsInLayout = new Set((appState.layout?.racks || []).map(r => r.id));
+    const selectedProd = product || null;
+    const productMatchesLayout = selectedProd && (
+      (selectedProd.rack && rackIdsInLayout.has(selectedProd.rack)) ||
+      (selectedProd.rackStore && rackIdsInLayout.has(selectedProd.rackStore))
+    );
+    const prod = productMatchesLayout ? selectedProd : selectedProd;
+    const primaryRackId = (selectedProd?.rack && rackIdsInLayout.has(selectedProd.rack) ? selectedProd.rack : '') || (appState.selectedRack && rackIdsInLayout.has(appState.selectedRack) ? appState.selectedRack : '') || appState.layout.racks[0]?.id || '';
+    const storeRackId = (selectedProd?.rackStore && rackIdsInLayout.has(selectedProd.rackStore) ? selectedProd.rackStore : '') || primaryRackId;
+    const primaryLoc = selectedProd?.ubicacion || primaryRackId || '—';
+    const storeLoc = selectedProd?.almacen || storeRackId || '—';
+    return { layoutBranchIndex, activeBranch, rackIdsInLayout, prod, productMatchesLayout, primaryRackId, storeRackId, primaryLoc, storeLoc };
+  }
+
+  function renderIsoLocationSvg(svg, prod = appState.selectedProduct){
+    if(!svg) return;
+    svg.innerHTML = '';
+    const defs = svgEl('defs');
+    const glow = svgEl('filter',{id:'mapGlowLocationModal',x:'-40%',y:'-40%',width:'180%',height:'180%'});
+    glow.appendChild(svgEl('feDropShadow',{dx:'0',dy:'0',stdDeviation:'10','flood-color':'#50e37b','flood-opacity':'.55'}));
+    defs.appendChild(glow); svg.appendChild(defs);
+    const root = svgEl('g',{id:'locationModalMapRoot',transform:'translate(0 0) scale(1)'}); svg.appendChild(root);
+
+    const bounds = getLayoutContentBounds();
+    const padX = Math.max(280, bounds.w * 0.22);
+    const padY = Math.max(280, bounds.h * 0.22);
+    const floorRect = { x: bounds.x - padX, y: bounds.y - padY, w: bounds.w + padX * 2, h: bounds.h + padY * 2 };
+    const floor = face([
+      toIso(floorRect.x, floorRect.y, 0),
+      toIso(floorRect.x + floorRect.w, floorRect.y, 0),
+      toIso(floorRect.x + floorRect.w, floorRect.y + floorRect.h, 0),
+      toIso(floorRect.x, floorRect.y + floorRect.h, 0)
+    ],{fill:'rgba(255,255,255,.025)',stroke:'rgba(255,255,255,.08)','stroke-width':'2'});
+    root.appendChild(floor);
+    const isoGrid = svgEl('g',{opacity:'.36'});
+    const gridStep = Math.max(4, getSnapSize() * 2);
+    for(let gx = Math.floor(floorRect.x / gridStep) * gridStep; gx <= floorRect.x + floorRect.w; gx += gridStep){
+      const a = toIso(gx, floorRect.y, 0); const b = toIso(gx, floorRect.y + floorRect.h, 0);
+      isoGrid.appendChild(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:'rgba(120,162,210,.22)','stroke-width':'1'}));
+    }
+    for(let gy = Math.floor(floorRect.y / gridStep) * gridStep; gy <= floorRect.y + floorRect.h; gy += gridStep){
+      const a = toIso(floorRect.x, gy, 0); const b = toIso(floorRect.x + floorRect.w, gy, 0);
+      isoGrid.appendChild(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:'rgba(120,162,210,.22)','stroke-width':'1'}));
+    }
+    root.appendChild(isoGrid);
+
+    let projected = [
+      toIso(floorRect.x, floorRect.y, 0),
+      toIso(floorRect.x + floorRect.w, floorRect.y, 0),
+      toIso(floorRect.x + floorRect.w, floorRect.y + floorRect.h, 0),
+      toIso(floorRect.x, floorRect.y + floorRect.h, 0)
+    ];
+    (appState.layout?.zones || []).forEach(z => {
+      const pts = z.pts.map(p => toIso(p.x, p.y, 0));
+      projected.push(...pts);
+      const isMainZone = prod?.zona === z.id;
+      const isStoreZone = prod?.zonaStore === z.id;
+      const isSearchZone = (prod?.zona || prod?.zonaStore) === z.id;
+      const zoneColor = z.color || getBranchColor(getActiveLayoutBranchIndex()) || '#ffd84d';
+      const path = svgEl('path',{d:`M ${pts.map(pt => `${pt.x} ${pt.y}`).join(' L ')} Z`,class:'zone-floor' + (isMainZone ? ' active' : '') + (isStoreZone ? ' storage' : '') + (isSearchZone ? ' search-focus' : ''),fill:hexToRgba(zoneColor, isSearchZone ? 0.30 : 0.22),stroke:hexToRgba(zoneColor, isSearchZone ? 0.98 : 0.92),'stroke-width':isSearchZone ? '2.8' : '2.1'});
+      root.appendChild(path);
+      const c = centroid(z.pts); const ci = toIso(c.x,c.y,0);
+      projected.push(ci);
+      const label = svgEl('text',{x:ci.x,y:ci.y,class:'zone-label','text-anchor':'middle'}); label.textContent = z.id; root.appendChild(label);
+    });
+    const racks = (appState.layout?.racks || []).slice().sort((a,b)=>(a.x+a.y+Number(a.baseHeight||0))-(b.x+b.y+Number(b.baseHeight||0)));
+    racks.forEach(r => {
+      const rackGroup = buildIsoRack(r, prod);
+      root.appendChild(rackGroup.group);
+      if(Array.isArray(rackGroup.projectedPoints)) projected.push(...rackGroup.projectedPoints);
+    });
+    if(projected.length){
+      const minX = Math.min(...projected.map(p => p.x)); const maxX = Math.max(...projected.map(p => p.x));
+      const minY = Math.min(...projected.map(p => p.y)); const maxY = Math.max(...projected.map(p => p.y));
+      const padVX = Math.max(80, (maxX - minX) * 0.12); const padVY = Math.max(80, (maxY - minY) * 0.16);
+      svg.setAttribute('viewBox', `${Math.floor(minX - padVX)} ${Math.floor(minY - padVY)} ${Math.ceil((maxX - minX) + padVX * 2)} ${Math.ceil((maxY - minY) + padVY * 2)}`);
+    }
+    enablePanZoom(svg, root, focusBoundsForProduct(prod), { tx:0, ty:0, scale:1.25 });
+  }
+
+  function openProductLocationModal(product = appState.selectedProduct){
+    const ctx = getViewerProductLocationContext(product);
+    const prod = product || ctx.prod;
+    if(!prod){ showToast('Selecciona un producto primero.', 'warning'); return; }
+    let modal = document.getElementById('productLocationModal');
+    if(modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = 'productLocationModal';
+    modal.className = 'location-modal-backdrop show';
+    modal.innerHTML = `
+      <div class="location-modal-card">
+        <div class="location-modal-head">
+          <div>
+            <b>Ubicación 3D del producto</b>
+            <div class="muted tiny">${escapeHtml(prod.nombre || 'Producto')} • ${escapeHtml(prod.sku || 'SKU —')}</div>
+          </div>
+          <div class="location-modal-head-actions">
+            <span class="chip">${escapeHtml(ctx.primaryLoc)}</span>
+            <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
+          </div>
+        </div>
+        <div class="location-modal-body">
+          <div class="location-modal-main dual-rack-card">
+            <div class="dual-rack-head"><div><b>Plano general 3D isométrico</b><div class="muted tiny">Vista general con el rack y slot resaltados.</div></div><span class="chip">${escapeHtml(prod.zona || '—')} / ${escapeHtml(prod.zonaStore || '—')}</span></div>
+            <div class="detail-stage"><svg id="locationModalIsoMap" viewBox="-560 -160 1220 820"></svg></div>
+          </div>
+          <div class="location-modal-side">
+            <div class="dual-rack-card"><div class="dual-rack-head"><div><b>Rack de ubicación</b><div class="muted tiny">${escapeHtml(ctx.primaryLoc)}</div></div><span class="chip">${escapeHtml(ctx.primaryRackId || '—')}</span></div><div class="detail-stage dual-rack-svg"><svg id="locationModalRackPrimary"></svg></div></div>
+            <div class="dual-rack-card"><div class="dual-rack-head"><div><b>Rack de almacén</b><div class="muted tiny">${escapeHtml(ctx.storeLoc)}</div></div><span class="chip">${escapeHtml(ctx.storeRackId || '—')}</span></div><div class="detail-stage dual-rack-svg"><svg id="locationModalRackStore"></svg></div></div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('.location-modal-close')?.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+    const iso = modal.querySelector('#locationModalIsoMap');
+    const rackPrimary = modal.querySelector('#locationModalRackPrimary');
+    const rackStore = modal.querySelector('#locationModalRackStore');
+    renderIsoLocationSvg(iso, prod);
+    renderRackDetail(ctx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label: 'Ubicación', fullLabel: ctx.primaryLoc }, rackPrimary);
+    renderRackDetail(ctx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label: 'Almacén', fullLabel: ctx.storeLoc }, rackStore);
+  }
+
+  function renderViewerProductInfoPanel(){
+    const ctx = getViewerProductLocationContext(appState.selectedProduct);
+    const prod = appState.selectedProduct || null;
+    detailTitle.textContent = 'Información del producto';
+    detailSubtitle.textContent = prod ? 'Datos, ubicación y acceso rápido a la vista 3D.' : 'Selecciona un producto desde la lista central.';
+    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
+    detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
+    if(!prod){
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver su ubicación.</div></div></div>`;
+      return;
+    }
+    const images = getProductImageUrls(prod);
+    const img = images[0] || '';
+    detailWrap.innerHTML = `
+      <div class="viewer-product-info-card">
+        <div class="viewer-product-media ${img ? '' : 'empty'}">${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}</div>
+        <div class="viewer-product-copy">
+          <div class="search-card-kicker">Producto</div>
+          <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+          <div class="muted tiny">${escapeHtml(prod.sku || 'SKU —')}</div>
+        </div>
+        <div class="viewer-info-grid">
+          <div class="search-meta-block"><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
+          <div class="search-meta-block"><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
+          <div class="search-meta-block"><span class="search-meta-label">Rack</span><span class="search-meta-value">${escapeHtml(ctx.primaryRackId || '—')}</span></div>
+          <div class="search-meta-block"><span class="search-meta-label">Nivel / Slot</span><span class="search-meta-value">N${escapeHtml(String(prod.nivel || 0))} • S${escapeHtml(String(prod.slot || 0))}</span></div>
+        </div>
+        <div class="viewer-info-extra">
+          <div><span>Variante</span><b>${escapeHtml(prod.variante || '—')}</b></div>
+          <div><span>Talla</span><b>${escapeHtml(getProductSizeValue(prod) || '—')}</b></div>
+          <div><span>Color</span><b>${escapeHtml(getProductColorValue(prod) || '—')}</b></div>
+          <div><span>Almacén</span><b>${escapeHtml(ctx.storeRackId || '—')}</b></div>
+        </div>
+        <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal">Ver ubicación</button>
+      </div>`;
+    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+  }
+
   function renderMapView(){
     const layoutBranchIndex = getActiveLayoutBranchIndex();
     const branches = appState.admin?.branches || [];
@@ -5271,6 +5453,13 @@ function getSheetBranchOpenMap(){
     const storeLoc = prod?.almacen || storeRackId || '—';
 
     renderViewerBranchHost(layoutBranchIndex);
+    if(appState.screen === 'viewer'){
+      if(contentWrap) contentWrap.innerHTML = '';
+      renderViewerProductInfoPanel();
+      contentStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Busca y selecciona un producto';
+      contentFootRight.textContent = prod ? `${primaryLoc} • ALM: ${storeLoc}` : `${(appState.products || []).length.toLocaleString('es-PE')} productos`;
+      return;
+    }
 
     contentWrap.innerHTML = `
       <div class="map-unified" style="grid-template-columns:minmax(0,1fr) clamp(320px,28vw,420px);grid-template-rows:minmax(0,1fr);gap:8px;">
@@ -9796,8 +9985,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   }
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
-  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:false }); };
-  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); focusSelectedProductInViewer({ switchScreen:true }); };
+  if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); openProductLocationModal(appState.selectedProduct); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); setScreen('viewer'); renderMapView(); };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
