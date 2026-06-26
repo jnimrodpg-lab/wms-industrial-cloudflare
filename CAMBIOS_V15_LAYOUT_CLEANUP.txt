@@ -1,9 +1,0 @@
-Cambios V15:
-- Eliminada la franja/sombra decorativa que aparecía en la parte inferior del editor de layout.
-- Se conserva la grilla y el fondo técnico del canvas, pero sin overlay oscuro que estorbe la edición.
-- Actualizado el cache del script para Cloudflare.
-- Limpieza de archivos innecesarios:
-  - historial CAMBIOS_* antiguo
-  - app-main.js legacy no referenciado por index.html
-  - ejemplo-sheet.csv duplicado en la raíz
-- Se conserva public/ejemplo-sheet.csv como archivo de ejemplo accesible si se necesita.
