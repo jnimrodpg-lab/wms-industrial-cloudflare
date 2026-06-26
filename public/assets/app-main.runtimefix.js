@@ -5679,7 +5679,7 @@ function getSheetBranchOpenMap(){
     const ctx = getViewerProductLocationContext(appState.selectedProduct);
     const prod = appState.selectedProduct || null;
     detailTitle.textContent = 'Información del producto';
-    detailSubtitle.textContent = prod ? 'Producto, ubicación y variantes del modelo' : 'Selecciona un producto desde la lista central.';
+    detailSubtitle.textContent = '';
     detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
     detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
     if(!prod){

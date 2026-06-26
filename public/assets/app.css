@@ -4436,3 +4436,11 @@ body.theme-light .brand-box{
   background:rgba(10,16,26,.72);color:#fff;
   font-size:24px;font-weight:900;cursor:pointer;
 }
+
+/* V30: limpiar subtítulo y pie redundante en panel de producto */
+.app.viewer-product-layout #detailSubtitle{
+  display:none !important;
+}
+.app.viewer-product-layout .detail-foot{
+  display:none !important;
+}
