@@ -639,9 +639,6 @@
     const close = () => modal.remove();
     modal.querySelector('#btnCloseCategoryPinterest')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
-    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
-    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
-    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     modal.querySelector('#btnClearCategoryFilter')?.addEventListener('click', () => {
       appState.productFilters.category = '';
       appState.productFilters.gender = '';
@@ -5790,9 +5787,6 @@ function getSheetBranchOpenMap(){
     const close = () => modal.remove();
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
-    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
-    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
-    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
   }
 
   function openProductVariantsModal(product = appState.selectedProduct){
@@ -5819,9 +5813,6 @@ function getSheetBranchOpenMap(){
     const close = () => modal.remove();
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
-    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
-    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
-    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     modal.querySelectorAll('[data-select-variant]').forEach(btn => btn.addEventListener('click', () => {
       const v = variants[Number(btn.dataset.selectVariant || 0)];
       if(v){ close(); selectProduct(v); focusSelectedProductInViewer({ product:v, switchScreen:false }); }
@@ -5951,9 +5942,6 @@ function getSheetBranchOpenMap(){
     const close = () => { window.removeEventListener('resize', render); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
-    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
-    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
-    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     function getFocusSets(){
       const focusRackIds = new Set([prod?.rack, prod?.rackStore].filter(Boolean));
       const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
@@ -6082,6 +6070,9 @@ function getSheetBranchOpenMap(){
       rackZoom.hidden = false;
       rackZoom.classList.add('show');
     };
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     function renderNav3DSideRacks(){
       const liveCtx = getViewerProductLocationContext(prod);
       if(rackPrimarySvg){
@@ -6244,9 +6235,6 @@ function getSheetBranchOpenMap(){
       const close = () => modal.remove();
       modal.querySelector('.media-lightbox-close')?.addEventListener('click', close);
       modal.addEventListener('click', e => { if(e.target === modal) close(); });
-    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
-    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
-    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     });
     host.addEventListener('mouseenter', () => clearViewerImageRotationTimer(), { passive:true });
     host.addEventListener('mouseleave', () => restartTimer(), { passive:true });
