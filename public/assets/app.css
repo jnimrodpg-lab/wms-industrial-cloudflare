@@ -4469,3 +4469,77 @@ body.theme-light .brand-box{
   color:#fff;
   box-shadow:0 8px 24px rgba(17, 40, 35, 0.28);
 }
+
+
+/* V32: categorías con proporción uniforme y corrección al filtrar */
+.category-pinterest-genders{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-start;
+  gap:12px;
+  padding:0 24px 10px;
+}
+.category-gender-pill{
+  flex:0 0 auto;
+  min-width:96px;
+  height:44px;
+  padding:0 18px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  white-space:nowrap;
+  line-height:1;
+}
+.category-pinterest-grid{
+  min-height:0;
+  overflow:auto;
+  padding:22px 24px 28px;
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+  gap:18px;
+  align-content:start;
+  column-count:unset;
+  column-gap:unset;
+}
+.category-pinterest-card{
+  width:100%;
+  margin:0;
+  break-inside:auto;
+  display:flex;
+  flex-direction:column;
+  min-height:280px;
+  height:100%;
+}
+.category-pinterest-media,
+.category-pinterest-card.size-2 .category-pinterest-media,
+.category-pinterest-card.size-3 .category-pinterest-media,
+.category-pinterest-card.size-5 .category-pinterest-media{
+  height:180px;
+  flex:0 0 180px;
+}
+.category-pinterest-card-body{
+  min-height:96px;
+  margin-top:auto;
+}
+.category-pinterest-grid .empty.compact{
+  grid-column:1 / -1;
+  min-height:240px;
+  display:grid;
+  place-items:center;
+  text-align:center;
+  border-radius:24px;
+  border:1px dashed rgba(255,255,255,.12);
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  color:#dce8e3;
+  padding:20px;
+}
+@media(max-width:980px){
+  .category-pinterest-genders{padding:0 18px 8px}
+  .category-pinterest-grid{grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));padding:18px}
+}
+@media(max-width:620px){
+  .category-pinterest-genders{gap:10px;padding:0 16px 8px;overflow-x:auto;flex-wrap:nowrap}
+  .category-gender-pill{min-width:92px;height:42px}
+  .category-pinterest-grid{grid-template-columns:1fr;padding:16px}
+}
