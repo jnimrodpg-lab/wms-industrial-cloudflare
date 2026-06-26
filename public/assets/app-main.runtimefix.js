@@ -6128,6 +6128,33 @@ function getSheetBranchOpenMap(){
     }
 
 
+    function drawRackBasic(ctx2, project, r, active=false, ghost=false){
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(18,Number(r.w)||80), d=Math.max(18,Number(r.h)||40), h=getRackRenderHeight3D(r);
+      const fillTop = active ? `rgba(132,255,176,${ghost ? .18 : .34})` : `rgba(174,204,236,${ghost ? .08 : .16})`;
+      const fillFront = active ? `rgba(96,235,150,${ghost ? .18 : .28})` : `rgba(111,145,179,${ghost ? .08 : .18})`;
+      const fillSide = active ? `rgba(75,214,132,${ghost ? .16 : .22})` : `rgba(86,118,154,${ghost ? .08 : .14})`;
+      const stroke = active ? `rgba(134,255,183,${ghost ? .45 : .9})` : `rgba(214,231,248,${ghost ? .12 : .28})`;
+      const corners = [[x,y,0],[x+w,y,0],[x+w,y+d,0],[x,y+d,0],[x,y,h],[x+w,y,h],[x+w,y+d,h],[x,y+d,h]].map(c => project(c[0],c[1],c[2]));
+      drawPoly(ctx2, [corners[4], corners[5], corners[6], corners[7]], fillTop, stroke, 1);
+      drawPoly(ctx2, [corners[3], corners[2], corners[6], corners[7]], fillFront, stroke, 1);
+      drawPoly(ctx2, [corners[1], corners[2], corners[6], corners[5]], fillSide, stroke, 1);
+      const floorPts = [[x-8,y-6,0],[x+w+8,y-6,0],[x+w+8,y+d+8,0],[x-8,y+d+8,0]].map(c => project(c[0],c[1],c[2]));
+      drawPoly(ctx2, floorPts, ghost ? 'rgba(255,255,255,.01)' : 'rgba(255,255,255,.03)', `rgba(255,255,255,${ghost ? .06 : .10})`, 1);
+      if(active){
+        const topCenter = project(x+w/2, y+d/2, h+16);
+        ctx2.save();
+        ctx2.shadowColor='rgba(89,255,155,.65)';
+        ctx2.shadowBlur=16;
+        ctx2.fillStyle='#5cff9a';
+        ctx2.beginPath();
+        ctx2.arc(topCenter.x, topCenter.y, 5.5, 0, Math.PI*2);
+        ctx2.fill();
+        ctx2.restore();
+      }
+      drawLabel(ctx2, project(x+w/2, y+d/2, h+28), r.id, active);
+    }
+
+
     function getProductMarkerPoint(project, r){
       if(!prod || !r) return null;
       const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
@@ -6239,7 +6266,12 @@ function getSheetBranchOpenMap(){
       const zones = getNav3DZones().filter(z => state.isolation==='all' || focusZoneIds.has(z.id));
       const racks = getNav3DRacks().filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
       zones.forEach(z => { const active = focusZoneIds.has(z.id); const pts = (z.pts||[]).map(pt => project(Number(pt.x)||0, Number(pt.y)||0, 0)); drawPoly(ctx2, pts, active ? 'rgba(87,210,146,.18)' : 'rgba(125,170,210,.13)', active ? 'rgba(112,255,177,.52)' : 'rgba(180,220,255,.17)', active ? 2 : 1); const c = centroid(z.pts || []); drawLabel(ctx2, project(c.x,c.y,8), z.name || z.id, active); });
-      racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawRackShape(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
+      racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => {
+        const isActiveRack = focusRackIds.has(r.id);
+        const isGhostRack = state.ghost && !!prod && !isActiveRack;
+        if(isActiveRack) drawRackShape(ctx2, project, r, true, false);
+        else drawRackBasic(ctx2, project, r, false, isGhostRack);
+      });
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
       if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
