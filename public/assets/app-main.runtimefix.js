@@ -639,6 +639,9 @@
     const close = () => modal.remove();
     modal.querySelector('#btnCloseCategoryPinterest')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     modal.querySelector('#btnClearCategoryFilter')?.addEventListener('click', () => {
       appState.productFilters.category = '';
       appState.productFilters.gender = '';
@@ -5787,6 +5790,9 @@ function getSheetBranchOpenMap(){
     const close = () => modal.remove();
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
   }
 
   function openProductVariantsModal(product = appState.selectedProduct){
@@ -5813,6 +5819,9 @@ function getSheetBranchOpenMap(){
     const close = () => modal.remove();
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     modal.querySelectorAll('[data-select-variant]').forEach(btn => btn.addEventListener('click', () => {
       const v = variants[Number(btn.dataset.selectVariant || 0)];
       if(v){ close(); selectProduct(v); focusSelectedProductInViewer({ product:v, switchScreen:false }); }
@@ -5862,24 +5871,89 @@ function getSheetBranchOpenMap(){
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
-        <div class="nav3d-stage">
-          <canvas id="nav3dCanvas"></canvas>
-          <div class="nav3d-hud">
-            <b>Controles</b>
-            <span>Arrastrar: orbitar</span>
-            <span>Rueda: zoom</span>
-            <span>Shift + arrastrar: pan</span>
+        <div class="nav3d-body">
+          <div class="nav3d-stage">
+            <canvas id="nav3dCanvas"></canvas>
+            <div class="nav3d-hud">
+              <b>Controles</b>
+              <span>Arrastrar: orbitar</span>
+              <span>Rueda: zoom</span>
+              <span>Shift + arrastrar: pan</span>
+            </div>
+            <div class="nav3d-compass" id="nav3dCompass">N</div>
           </div>
-          <div class="nav3d-compass" id="nav3dCompass">N</div>
+          <div class="nav3d-side">
+            <div class="nav3d-rack-card is-primary">
+              <div class="nav3d-rack-head">
+                <div><b>Rack de ubicación</b><div class="muted tiny">${escapeHtml(ctx.primaryLoc || 'Sin ubicación principal')}</div></div>
+                <div class="nav3d-rack-tools">
+                  <span class="chip">${escapeHtml(ctx.primaryRackId || '—')}</span>
+                  <button class="nav3d-rack-expand" type="button" data-rack-expand="primary" aria-label="Ampliar rack de ubicación">⤢</button>
+                </div>
+              </div>
+              <div class="nav3d-rack-stage">
+                <svg id="nav3dRackPrimary"></svg>
+              </div>
+              <div class="nav3d-rack-meta" id="nav3dRackPrimaryMeta">
+                <span class="nav3d-rack-badge">Vista 3D</span>
+                <span class="nav3d-rack-badge">Nivel —</span>
+                <span class="nav3d-rack-badge">Slot —</span>
+              </div>
+            </div>
+            <div class="nav3d-rack-card is-store">
+              <div class="nav3d-rack-head">
+                <div><b>Rack de almacén</b><div class="muted tiny">${escapeHtml(ctx.storeLoc || 'Sin ubicación de almacén')}</div></div>
+                <div class="nav3d-rack-tools">
+                  <span class="chip">${escapeHtml(ctx.storeRackId || '—')}</span>
+                  <button class="nav3d-rack-expand" type="button" data-rack-expand="store" aria-label="Ampliar rack de almacén">⤢</button>
+                </div>
+              </div>
+              <div class="nav3d-rack-stage">
+                <svg id="nav3dRackStore"></svg>
+              </div>
+              <div class="nav3d-rack-meta" id="nav3dRackStoreMeta">
+                <span class="nav3d-rack-badge">Vista 3D</span>
+                <span class="nav3d-rack-badge">Nivel —</span>
+                <span class="nav3d-rack-badge">Slot —</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="nav3d-rack-zoom" id="nav3dRackZoom" hidden>
+          <div class="nav3d-rack-zoom-card">
+            <div class="nav3d-rack-zoom-head">
+              <div>
+                <div class="search-card-kicker">Vista ampliada</div>
+                <b id="nav3dRackZoomTitle">Rack</b>
+              </div>
+              <div class="nav3d-rack-tools">
+                <span class="chip" id="nav3dRackZoomChip">—</span>
+                <button class="nav3d-rack-expand" type="button" data-rack-zoom-close aria-label="Cerrar ampliación">✕</button>
+              </div>
+            </div>
+            <div class="nav3d-rack-zoom-stage"><svg id="nav3dRackZoomSvg"></svg></div>
+            <div class="nav3d-rack-meta" id="nav3dRackZoomMeta"></div>
+          </div>
         </div>
       </div>`;
     document.body.appendChild(modal);
     const canvas = modal.querySelector('#nav3dCanvas');
     const compass = modal.querySelector('#nav3dCompass');
+    const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
+    const rackStoreSvg = modal.querySelector('#nav3dRackStore');
+    const rackZoom = modal.querySelector('#nav3dRackZoom');
+    const rackZoomSvg = modal.querySelector('#nav3dRackZoomSvg');
+    const rackZoomTitle = modal.querySelector('#nav3dRackZoomTitle');
+    const rackZoomChip = modal.querySelector('#nav3dRackZoomChip');
+    const rackZoomMeta = modal.querySelector('#nav3dRackZoomMeta');
+    const rackExpandButtons = Array.from(modal.querySelectorAll('[data-rack-expand]'));
     const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, route:true, dragging:false, lastX:0, lastY:0 };
     const close = () => { window.removeEventListener('resize', render); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     function getFocusSets(){
       const focusRackIds = new Set([prod?.rack, prod?.rackStore].filter(Boolean));
       const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
@@ -5974,6 +6048,63 @@ function getSheetBranchOpenMap(){
       const p = project(px,py,pz+16); ctx2.save(); ctx2.shadowColor='rgba(255,215,95,.95)'; ctx2.shadowBlur=20; ctx2.fillStyle='#ffd85a'; ctx2.strokeStyle='rgba(30,18,0,.72)'; ctx2.lineWidth=2; ctx2.beginPath(); ctx2.arc(p.x,p.y,9,0,Math.PI*2); ctx2.fill(); ctx2.stroke(); ctx2.restore();
       drawLabel(ctx2, project(px,py,pz+46), `N${level} · S${slot}`, true);
     }
+
+    const buildRackMetaHtml = (rackId, nivel, slot, extraActive = '') => {
+      const rack = findRackById(rackId);
+      const model = rackModel(rack?.modelId) || rackModel(appState.selectedModelId) || {};
+      const levelCount = Math.max(1, Number(model.levels || rack?.levels || 1) || 1);
+      const slotCount = Math.max(1, Number(model.slots || model.capacity || rack?.slots || 1) || 1);
+      return `
+        <span class="nav3d-rack-badge">Vista 3D</span>
+        <span class="nav3d-rack-badge">Niveles ${levelCount}</span>
+        <span class="nav3d-rack-badge">Slots ${slotCount}</span>
+        <span class="nav3d-rack-badge is-active">Nivel ${Math.max(1, Number(nivel || 1) || 1)}</span>
+        <span class="nav3d-rack-badge is-active">Slot ${Math.max(1, Number(slot || 1) || 1)}</span>
+        ${extraActive ? `<span class="nav3d-rack-badge is-accent">${extraActive}</span>` : ''}`;
+    };
+    const closeRackZoom = () => {
+      if(!rackZoom) return;
+      rackZoom.hidden = true;
+      rackZoom.classList.remove('show');
+    };
+    const openRackZoom = (type) => {
+      if(!rackZoom || !rackZoomSvg) return;
+      const liveCtx = getViewerProductLocationContext(prod);
+      const isPrimary = type === 'primary';
+      const rackId = isPrimary ? liveCtx.primaryRackId : liveCtx.storeRackId;
+      const fullLabel = isPrimary ? (liveCtx.primaryLoc || 'Sin ubicación principal') : (liveCtx.storeLoc || 'Sin ubicación de almacén');
+      const nivel = isPrimary ? (prod?.nivel || 0) : (prod?.nivelStore || 0);
+      const slot = isPrimary ? (prod?.slot || 0) : (prod?.slotStore || 0);
+      rackZoomTitle.textContent = isPrimary ? 'Rack de ubicación' : 'Rack de almacén';
+      rackZoomChip.textContent = rackId || '—';
+      rackZoomMeta.innerHTML = buildRackMetaHtml(rackId, nivel, slot, fullLabel);
+      renderRackDetail(rackId, { nivel, slot, label: isPrimary ? 'Ubicación' : 'Almacén', fullLabel }, rackZoomSvg);
+      rackZoom.hidden = false;
+      rackZoom.classList.add('show');
+    };
+    function renderNav3DSideRacks(){
+      const liveCtx = getViewerProductLocationContext(prod);
+      if(rackPrimarySvg){
+        renderRackDetail(liveCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label:'Ubicación', fullLabel: liveCtx.primaryLoc || 'Sin ubicación' }, rackPrimarySvg);
+      }
+      if(rackStoreSvg){
+        renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel: liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg);
+      }
+      modal.querySelectorAll('.nav3d-rack-card .chip').forEach((chip, idx) => {
+        const value = idx === 0 ? (liveCtx.primaryRackId || '—') : (liveCtx.storeRackId || '—');
+        chip.textContent = value;
+      });
+      const tiny = modal.querySelectorAll('.nav3d-rack-head .muted.tiny');
+      if(tiny[0]) tiny[0].textContent = liveCtx.primaryLoc || 'Sin ubicación principal';
+      if(tiny[1]) tiny[1].textContent = liveCtx.storeLoc || 'Sin ubicación de almacén';
+      const fillMeta = (id, rackId, nivel, slot) => {
+        const meta = modal.querySelector(id);
+        if(!meta) return;
+        meta.innerHTML = buildRackMetaHtml(rackId, nivel, slot);
+      };
+      fillMeta('#nav3dRackPrimaryMeta', liveCtx.primaryRackId, prod?.nivel, prod?.slot);
+      fillMeta('#nav3dRackStoreMeta', liveCtx.storeRackId, prod?.nivelStore, prod?.slotStore);
+    }
     function render(){
       if(!canvas.isConnected) return;
       const dpr = window.devicePixelRatio || 1, rect = canvas.getBoundingClientRect();
@@ -5989,6 +6120,7 @@ function getSheetBranchOpenMap(){
       focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
       focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
       if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
+      renderNav3DSideRacks();
     }
     function resetFocus(){ state.yaw = -Math.PI/4; state.pitch = .78; state.zoom = 1; state.panX = 0; state.panY = 0; render(); }
     modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => { const action = btn.dataset.nav3dAction; if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action; if(action === 'ghost') state.ghost = !state.ghost; if(action === 'labels') state.labels = !state.labels; if(action === 'route') state.route = !state.route; if(action === 'slot'){ state.isolation='rack'; resetFocus(); state.zoom=2.35; render(); } if(action === 'focus') resetFocus(); modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation)); modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost); modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels); modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', state.route); render(); }));
@@ -6112,6 +6244,9 @@ function getSheetBranchOpenMap(){
       const close = () => modal.remove();
       modal.querySelector('.media-lightbox-close')?.addEventListener('click', close);
       modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    rackExpandButtons.forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', closeRackZoom);
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom) closeRackZoom(); });
     });
     host.addEventListener('mouseenter', () => clearViewerImageRotationTimer(), { passive:true });
     host.addEventListener('mouseleave', () => restartTimer(), { passive:true });
@@ -7349,8 +7484,9 @@ function getSheetBranchOpenMap(){
     holder.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
     const defs = svgEl('defs');
-    const filter = svgEl('filter',{id:'slotGlow',x:'-60%',y:'-60%',width:'220%',height:'220%'});
-    filter.appendChild(svgEl('feDropShadow',{dx:'0',dy:'0',stdDeviation:'10','flood-color':'#72ff3b','flood-opacity':'.8'}));
+    const filter = svgEl('filter',{id:'slotGlow',x:'-90%',y:'-90%',width:'280%',height:'280%'});
+    filter.appendChild(svgEl('feDropShadow',{dx:'0',dy:'0',stdDeviation:'12','flood-color':'#9eff49','flood-opacity':'.95'}));
+    filter.appendChild(svgEl('feDropShadow',{dx:'0',dy:'0',stdDeviation:'22','flood-color':'#ffe066','flood-opacity':'.42'}));
     defs.appendChild(filter); holder.appendChild(defs);
 
     const clearance = Math.max(0, model.clearance || 0);
@@ -7360,7 +7496,7 @@ function getSheetBranchOpenMap(){
     if(isUnderStairsStyle(styleKind)) return buildUnderStairsIsoRack(r, prod);
     const rackDims = { x:-68, y:-22, w:model.width || 150, d:model.depth || 82, h:model.height || 238, levels:model.levels || 4, slots:Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2)), clearance };
     const selectedLayoutRack = forcedRack || findRackById(rackId) || null;
-    const renderContextMode = !!selectedLayoutRack && (holder.id === 'rackViewPrimary' || holder.id === 'rackViewStore');
+    const renderContextMode = !!selectedLayoutRack && ['rackViewPrimary','rackViewStore','nav3dRackPrimary','nav3dRackStore'].includes(holder.id);
     const root = svgEl('g',{transform:`translate(0 118)`}); holder.appendChild(root);
     const floorY = clearance;
     const contextView = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
@@ -7636,8 +7772,8 @@ function getSheetBranchOpenMap(){
           toIso(x0+sw, shelfY0 + 8, z + 1),
           toIso(x0+sw, shelfY1 - 8, z + 1),
           toIso(x0, shelfY1 - 8, z + 1)
-        ],{fill:slotClass?'rgba(255,216,77,.86)':'transparent',stroke:slotClass?'#ffc400':'rgba(201,216,237,.18)','stroke-width':slotClass?'1.5':'1',filter:slotClass?'url(#slotGlow)':''}));
-        if(slotClass){ const mk = toIso(x0 + sw/2, shelfY0 + (shelfY1-shelfY0)/2, z + Math.min(88, dividerH * 0.7)); root.appendChild(buildBlinkMarker(mk.x, mk.y, '#ffd84d', false)); }
+        ],{fill:slotClass?'rgba(255,216,77,.92)':'transparent',stroke:slotClass?'#ffc400':'rgba(201,216,237,.18)','stroke-width':slotClass?'2.35':'1',filter:slotClass?'url(#slotGlow)':''}));
+        if(slotClass){ const mk = toIso(x0 + sw/2, shelfY0 + (shelfY1-shelfY0)/2, z + Math.min(88, dividerH * 0.7)); root.appendChild(buildBlinkMarker(mk.x, mk.y, '#ffd84d', true)); }
         if(styleKind === 'melamine'){
           const boxDepth = getRackBoxDepth(shelfY1 - shelfY0, 3, 18);
           const boxInsetX = Math.max(2.6, Math.min(4.8, sw * 0.06));
