@@ -5624,7 +5624,58 @@ function getSheetBranchOpenMap(){
     renderRackDetail(ctx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label: 'Almacén', fullLabel: ctx.storeLoc }, rackStore);
   }
 
+
+  let viewerImageRotationTimer = null;
+  function clearViewerImageRotationTimer(){
+    if(viewerImageRotationTimer){
+      clearInterval(viewerImageRotationTimer);
+      viewerImageRotationTimer = null;
+    }
+  }
+
+  function bindViewerProductImageCarousel(host, images, productLabel){
+    clearViewerImageRotationTimer();
+    if(!host || !Array.isArray(images) || !images.length) return;
+    const mediaImg = host.querySelector('.viewer-product-media img');
+    const thumbButtons = Array.from(host.querySelectorAll('.viewer-product-thumb'));
+    const expandBtn = host.querySelector('.viewer-media-expand');
+    if(!mediaImg) return;
+    let currentIndex = 0;
+    const setActive = (index) => {
+      if(!images.length) return;
+      currentIndex = ((index % images.length) + images.length) % images.length;
+      mediaImg.src = images[currentIndex];
+      mediaImg.alt = `${productLabel || 'Producto'} · imagen ${currentIndex + 1}`;
+      thumbButtons.forEach((btn, idx) => btn.classList.toggle('active', idx === currentIndex));
+    };
+    const restartTimer = () => {
+      clearViewerImageRotationTimer();
+      if(images.length <= 1) return;
+      viewerImageRotationTimer = setInterval(() => setActive(currentIndex + 1), 2600);
+    };
+    thumbButtons.forEach((btn, idx) => {
+      btn.addEventListener('click', () => {
+        setActive(idx);
+        restartTimer();
+      });
+    });
+    expandBtn?.addEventListener('click', () => {
+      const modal = document.createElement('div');
+      modal.className = 'media-lightbox';
+      modal.innerHTML = `<button class="media-lightbox-close" type="button" aria-label="Cerrar">✕</button><img src="${escapeHtml(images[currentIndex])}" alt="${escapeHtml(productLabel || 'Producto')}">`;
+      document.body.appendChild(modal);
+      const close = () => modal.remove();
+      modal.querySelector('.media-lightbox-close')?.addEventListener('click', close);
+      modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    });
+    host.addEventListener('mouseenter', () => clearViewerImageRotationTimer(), { passive:true });
+    host.addEventListener('mouseleave', () => restartTimer(), { passive:true });
+    setActive(0);
+    restartTimer();
+  }
+
   function renderViewerProductInfoPanel(){
+    clearViewerImageRotationTimer();
     const ctx = getViewerProductLocationContext(appState.selectedProduct);
     const prod = appState.selectedProduct || null;
     detailTitle.textContent = 'Información del producto';
@@ -5680,6 +5731,7 @@ function getSheetBranchOpenMap(){
         <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
   }
 
   function renderMapView(){
