@@ -124,7 +124,7 @@
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
-    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] },
+    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
     productFilters: {
@@ -190,9 +190,12 @@
   function ensureAppRuntimeState(){
     ensureProductPagingState();
     if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], ...appState.ui };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
+    if(!['NE','NW','SE','SW'].includes(appState.ui.isoView)) appState.ui.isoView = 'NE';
+    if(!['all','zone','rack'].includes(appState.ui.isoIsolation)) appState.ui.isoIsolation = 'all';
+    if(typeof appState.ui.isoGhost !== 'boolean') appState.ui.isoGhost = true;
     if(!appState.admin || typeof appState.admin !== 'object') appState.admin = { branches:[], users:[], company:{} };
     if(!Array.isArray(appState.admin.branches)) appState.admin.branches = [];
     if(!Array.isArray(appState.admin.users)) appState.admin.users = [];
@@ -939,7 +942,32 @@
 
   function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
   function debounce(fn, ms=120){ let t; return (...args) => { clearTimeout(t); t=setTimeout(() => fn(...args), ms); }; }
-  function toIso(x,y,z=0){ const a = Math.PI/6; return { x:(x-y)*Math.cos(a), y:(x+y)*Math.sin(a)-z }; }
+  function getIsoViewConfig(view = appState?.ui?.isoView || 'NE'){
+    const configs = {
+      NE:{ label:'Iso NE', sx: 1, sy: 1, compass:'N ↗' },
+      NW:{ label:'Iso NW', sx:-1, sy: 1, compass:'N ↖' },
+      SE:{ label:'Iso SE', sx: 1, sy:-1, compass:'S ↘' },
+      SW:{ label:'Iso SW', sx:-1, sy:-1, compass:'S ↙' }
+    };
+    return configs[view] || configs.NE;
+  }
+  function toIso(x,y,z=0){
+    const a = Math.PI/6;
+    const cfg = getIsoViewConfig();
+    const xx = Number(x || 0) * cfg.sx;
+    const yy = Number(y || 0) * cfg.sy;
+    return { x:(xx-yy)*Math.cos(a), y:(xx+yy)*Math.sin(a)-z };
+  }
+  function rotateIsoView(direction = 1){
+    const order = ['NE','SE','SW','NW'];
+    const current = appState.ui?.isoView || 'NE';
+    const idx = Math.max(0, order.indexOf(current));
+    appState.ui.isoView = order[(idx + direction + order.length) % order.length];
+  }
+  function setIsoView(view){
+    ensureAppRuntimeState();
+    appState.ui.isoView = ['NE','NW','SE','SW'].includes(view) ? view : 'NE';
+  }
   const ISO_Z_SCALE = 0.42;
   function svgEl(tag, attrs={}){ const el = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k, v)); return el; }
   function face(points, attrs={}){ const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`; const baseAttrs = { d, 'stroke-linejoin':'round', 'stroke-linecap':'round', 'vector-effect':'non-scaling-stroke' }; return svgEl('path', { ...baseAttrs, ...attrs }); }
@@ -5847,7 +5875,16 @@ function getSheetBranchOpenMap(){
               <div class="muted tiny">Mapa navegable con foco en el producto activo.</div>
               <span class="loc-full">Sucursal: ${escapeHtml(activeBranch?.name || '—')} • Ubicación: ${primaryLoc} • Almacén: ${storeLoc}</span>
             </div>
-            <span class="chip">${prod?.zona || '—'} / ${prod?.zonaStore || '—'}</span>
+            <div class="iso-toolbar" id="isoToolbar">
+              ${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-iso-view="${v}">${v}</button>`).join('')}
+              <button type="button" class="iso-tool" data-iso-rotate="-1">↺</button>
+              <button type="button" class="iso-tool" data-iso-rotate="1">↻</button>
+              <button type="button" class="iso-tool ${appState.ui.isoIsolation==='zone'?'active':''}" data-iso-isolate="zone">Aislar zona</button>
+              <button type="button" class="iso-tool ${appState.ui.isoIsolation==='rack'?'active':''}" data-iso-isolate="rack">Aislar rack</button>
+              <button type="button" class="iso-tool ${appState.ui.isoIsolation==='all'?'active':''}" data-iso-isolate="all">Todo</button>
+              <button type="button" class="iso-tool ${appState.ui.isoGhost?'active':''}" data-iso-ghost="toggle">Ghost</button>
+              <span class="iso-compass">${escapeHtml(getIsoViewConfig().compass)}</span>
+            </div>
           </div>
           <div class="detail-stage"><svg id="isoMap" viewBox="-560 -160 1220 820"></svg></div>
         </div>
@@ -5977,16 +6014,23 @@ function getSheetBranchOpenMap(){
       toIso(floorRect.x, floorRect.y + floorRect.h, 0)
     ];
 
-    appState.layout.zones.forEach(z => {
+    const isolation = appState.ui?.isoIsolation || 'all';
+    const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
+    const focusRackIds = new Set([primaryRackId, storeRackId].filter(Boolean));
+    const visibleZones = appState.layout.zones.filter(z => isolation === 'all' || focusZoneIds.has(z.id));
+    const visibleZoneIds = new Set(visibleZones.map(z => z.id));
+
+    visibleZones.forEach(z => {
       const pts = z.pts.map(p => toIso(p.x, p.y, 0));
       projected.push(...pts);
       const isMainZone = prod?.zona === z.id;
       const isStoreZone = prod?.zonaStore === z.id;
       const isSearchZone = (prod?.zona || prod?.zonaStore) === z.id;
-      const cls = 'zone-floor' + (isMainZone ? ' active' : '') + (isStoreZone ? ' storage' : '') + (isSearchZone ? ' search-focus' : '');
+      const ghostZone = appState.ui.isoGhost && prod && isolation === 'all' && !isSearchZone;
+      const cls = 'zone-floor' + (isMainZone ? ' active' : '') + (isStoreZone ? ' storage' : '') + (isSearchZone ? ' search-focus' : '') + (ghostZone ? ' iso-ghost' : '');
       const zoneColor = z.color || getBranchColor(layoutBranchIndex) || '#ffd84d';
-      const baseFill = hexToRgba(zoneColor, isSearchZone ? 0.30 : 0.22);
-      const baseStroke = hexToRgba(zoneColor, isSearchZone ? 0.98 : 0.92);
+      const baseFill = hexToRgba(zoneColor, ghostZone ? 0.08 : (isSearchZone ? 0.30 : 0.22));
+      const baseStroke = hexToRgba(zoneColor, ghostZone ? 0.34 : (isSearchZone ? 0.98 : 0.92));
       const path = svgEl('path',{d:`M ${pts.map(pt => `${pt.x} ${pt.y}`).join(' L ')} Z`,class:cls,fill:baseFill,stroke:baseStroke,'stroke-width':isSearchZone ? '2.8' : '2.1'});
       root.appendChild(path);
       const c = centroid(z.pts); const ci = toIso(c.x,c.y,0);
@@ -5997,9 +6041,18 @@ function getSheetBranchOpenMap(){
       }
     });
 
-    const racks = appState.layout.racks.slice().sort((a,b)=>(a.x+a.y+Number(a.baseHeight||0))-(b.x+b.y+Number(b.baseHeight||0)));
+    const racks = appState.layout.racks.slice()
+      .filter(r => {
+        if(isolation === 'rack') return focusRackIds.has(r.id);
+        if(isolation === 'zone') return visibleZoneIds.has(r.zoneId);
+        return true;
+      })
+      .sort((a,b)=>(a.x+a.y+Number(a.baseHeight||0))-(b.x+b.y+Number(b.baseHeight||0)));
     racks.forEach(r => {
       const rackGroup = buildIsoRack(r, prod);
+      if(appState.ui.isoGhost && prod && isolation === 'all' && !focusRackIds.has(r.id)){
+        rackGroup.group.setAttribute('opacity','.32');
+      }
       root.appendChild(rackGroup.group);
       if(Array.isArray(rackGroup.projectedPoints)) projected.push(...rackGroup.projectedPoints);
     });
@@ -6024,8 +6077,20 @@ function getSheetBranchOpenMap(){
     if($('#rackStoreLoc')) $('#rackStoreLoc').textContent = storeLoc;
     contentStatus.textContent = prod ? `Producto activo: ${prod.sku} • ${prod.rack}` : 'Visualizando layout actual';
     contentFootRight.textContent = prod ? `${primaryLoc} • ALM: ${storeLoc}` : `${(appState.layout?.zones || []).length} zonas • ${(appState.layout?.racks || []).length} racks`;
+    document.querySelectorAll('[data-iso-view]').forEach(btn => {
+      btn.onclick = () => { setIsoView(btn.dataset.isoView || 'NE'); renderMapView(); };
+    });
+    document.querySelectorAll('[data-iso-rotate]').forEach(btn => {
+      btn.onclick = () => { rotateIsoView(Number(btn.dataset.isoRotate || 1)); renderMapView(); };
+    });
+    document.querySelectorAll('[data-iso-isolate]').forEach(btn => {
+      btn.onclick = () => { appState.ui.isoIsolation = btn.dataset.isoIsolate || 'all'; renderMapView(); };
+    });
+    document.querySelectorAll('[data-iso-ghost]').forEach(btn => {
+      btn.onclick = () => { appState.ui.isoGhost = !appState.ui.isoGhost; renderMapView(); };
+    });
     const centerBtn = document.getElementById('viewerCenterSelectedBtn');
-    if(centerBtn) centerBtn.onclick = () => focusSelectedProductInViewer({ switchScreen:false });
+    if(centerBtn) centerBtn.onclick = () => { appState.ui.isoIsolation = appState.ui.isoIsolation || 'all'; focusSelectedProductInViewer({ switchScreen:false }); };
     const refreshBtn = document.getElementById('viewerRefreshMapBtn');
     if(refreshBtn) refreshBtn.onclick = () => renderMapView();
   }
