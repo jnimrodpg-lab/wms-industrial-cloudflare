@@ -4387,3 +4387,28 @@ body.theme-light .layout-premium-render .layout-canvas-card.detail-stage::before
     grid-template-columns:1fr !important;
   }
 }
+
+/* V28: categorías desde Sheet + logo PNG sin marco contenedor */
+.brand-box,
+.app.viewer-product-layout .brand-box,
+body.theme-light .brand-box{
+  width:58px;
+  height:58px;
+  border-radius:0 !important;
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  overflow:visible;
+  color:#eef8f1;
+}
+.brand-box img,
+.app.viewer-product-layout .brand-box img{
+  width:100% !important;
+  height:100% !important;
+  object-fit:contain !important;
+  border-radius:0 !important;
+  display:block;
+}
+.app.viewer-product-layout .brand-box::before{display:none !important;content:none !important;}
+.app.sidebar-collapsed .brand-box{width:46px;height:46px;}
+.category-pinterest-media.empty{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.018));}

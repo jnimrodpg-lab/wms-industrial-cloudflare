@@ -534,7 +534,8 @@
     const groups = new Map();
     products.forEach(p => {
       const raw = getProductCategoryValue(p);
-      const key = raw ? norm(raw) : '__sin_categoria__';
+      if(!raw) return;
+      const key = norm(raw);
       if(!groups.has(key)) groups.set(key, { key, value: raw, label: getCategoryDisplayName(raw), count:0, families:new Set(), images:[] });
       const g = groups.get(key);
       g.count += 1;
@@ -545,8 +546,6 @@
       }
     });
     return Array.from(groups.values()).map(g => ({ ...g, familiesCount:g.families.size })).sort((a,b) => {
-      if(a.key === '__sin_categoria__') return 1;
-      if(b.key === '__sin_categoria__') return -1;
       return b.familiesCount - a.familiesCount || b.count - a.count || a.label.localeCompare(b.label, 'es', { sensitivity:'base' });
     });
   }
@@ -601,7 +600,7 @@
           <span class="muted tiny">${categories.length.toLocaleString('es-PE')} categorías detectadas</span>
         </div>
         <div class="category-pinterest-grid" id="categoryPinterestGrid">
-          ${cards || '<div class="empty compact"><b>No hay categorías detectadas</b><div class="muted tiny">Verifica que el Sheet tenga un header como Categoria, Categoría o category.</div></div>'}
+          ${cards || '<div class="empty compact"><b>No hay categorías detectadas</b><div class="muted tiny">Verifica que el Sheet tenga una columna llamada Categoria o Categoría y vuelve a importar.</div></div>'}
         </div>
       </div>`;
     document.body.appendChild(modal);
@@ -2386,7 +2385,7 @@
     const f = filters || appState.productFilters || {};
     const exactChecks = [
       ['brand', p.brand || p.marca || ''],
-      ['category', p.category || p.categoria || ''],
+      ['category', getProductCategoryValue(p)],
       ['warehouse', p.warehouse || p.almacen || ''],
       ['zone', p.zone || p.zona || ''],
       ['rack', p.rack || p.estante || ''],
@@ -3102,6 +3101,8 @@
           fondo_card,
           talla,
           color,
+          categoria,
+          category: categoria,
           ubicacion: main.raw || ubicacion,
           almacen: store.raw || almacen,
           rack: main.rack,
@@ -3801,7 +3802,7 @@
     const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = companyName || 'WMS Industrial';
     const brandSub = document.querySelector('.brand-text .muted'); if(brandSub) brandSub.textContent = 'Interfaz renovada • visual premium';
     const box = document.querySelector('.brand-box');
-    if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : 'W'; }
+    if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" alt="Logo" style="width:100%;height:100%;object-fit:contain;display:block">` : 'W'; }
     const accent = getActiveBrandColor();
     document.documentElement.style.setProperty('--accent', accent);
     document.documentElement.style.setProperty('--accent-rgb', hexToRgbTriplet(accent));
@@ -4386,7 +4387,7 @@
     renderProducts([]);
     resetSheetPanelList();
   }
-  function detectHeaderMap(headers){ const normed=headers.map(h=>({raw:h,key:norm(h).replace(/\s+/g,'')})); const pick=(...names)=>{ for(const n of names){ const hit=normed.find(h=>h.key.includes(n)); if(hit) return hit.raw; } return ''; }; return { sku:pick('sku','codigo'), nombre:pick('nombre','name','producto'), variante:pick('variante','variant'), talla:pick('talla','size'), color:pick('color','colour'), barras:pick('barras','barcode','barra'), ubicacion:pick('ubicacion','ubiccaion','location'), almacen:pick('almacen','warehouse','alamacen') }; }
+  function detectHeaderMap(headers){ const normed=headers.map(h=>({raw:h,key:norm(h).replace(/\s+/g,'')})); const pick=(...names)=>{ for(const n of names){ const hit=normed.find(h=>h.key.includes(n)); if(hit) return hit.raw; } return ''; }; return { sku:pick('sku','codigo'), nombre:pick('nombre','name','producto'), variante:pick('variante','variant'), talla:pick('talla','size'), color:pick('color','colour'), categoria:pick('categoria','categoría','category'), barras:pick('barras','barcode','barra'), ubicacion:pick('ubicacion','ubiccaion','location'), almacen:pick('almacen','warehouse','alamacen') }; }
 
 
   function defaultSheetMapRows(){
@@ -4396,6 +4397,7 @@
       { id: uid('map'), field:'variante', label:'Variante', header:'' },
       { id: uid('map'), field:'talla', label:'Talla', header:'' },
       { id: uid('map'), field:'color', label:'Color', header:'' },
+      { id: uid('map'), field:'categoria', label:'Categoría', header:'' },
       { id: uid('map'), field:'imagen', label:'Imagen 1', header:'' },
       { id: uid('map'), field:'imagen2', label:'Imagen 2', header:'' },
       { id: uid('map'), field:'imagen3', label:'Imagen 3', header:'' },
@@ -5149,7 +5151,7 @@ function getSheetBranchOpenMap(){
         const rawRecord = {};
         headers.forEach((h, hi) => { if(String(h||'').trim()) rawRecord[String(h).trim()] = String(row[hi] || '').trim(); });
         (branch.sheetMapRows||[]).forEach(m=>{ if(m.header && m.field) rec[m.field]=getVal(row,m.header); });
-        ['sku','nombre','variante','talla','color','imagen','imagen2','imagen3','imagen4','imagen5','imagen6','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
+        ['sku','nombre','variante','talla','color','categoria','imagen','imagen2','imagen3','imagen4','imagen5','imagen6','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
           if(!String(rec[field]||'').trim()) rec[field] = getAliasVal(row, field);
         });
         const ubicacion = normalizeLocationCode(buildImportedLocation(rec, 'main'));
@@ -5164,6 +5166,7 @@ function getSheetBranchOpenMap(){
         const imagen = String(rec.imagen || '').trim();
         const talla = String(rec.talla || '').trim();
         const color = String(rec.color || '').trim();
+        const categoria = String(rec.categoria || '').trim();
         const imagen2 = String(rec.imagen2 || '').trim();
         const imagen3 = String(rec.imagen3 || '').trim();
         const imagen4 = String(rec.imagen4 || '').trim();
@@ -5185,6 +5188,8 @@ function getSheetBranchOpenMap(){
           fondo_card,
           talla,
           color,
+          categoria,
+          category: categoria,
           ubicacion: mainParsed.raw || ubicacion,
           almacen,
           zona: mainParsed.zoneId,
@@ -5271,7 +5276,7 @@ function getSheetBranchOpenMap(){
       const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
       const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
-      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen 1</option><option value="imagen2" ${row.field==='imagen2'?'selected':''}>Imagen 2</option><option value="imagen3" ${row.field==='imagen3'?'selected':''}>Imagen 3</option><option value="imagen4" ${row.field==='imagen4'?'selected':''}>Imagen 4</option><option value="imagen5" ${row.field==='imagen5'?'selected':''}>Imagen 5</option><option value="imagen6" ${row.field==='imagen6'?'selected':''}>Imagen 6</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
+      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="categoria" ${row.field==='categoria'?'selected':''}>Categoría</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen 1</option><option value="imagen2" ${row.field==='imagen2'?'selected':''}>Imagen 2</option><option value="imagen3" ${row.field==='imagen3'?'selected':''}>Imagen 3</option><option value="imagen4" ${row.field==='imagen4'?'selected':''}>Imagen 4</option><option value="imagen5" ${row.field==='imagen5'?'selected':''}>Imagen 5</option><option value="imagen6" ${row.field==='imagen6'?'selected':''}>Imagen 6</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
       return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar para producto, ubicación e imágenes</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;
