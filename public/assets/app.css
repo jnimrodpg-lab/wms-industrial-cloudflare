@@ -4444,3 +4444,28 @@ body.theme-light .brand-box{
 .app.viewer-product-layout .detail-foot{
   display:none !important;
 }
+
+/* V31: filtros de categoría + género */
+.category-pinterest-genders{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  padding:0 22px 8px;
+}
+.category-gender-pill{
+  border:1px solid rgba(125, 245, 184, 0.28);
+  background:rgba(14,26,39,0.72);
+  color:#dbe7e2;
+  border-radius:999px;
+  padding:10px 16px;
+  font-weight:700;
+  cursor:pointer;
+  transition:.18s ease;
+}
+.category-gender-pill:hover,
+.category-gender-pill.active{
+  background:linear-gradient(135deg, rgba(70, 183, 113, 0.24), rgba(11, 39, 58, 0.92));
+  border-color:rgba(125,245,184,0.62);
+  color:#fff;
+  box-shadow:0 8px 24px rgba(17, 40, 35, 0.28);
+}

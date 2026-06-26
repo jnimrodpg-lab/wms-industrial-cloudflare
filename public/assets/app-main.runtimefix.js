@@ -130,6 +130,7 @@
     productFilters: {
       brand:'',
       category:'',
+      gender:'',
       warehouse:'',
       zone:'',
       rack:'',
@@ -208,7 +209,7 @@
     if(typeof appState.editor.mode !== 'string' || !appState.editor.mode) appState.editor.mode = 'select';
     if(!appState.history || typeof appState.history !== 'object') appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
     if(!appState.auth || typeof appState.auth !== 'object') appState.auth = { loggedIn:false, user:'', role:'', company:'', companyCode:'' };
-    if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
+    if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', gender:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
     if(!appState.productFacets || typeof appState.productFacets !== 'object') appState.productFacets = { brands:[], categories:[], warehouses:[], zones:[], racks:[] };
     return appState;
   }
@@ -519,9 +520,43 @@
     updateCategoryFilterButton();
   }
 
+  function readProductRawValue(product, aliases = []){
+    const raw = product?._raw && typeof product._raw === 'object' ? product._raw : null;
+    if(!raw) return '';
+    const entries = Object.entries(raw);
+    for(const alias of aliases){
+      const wanted = norm(alias);
+      const hit = entries.find(([key]) => norm(key) === wanted);
+      if(hit && String(hit[1] || '').trim()) return String(hit[1] || '').trim();
+    }
+    return '';
+  }
+
   function getProductCategoryValue(product){
     const p = product || {};
-    return String(p.category || p.categoria || p.categoría || p.Categoria || p.Categoría || '').trim();
+    return String(
+      p.category || p.categoria || p.categoría || p.Categoria || p.Categoría ||
+      readProductRawValue(p, ['categoria','categoría','category']) || ''
+    ).trim();
+  }
+
+  function canonicalGenderValue(value){
+    const raw = String(value || '').trim();
+    const n = norm(raw);
+    if(!n) return '';
+    if(['varon','hombre','caballero','masculino'].includes(n)) return 'Varón';
+    if(['mujer','dama','femenino'].includes(n)) return 'Mujer';
+    if(['nino','niño','ninos','niños','kidboy','boy'].includes(n)) return 'Niños';
+    if(['nina','niña','ninas','niñas','kidgirl','girl'].includes(n)) return 'Niñas';
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+
+  function getProductGenderValue(product){
+    const p = product || {};
+    return canonicalGenderValue(
+      p.gender || p.genero || p.género || p.Genero || p.Género ||
+      readProductRawValue(p, ['genero','género','gender']) || ''
+    );
   }
 
   function getCategoryDisplayName(value){
@@ -529,10 +564,12 @@
     return raw || 'Sin categoría';
   }
 
-  function getCategoryStats(){
+  function getCategoryStats(genderFilter = ''){
     const products = Array.isArray(appState.products) ? appState.products : [];
+    const activeGender = canonicalGenderValue(genderFilter || appState.productFilters?.gender || '');
     const groups = new Map();
     products.forEach(p => {
+      if(activeGender && getProductGenderValue(p) !== activeGender) return;
       const raw = getProductCategoryValue(p);
       if(!raw) return;
       const key = norm(raw);
@@ -554,30 +591,21 @@
     const btn = document.getElementById('btnOpenCategoryPinterest');
     if(!btn) return;
     const active = String(appState.productFilters?.category || '').trim();
-    btn.classList.toggle('active', !!active);
-    btn.innerHTML = active ? `Categoría: <span>${escapeHtml(active)}</span>` : 'Categorías';
-    btn.title = active ? `Filtro activo: ${active}` : 'Filtrar por categoría';
+    const activeGender = canonicalGenderValue(appState.productFilters?.gender || '');
+    btn.classList.toggle('active', !!(active || activeGender));
+    if(active && activeGender) btn.innerHTML = `Categoría: <span>${escapeHtml(active)}</span> · ${escapeHtml(activeGender)}`;
+    else if(active) btn.innerHTML = `Categoría: <span>${escapeHtml(active)}</span>`;
+    else if(activeGender) btn.innerHTML = `Categorías · ${escapeHtml(activeGender)}`;
+    else btn.innerHTML = 'Categorías';
+    btn.title = active || activeGender ? `Filtro activo: ${[active, activeGender].filter(Boolean).join(' · ')}` : 'Filtrar por categoría';
   }
 
   function openCategoryPinterestModal(){
     const existing = document.getElementById('categoryPinterestModal');
     if(existing) existing.remove();
-    const categories = getCategoryStats();
     const active = String(appState.productFilters?.category || '').trim();
+    let activeGender = canonicalGenderValue(appState.productFilters?.gender || '');
     const totalProducts = Array.isArray(appState.products) ? appState.products.length : 0;
-    const cards = categories.map((cat, idx) => {
-      const isActive = active && cat.value === active;
-      const media = cat.images.length
-        ? `<div class="category-pinterest-media count-${Math.min(cat.images.length,4)}">${cat.images.slice(0,4).map(url => `<img src="${escapeHtml(url)}" alt="${escapeHtml(cat.label)}">`).join('')}</div>`
-        : `<div class="category-pinterest-media empty"><span>${escapeHtml(cat.label.slice(0,2).toUpperCase())}</span></div>`;
-      return `<button class="category-pinterest-card ${isActive ? 'active' : ''} size-${(idx % 5) + 1}" type="button" data-category-value="${escapeHtml(cat.value)}">
-        ${media}
-        <div class="category-pinterest-card-body">
-          <div><b>${escapeHtml(cat.label)}</b><small>${cat.familiesCount.toLocaleString('es-PE')} producto${cat.familiesCount === 1 ? '' : 's'} • ${cat.count.toLocaleString('es-PE')} variante${cat.count === 1 ? '' : 's'}</small></div>
-          <span>${isActive ? 'Activo' : 'Filtrar'}</span>
-        </div>
-      </button>`;
-    }).join('');
     const modal = document.createElement('div');
     modal.id = 'categoryPinterestModal';
     modal.className = 'category-pinterest-backdrop show';
@@ -597,11 +625,12 @@
         </div>
         <div class="category-pinterest-toolbar">
           <input id="categoryPinterestSearch" placeholder="Buscar categoría..." autocomplete="off">
-          <span class="muted tiny">${categories.length.toLocaleString('es-PE')} categorías detectadas</span>
+          <span class="muted tiny" id="categoryPinterestCounter">0 categorías detectadas</span>
         </div>
-        <div class="category-pinterest-grid" id="categoryPinterestGrid">
-          ${cards || '<div class="empty compact"><b>No hay categorías detectadas</b><div class="muted tiny">Verifica que el Sheet tenga una columna llamada Categoria o Categoría y vuelve a importar.</div></div>'}
+        <div class="category-pinterest-genders" id="categoryPinterestGenders">
+          ${['Mujer','Varón','Niños','Niñas'].map(label => `<button type="button" class="category-gender-pill ${activeGender===label?'active':''}" data-gender-value="${label}">${label}</button>`).join('')}
         </div>
+        <div class="category-pinterest-grid" id="categoryPinterestGrid"></div>
       </div>`;
     document.body.appendChild(modal);
     const close = () => modal.remove();
@@ -609,26 +638,59 @@
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
     modal.querySelector('#btnClearCategoryFilter')?.addEventListener('click', () => {
       appState.productFilters.category = '';
+      appState.productFilters.gender = '';
       close();
       filterProducts();
       updateCategoryFilterButton();
     });
-    modal.querySelectorAll('[data-category-value]').forEach(btn => {
+    const grid = modal.querySelector('#categoryPinterestGrid');
+    const search = modal.querySelector('#categoryPinterestSearch');
+    const counter = modal.querySelector('#categoryPinterestCounter');
+    const renderGrid = () => {
+      const categories = getCategoryStats(activeGender);
+      const q = norm(search?.value || '');
+      const filtered = categories.filter(cat => !q || norm(`${cat.label} ${cat.value}`).includes(q));
+      counter.textContent = `${categories.length.toLocaleString('es-PE')} categorías detectadas`;
+      if(!filtered.length){
+        grid.innerHTML = `<div class="empty compact"><b>No hay categorías detectadas</b><div class="muted tiny">Verifica que el Sheet tenga valores en la columna Categoria y, si usas género, prueba con otra opción como Mujer, Varón, Niños o Niñas.</div></div>`;
+        return;
+      }
+      grid.innerHTML = filtered.map((cat, idx) => {
+        const isActive = active && cat.value === active;
+        const media = cat.images.length
+          ? `<div class="category-pinterest-media count-${Math.min(cat.images.length,4)}">${cat.images.slice(0,4).map(url => `<img src="${escapeHtml(url)}" alt="${escapeHtml(cat.label)}">`).join('')}</div>`
+          : `<div class="category-pinterest-media empty"><span>${escapeHtml(cat.label.slice(0,2).toUpperCase())}</span></div>`;
+        return `<button class="category-pinterest-card ${isActive ? 'active' : ''} size-${(idx % 5) + 1}" type="button" data-category-value="${escapeHtml(cat.value)}">
+          ${media}
+          <div class="category-pinterest-card-body">
+            <div><b>${escapeHtml(cat.label)}</b><small>${cat.familiesCount.toLocaleString('es-PE')} producto${cat.familiesCount === 1 ? '' : 's'} • ${cat.count.toLocaleString('es-PE')} variante${cat.count === 1 ? '' : 's'}</small></div>
+            <span>${isActive ? 'Activo' : 'Filtrar'}</span>
+          </div>
+        </button>`;
+      }).join('');
+      grid.querySelectorAll('[data-category-value]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          appState.productFilters.category = String(btn.dataset.categoryValue || '').trim();
+          appState.productFilters.gender = activeGender || '';
+          close();
+          filterProducts();
+          updateCategoryFilterButton();
+        });
+      });
+    };
+    modal.querySelectorAll('[data-gender-value]').forEach(btn => {
       btn.addEventListener('click', () => {
-        appState.productFilters.category = String(btn.dataset.categoryValue || '').trim();
-        close();
+        const clicked = canonicalGenderValue(btn.dataset.genderValue || '');
+        activeGender = activeGender === clicked ? '' : clicked;
+        appState.productFilters.gender = activeGender;
+        modal.querySelectorAll('[data-gender-value]').forEach(pill => pill.classList.toggle('active', canonicalGenderValue(pill.dataset.genderValue || '') === activeGender));
         filterProducts();
         updateCategoryFilterButton();
+        renderGrid();
       });
     });
-    const search = modal.querySelector('#categoryPinterestSearch');
-    search?.addEventListener('input', () => {
-      const q = norm(search.value || '');
-      modal.querySelectorAll('[data-category-value]').forEach(card => {
-        const label = norm(card.textContent || '');
-        card.style.display = !q || label.includes(q) ? '' : 'none';
-      });
-    });
+    search?.addEventListener('input', renderGrid);
+    renderGrid();
     window.setTimeout(() => search?.focus(), 80);
   }
 
@@ -2386,6 +2448,7 @@
     const exactChecks = [
       ['brand', p.brand || p.marca || ''],
       ['category', getProductCategoryValue(p)],
+      ['gender', getProductGenderValue(p)],
       ['warehouse', p.warehouse || p.almacen || ''],
       ['zone', p.zone || p.zona || ''],
       ['rack', p.rack || p.estante || ''],
@@ -3103,6 +3166,8 @@
           color,
           categoria,
           category: categoria,
+          genero,
+          gender: genero,
           ubicacion: main.raw || ubicacion,
           almacen: store.raw || almacen,
           rack: main.rack,
@@ -4387,7 +4452,7 @@
     renderProducts([]);
     resetSheetPanelList();
   }
-  function detectHeaderMap(headers){ const normed=headers.map(h=>({raw:h,key:norm(h).replace(/\s+/g,'')})); const pick=(...names)=>{ for(const n of names){ const hit=normed.find(h=>h.key.includes(n)); if(hit) return hit.raw; } return ''; }; return { sku:pick('sku','codigo'), nombre:pick('nombre','name','producto'), variante:pick('variante','variant'), talla:pick('talla','size'), color:pick('color','colour'), categoria:pick('categoria','categoría','category'), barras:pick('barras','barcode','barra'), ubicacion:pick('ubicacion','ubiccaion','location'), almacen:pick('almacen','warehouse','alamacen') }; }
+  function detectHeaderMap(headers){ const normed=headers.map(h=>({raw:h,key:norm(h).replace(/\s+/g,'')})); const pick=(...names)=>{ for(const n of names){ const hit=normed.find(h=>h.key.includes(n)); if(hit) return hit.raw; } return ''; }; return { sku:pick('sku','codigo'), nombre:pick('nombre','name','producto'), variante:pick('variante','variant'), talla:pick('talla','size'), color:pick('color','colour'), categoria:pick('categoria','categoría','category'), genero:pick('genero','género','gender'), barras:pick('barras','barcode','barra'), ubicacion:pick('ubicacion','ubiccaion','location'), almacen:pick('almacen','warehouse','alamacen') }; }
 
 
   function defaultSheetMapRows(){
@@ -4398,6 +4463,7 @@
       { id: uid('map'), field:'talla', label:'Talla', header:'' },
       { id: uid('map'), field:'color', label:'Color', header:'' },
       { id: uid('map'), field:'categoria', label:'Categoría', header:'' },
+      { id: uid('map'), field:'genero', label:'Género', header:'' },
       { id: uid('map'), field:'imagen', label:'Imagen 1', header:'' },
       { id: uid('map'), field:'imagen2', label:'Imagen 2', header:'' },
       { id: uid('map'), field:'imagen3', label:'Imagen 3', header:'' },
@@ -5115,6 +5181,8 @@ function getSheetBranchOpenMap(){
         variante:['variante','variant','linea'],
         talla:['talla','size'],
         color:['color','colour'],
+        categoria:['categoria','categoría','category'],
+        genero:['genero','género','gender'],
         imagen:['imagen','imagen 1','imagen1','image','image 1','image1','foto','foto 1','foto1','fotografia','fotografía','img','img 1','img1','image url','url imagen','url de imagen','link imagen','enlace imagen'],
         imagen2:['imagen 2','imagen2','image 2','image2','foto 2','foto2','img 2','img2','url imagen 2','image url 2','link imagen 2','enlace imagen 2'],
         imagen3:['imagen 3','imagen3','image 3','image3','foto 3','foto3','img 3','img3','url imagen 3','image url 3','link imagen 3','enlace imagen 3'],
@@ -5151,7 +5219,7 @@ function getSheetBranchOpenMap(){
         const rawRecord = {};
         headers.forEach((h, hi) => { if(String(h||'').trim()) rawRecord[String(h).trim()] = String(row[hi] || '').trim(); });
         (branch.sheetMapRows||[]).forEach(m=>{ if(m.header && m.field) rec[m.field]=getVal(row,m.header); });
-        ['sku','nombre','variante','talla','color','categoria','imagen','imagen2','imagen3','imagen4','imagen5','imagen6','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
+        ['sku','nombre','variante','talla','color','categoria','genero','imagen','imagen2','imagen3','imagen4','imagen5','imagen6','fondo_card','barras','almacen','zona','estante','nivel','slot','ubicacion','zona2','estante2','nivel2','slot2'].forEach(field=>{
           if(!String(rec[field]||'').trim()) rec[field] = getAliasVal(row, field);
         });
         const ubicacion = normalizeLocationCode(buildImportedLocation(rec, 'main'));
@@ -5166,7 +5234,8 @@ function getSheetBranchOpenMap(){
         const imagen = String(rec.imagen || '').trim();
         const talla = String(rec.talla || '').trim();
         const color = String(rec.color || '').trim();
-        const categoria = String(rec.categoria || '').trim();
+        const categoria = String(rec.categoria || readProductRawValue({ _raw: rawRecord }, ['categoria','categoría','category']) || '').trim();
+        const genero = canonicalGenderValue(String(rec.genero || readProductRawValue({ _raw: rawRecord }, ['genero','género','gender']) || '').trim());
         const imagen2 = String(rec.imagen2 || '').trim();
         const imagen3 = String(rec.imagen3 || '').trim();
         const imagen4 = String(rec.imagen4 || '').trim();
@@ -5190,6 +5259,8 @@ function getSheetBranchOpenMap(){
           color,
           categoria,
           category: categoria,
+          genero,
+          gender: genero,
           ubicacion: mainParsed.raw || ubicacion,
           almacen,
           zona: mainParsed.zoneId,
@@ -5276,7 +5347,7 @@ function getSheetBranchOpenMap(){
       const sourceBadge = b.lastImportSource ? `<span>Origen: ${escapeHtml(b.lastImportSource)}</span>` : '';
       const metaHtml = `<div class="sheet-branch-submeta"><span>Headers: ${Number(getSheetBranchHeaderCount(b) || 0).toLocaleString('es-PE')}</span><span>Productos: ${Number(getSheetBranchProductCount(b) || 0).toLocaleString('es-PE')}</span><span>Última importación: ${escapeHtml(formatMetaDate(importStamp))}</span>${importBadge}${sourceBadge}</div>`;
       const headerOptions = ['<option value="">(Sin seleccionar)</option>'].concat(getSheetHeaderOptions(b).map(h=>`<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`)).join('');
-      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="categoria" ${row.field==='categoria'?'selected':''}>Categoría</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen 1</option><option value="imagen2" ${row.field==='imagen2'?'selected':''}>Imagen 2</option><option value="imagen3" ${row.field==='imagen3'?'selected':''}>Imagen 3</option><option value="imagen4" ${row.field==='imagen4'?'selected':''}>Imagen 4</option><option value="imagen5" ${row.field==='imagen5'?'selected':''}>Imagen 5</option><option value="imagen6" ${row.field==='imagen6'?'selected':''}>Imagen 6</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
+      const rowsHtml = (b.sheetMapRows||[]).map((row,idx)=>`<div class="sheet-map-row" style="display:grid;grid-template-columns:140px 1fr 34px 34px 34px;gap:8px;align-items:center;margin-top:10px"><select data-map-field="${row.id}"><option value="sku" ${row.field==='sku'?'selected':''}>SKU</option><option value="nombre" ${row.field==='nombre'?'selected':''}>Nombre</option><option value="variante" ${row.field==='variante'?'selected':''}>Variante</option><option value="talla" ${row.field==='talla'?'selected':''}>Talla</option><option value="color" ${row.field==='color'?'selected':''}>Color</option><option value="categoria" ${row.field==='categoria'?'selected':''}>Categoría</option><option value="genero" ${row.field==='genero'?'selected':''}>Género</option><option value="imagen" ${row.field==='imagen'?'selected':''}>Imagen 1</option><option value="imagen2" ${row.field==='imagen2'?'selected':''}>Imagen 2</option><option value="imagen3" ${row.field==='imagen3'?'selected':''}>Imagen 3</option><option value="imagen4" ${row.field==='imagen4'?'selected':''}>Imagen 4</option><option value="imagen5" ${row.field==='imagen5'?'selected':''}>Imagen 5</option><option value="imagen6" ${row.field==='imagen6'?'selected':''}>Imagen 6</option><option value="fondo_card" ${row.field==='fondo_card'?'selected':''}>Fondo card</option><option value="ubicacion" ${row.field==='ubicacion'?'selected':''}>Ubicación</option><option value="barras" ${row.field==='barras'?'selected':''}>Código de barras</option><option value="almacen" ${row.field==='almacen'?'selected':''}>Almacén</option><option value="zona" ${row.field==='zona'?'selected':''}>Zona</option><option value="estante" ${row.field==='estante'?'selected':''}>Estante</option><option value="nivel" ${row.field==='nivel'?'selected':''}>Nivel</option><option value="slot" ${row.field==='slot'?'selected':''}>Slot</option><option value="personalizado" ${row.field==='personalizado'?'selected':''}>Personalizado</option></select><select data-map-header="${row.id}">${headerOptions.replace(`value="${escapeHtml(row.header||'')}"`,`value="${escapeHtml(row.header||'')}" selected`)}</select><button class="tiny-btn" data-map-up="${i}:${row.id}">↑</button><button class="tiny-btn" data-map-down="${i}:${row.id}">↓</button><button class="tiny-btn" data-map-del="${i}:${row.id}">✕</button></div>`).join('');
       const isBusy = statusInfo.key === BRANCH_STATUS.LOADING;
       return `<div class="sheet-branch-card ${isOpen?'open':''}" data-sheet-branch="${i}"><div class="sheet-branch-head" data-sheet-toggle="${i}"><span class="sheet-branch-dot" style="background:${escapeHtml(b.color||(ZONE_COLOR_PALETTE[0] || '#ffd84d'))}"></span><div><div style="font-weight:800">${escapeHtml(b.name||('Sucursal '+(i+1)))}</div><div class="tiny muted">${escapeHtml((b.type||'tienda').toUpperCase())}</div>${helperHtml}</div><div class="sheet-branch-meta"><span class="status-badge ${statusClass}" data-status="${statusInfo.key}">${escapeHtml(statusText)}</span><button class="tiny-btn" type="button">${isOpen?'−':'+'}</button></div></div><div class="sheet-branch-body"><div class="sheet-branch-grid"><div class="grid"><label>URL / ID del Sheet</label><input data-sheet-url="${i}" placeholder="https://docs.google.com/spreadsheets/d/..." value="${escapeHtml(b.sheetUrl||'')}"></div><div class="grid"><label>Nombre de la hoja</label><input data-sheet-name="${i}" placeholder="Ej: Productos" value="${escapeHtml(b.sheetName||'Productos')}"></div></div><div class="sheet-actions"><button class="btn primary" data-sheet-save="${i}" ${isBusy?'disabled':''}>Leer fila 1</button><button class="btn secondary" data-sheet-import="${i}" ${isBusy?'disabled':''}>Importar productos</button><button class="btn secondary" data-sheet-clear-products="${i}" ${isBusy?'disabled':''}>Limpiar productos</button></div>${metaHtml}<div class="sheet-mini-preview"><div class="tiny muted">Paso 2 • Encabezados disponibles en la fila 1</div><div class="sheet-preview-row">${getSheetHeaderOptions(b).length ? getSheetHeaderOptions(b).map(h=>`<span class="sheet-preview-chip">${escapeHtml(h)}</span>`).join('') : '<span class="tiny muted">Aún no se leyeron encabezados.</span>'}</div><div style="margin-top:16px"><div class="sheet-actions" style="justify-content:flex-start"><button class="btn secondary" data-sheet-add-header="${i}">+ Encabezado</button><span class="tiny muted">Paso 3 • Elige qué columnas usar para producto, ubicación e imágenes</span></div>${rowsHtml}<div class="sheet-actions"><button class="btn secondary" data-sheet-map-save="${i}">Guardar columnas visibles</button></div></div></div></div></div>`;
     }).join('')}</div></div></div>`;
