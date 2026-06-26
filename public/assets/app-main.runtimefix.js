@@ -5680,6 +5680,160 @@ function getSheetBranchOpenMap(){
     enablePanZoom(svg, root, focusBoundsForProduct(prod), { tx:0, ty:0, scale:1.25 });
   }
 
+
+
+  function getRackRenderHeight3D(r){
+    const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
+    return Math.max(50, Number(r.rackHeight || model.height || 180) * 0.65);
+  }
+
+  function getScene3DBounds(){
+    const pts = [];
+    (appState.layout?.zones || []).forEach(z => (z.pts || []).forEach(pt => pts.push({x:Number(pt.x)||0,y:Number(pt.y)||0})));
+    (appState.layout?.racks || []).forEach(r => {
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(10,Number(r.w)||80), d=Math.max(10,Number(r.h)||40);
+      pts.push({x,y},{x:x+w,y},{x:x+w,y:y+d},{x,y:y+d});
+    });
+    if(!pts.length) pts.push({x:-200,y:-160},{x:200,y:160});
+    const minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
+    const minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
+    return { minX, maxX, minY, maxY, w:Math.max(1,maxX-minX), h:Math.max(1,maxY-minY), cx:(minX+maxX)/2, cy:(minY+maxY)/2 };
+  }
+
+  function openNavigable3DModal(prod = appState.selectedProduct){
+    const existing = document.getElementById('navigable3DModal');
+    if(existing) existing.remove();
+    const ctx = getViewerProductLocationContext(prod);
+    const modal = document.createElement('div');
+    modal.id = 'navigable3DModal';
+    modal.className = 'nav3d-backdrop show';
+    modal.innerHTML = `
+      <div class="nav3d-shell">
+        <div class="nav3d-head">
+          <div>
+            <div class="search-card-kicker">Visor libre</div>
+            <h2>Entorno 3D navegable</h2>
+            <p>Arrastra para orbitar, rueda para zoom, Shift + arrastrar para mover la cámara.</p>
+          </div>
+          <div class="nav3d-actions">
+            <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <button class="iso-tool active" data-nav3d-action="all">Todo</button>
+            <button class="iso-tool" data-nav3d-action="zone">Zona</button>
+            <button class="iso-tool" data-nav3d-action="rack">Rack</button>
+            <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
+            <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
+            <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
+          </div>
+        </div>
+        <div class="nav3d-stage">
+          <canvas id="nav3dCanvas"></canvas>
+          <div class="nav3d-hud">
+            <b>Controles</b>
+            <span>Arrastrar: orbitar</span>
+            <span>Rueda: zoom</span>
+            <span>Shift + arrastrar: pan</span>
+          </div>
+          <div class="nav3d-compass" id="nav3dCompass">N</div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const canvas = modal.querySelector('#nav3dCanvas');
+    const compass = modal.querySelector('#nav3dCompass');
+    const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, dragging:false, lastX:0, lastY:0 };
+    const close = () => { window.removeEventListener('resize', render); modal.remove(); };
+    modal.querySelector('.location-modal-close')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    function getFocusSets(){
+      const focusRackIds = new Set([prod?.rack, prod?.rackStore].filter(Boolean));
+      const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
+      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
+      return { focusRackIds, focusZoneIds };
+    }
+    function projectFactory(width,height){
+      const bounds = getScene3DBounds();
+      const base = Math.min(width/(bounds.w*1.45 || 1), height/(bounds.h*1.2 + 220 || 1));
+      const scale = Math.max(0.4, Math.min(3.2, base * 0.95 * state.zoom));
+      const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw), cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+      return function project(x,y,z=0){
+        const dx = x - bounds.cx, dy = y - bounds.cy;
+        const rx = dx * cy - dy * sy;
+        const ry = dx * sy + dy * cy;
+        const screenY = ry * cp - z * sp;
+        const depth = ry * sp + z * cp;
+        return { x: width/2 + state.panX + rx * scale, y: height/2 + 90 + state.panY + screenY * scale, depth };
+      };
+    }
+    function drawPoly(ctx2, pts, fill, stroke='rgba(255,255,255,.14)', lw=1){
+      if(!pts.length) return;
+      ctx2.beginPath(); ctx2.moveTo(pts[0].x, pts[0].y);
+      pts.slice(1).forEach(p=>ctx2.lineTo(p.x,p.y)); ctx2.closePath();
+      if(fill){ ctx2.fillStyle = fill; ctx2.fill(); }
+      if(stroke){ ctx2.strokeStyle = stroke; ctx2.lineWidth = lw; ctx2.stroke(); }
+    }
+    function drawLabel(ctx2, p, text, active=false){
+      if(!state.labels || !text) return;
+      ctx2.save(); ctx2.font = active ? '800 13px system-ui' : '700 11px system-ui';
+      const pad=7, w=ctx2.measureText(text).width + pad*2, h=24;
+      ctx2.fillStyle = active ? 'rgba(47,193,119,.90)' : 'rgba(6,16,28,.74)';
+      ctx2.strokeStyle = active ? 'rgba(143,255,191,.72)' : 'rgba(255,255,255,.14)'; ctx2.lineWidth = 1;
+      ctx2.beginPath(); ctx2.roundRect(p.x - w/2, p.y - h - 6, w, h, 9); ctx2.fill(); ctx2.stroke();
+      ctx2.fillStyle = active ? '#fff' : '#dceee6'; ctx2.textAlign='center'; ctx2.textBaseline='middle'; ctx2.fillText(text, p.x, p.y - h/2 - 6); ctx2.restore();
+    }
+    function drawBox(ctx2, project, r, active=false, ghost=false){
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(10,Number(r.w)||80), d=Math.max(10,Number(r.h)||40), h=getRackRenderHeight3D(r);
+      const corners = [[x,y,0],[x+w,y,0],[x+w,y+d,0],[x,y+d,0],[x,y,h],[x+w,y,h],[x+w,y+d,h],[x,y+d,h]].map(c => project(c[0],c[1],c[2]));
+      const alpha = ghost ? 0.18 : 0.92;
+      const faces = [
+        {idx:[0,1,2,3], fill:`rgba(45,62,76,${alpha*.72})`, depth:0},
+        {idx:[4,5,6,7], fill:active ? `rgba(84,234,142,${alpha*.72})` : `rgba(220,163,84,${alpha*.78})`, depth:0},
+        {idx:[0,1,5,4], fill:`rgba(120,85,48,${alpha*.72})`, depth:0},
+        {idx:[1,2,6,5], fill:`rgba(204,141,62,${alpha*.78})`, depth:0},
+        {idx:[2,3,7,6], fill:`rgba(174,113,52,${alpha*.76})`, depth:0},
+        {idx:[3,0,4,7], fill:`rgba(103,75,52,${alpha*.70})`, depth:0}
+      ];
+      faces.forEach(f => f.depth = f.idx.reduce((s,i)=>s+corners[i].depth,0)/f.idx.length);
+      faces.sort((a,b)=>a.depth-b.depth).forEach(f => drawPoly(ctx2, f.idx.map(i=>corners[i]), f.fill, active ? 'rgba(138,255,183,.78)' : `rgba(255,255,255,${ghost?.07:.18})`, active ? 2 : 1));
+      if(active){ const topCenter = project(x+w/2, y+d/2, h+20); ctx2.save(); ctx2.shadowColor='rgba(89,255,155,.75)'; ctx2.shadowBlur=18; ctx2.fillStyle='#5cff9a'; ctx2.beginPath(); ctx2.arc(topCenter.x, topCenter.y, 7, 0, Math.PI*2); ctx2.fill(); ctx2.restore(); }
+      drawLabel(ctx2, project(x+w/2, y+d/2, h+36), r.id, active);
+    }
+    function drawProductMarker(ctx2, project, r){
+      if(!prod || !r) return;
+      const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
+      const slots = Math.max(1, Number(model.slots || 2));
+      const levels = Math.max(1, Number(model.levels || 4));
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(10,Number(r.w)||80), d=Math.max(10,Number(r.h)||40), h=getRackRenderHeight3D(r);
+      const slot = Math.min(slots, Math.max(1, Number(prod.slot || prod.slotStore || 1)));
+      const level = Math.min(levels, Math.max(1, Number(prod.nivel || prod.nivelStore || 1)));
+      const px = x + (slot - .5) * (w / slots), py = y + d * .52, pz = (level / levels) * h;
+      const p = project(px,py,pz+16); ctx2.save(); ctx2.shadowColor='rgba(255,215,95,.95)'; ctx2.shadowBlur=20; ctx2.fillStyle='#ffd85a'; ctx2.strokeStyle='rgba(30,18,0,.72)'; ctx2.lineWidth=2; ctx2.beginPath(); ctx2.arc(p.x,p.y,9,0,Math.PI*2); ctx2.fill(); ctx2.stroke(); ctx2.restore();
+      drawLabel(ctx2, project(px,py,pz+46), `N${level} · S${slot}`, true);
+    }
+    function render(){
+      if(!canvas.isConnected) return;
+      const dpr = window.devicePixelRatio || 1, rect = canvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width)), h = Math.max(240, Math.floor(rect.height));
+      canvas.width = Math.floor(w*dpr); canvas.height = Math.floor(h*dpr);
+      const ctx2 = canvas.getContext('2d'); ctx2.setTransform(dpr,0,0,dpr,0,0); ctx2.clearRect(0,0,w,h);
+      const grad = ctx2.createLinearGradient(0,0,0,h); grad.addColorStop(0,'#0c1724'); grad.addColorStop(1,'#050b13'); ctx2.fillStyle=grad; ctx2.fillRect(0,0,w,h);
+      const project = projectFactory(w,h); const { focusRackIds, focusZoneIds } = getFocusSets();
+      const zones = (appState.layout?.zones || []).filter(z => state.isolation==='all' || focusZoneIds.has(z.id));
+      const racks = (appState.layout?.racks || []).filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
+      zones.forEach(z => { const active = focusZoneIds.has(z.id); const pts = (z.pts||[]).map(pt => project(Number(pt.x)||0, Number(pt.y)||0, 0)); drawPoly(ctx2, pts, active ? 'rgba(87,210,146,.18)' : 'rgba(125,170,210,.13)', active ? 'rgba(112,255,177,.52)' : 'rgba(180,220,255,.17)', active ? 2 : 1); const c = centroid(z.pts || []); drawLabel(ctx2, project(c.x,c.y,8), z.name || z.id, active); });
+      racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawBox(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
+      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
+      if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
+    }
+    function resetFocus(){ state.yaw = -Math.PI/4; state.pitch = .78; state.zoom = 1; state.panX = 0; state.panY = 0; render(); }
+    modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => { const action = btn.dataset.nav3dAction; if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action; if(action === 'ghost') state.ghost = !state.ghost; if(action === 'labels') state.labels = !state.labels; if(action === 'focus') resetFocus(); modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation)); modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost); modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels); render(); }));
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+    canvas.addEventListener('pointerdown', e => { state.dragging = true; state.lastX=e.clientX; state.lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if(!state.dragging) return; const dx=e.clientX-state.lastX, dy=e.clientY-state.lastY; state.lastX=e.clientX; state.lastY=e.clientY; if(e.shiftKey || e.buttons === 4 || e.button === 1){ state.panX += dx; state.panY += dy; } else { state.yaw += dx*0.008; state.pitch = Math.max(0.28, Math.min(1.22, state.pitch + dy*0.006)); } render(); });
+    canvas.addEventListener('pointerup', e => { state.dragging=false; try{canvas.releasePointerCapture(e.pointerId)}catch{}; });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(.35, Math.min(3.8, state.zoom * (e.deltaY > 0 ? .9 : 1.1))); render(); }, { passive:false });
+    window.addEventListener('resize', render); setTimeout(render, 40);
+  }
+
   function openProductLocationModal(product = appState.selectedProduct){
     const ctx = getViewerProductLocationContext(product);
     const prod = product || ctx.prod;
@@ -5698,6 +5852,7 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="location-modal-head-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc)}</span>
+            <button class="btn secondary nav3d-open-btn" type="button" id="btnOpenNavigable3DFromLocation">3D navegable</button>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
@@ -5727,6 +5882,7 @@ function getSheetBranchOpenMap(){
     document.body.appendChild(modal);
     modal.querySelector('.location-modal-close')?.addEventListener('click', () => modal.remove());
     modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+    modal.querySelector('#btnOpenNavigable3DFromLocation')?.addEventListener('click', () => openNavigable3DModal(prod));
     const redrawModalViews = () => {
       const updatedCtx = getViewerProductLocationContext(prod);
       const iso = modal.querySelector('#locationModalIsoMap');
@@ -5851,9 +6007,10 @@ function getSheetBranchOpenMap(){
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
           </div>
         </div>
-        <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button>
+        <div class="viewer-location-actions"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button></div>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
     bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
   }
 
