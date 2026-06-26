@@ -5938,7 +5938,12 @@ function getSheetBranchOpenMap(){
     const rackZoomChip = modal.querySelector('#nav3dRackZoomChip');
     const rackZoomMeta = modal.querySelector('#nav3dRackZoomMeta');
     const rackExpandButtons = Array.from(modal.querySelectorAll('[data-rack-expand]'));
-    const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, route:true, dragging:false, lastX:0, lastY:0 };
+    const state = {
+      yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0,
+      targetYaw: -Math.PI/4, targetPitch:.78, targetZoom:1, targetPanX:0, targetPanY:0,
+      isolation:'all', ghost:true, labels:true, route:true,
+      dragging:false, lastX:0, lastY:0, raf:0
+    };
     const baseRackModel = () => rackModel(appState.selectedModelId) || appState.models?.[0] || { id:'std_4', name:'Rack estándar', levels:4, slots:2, width:120, depth:40, height:240, clearance:0, style:'metallic' };
     const makeVirtualRack = (rackId, loc, isStore=false, index=0) => {
       const model = baseRackModel();
@@ -6000,6 +6005,23 @@ function getSheetBranchOpenMap(){
     const close = () => { window.removeEventListener('resize', render); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+    const requestSmoothRender = () => {
+      if(state.raf) return;
+      const tick = () => {
+        state.raf = 0;
+        const ease = 0.18;
+        state.yaw += (state.targetYaw - state.yaw) * ease;
+        state.pitch += (state.targetPitch - state.pitch) * ease;
+        state.zoom += (state.targetZoom - state.zoom) * ease;
+        state.panX += (state.targetPanX - state.panX) * ease;
+        state.panY += (state.targetPanY - state.panY) * ease;
+        render();
+        const moving = Math.abs(state.targetYaw - state.yaw) > 0.0008 || Math.abs(state.targetPitch - state.pitch) > 0.0008 || Math.abs(state.targetZoom - state.zoom) > 0.001 || Math.abs(state.targetPanX - state.panX) > 0.2 || Math.abs(state.targetPanY - state.panY) > 0.2;
+        if(moving) state.raf = requestAnimationFrame(tick);
+      };
+      state.raf = requestAnimationFrame(tick);
+    };
     function getFocusSets(){
       const focusRackIds = new Set([prod?.rack, prod?.rackStore].filter(Boolean));
       const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
@@ -6036,23 +6058,75 @@ function getSheetBranchOpenMap(){
       ctx2.beginPath(); ctx2.roundRect(p.x - w/2, p.y - h - 6, w, h, 9); ctx2.fill(); ctx2.stroke();
       ctx2.fillStyle = active ? '#fff' : '#dceee6'; ctx2.textAlign='center'; ctx2.textBaseline='middle'; ctx2.fillText(text, p.x, p.y - h/2 - 6); ctx2.restore();
     }
-    function drawBox(ctx2, project, r, active=false, ghost=false){
-      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(10,Number(r.w)||80), d=Math.max(10,Number(r.h)||40), h=getRackRenderHeight3D(r);
-      const corners = [[x,y,0],[x+w,y,0],[x+w,y+d,0],[x,y+d,0],[x,y,h],[x+w,y,h],[x+w,y+d,h],[x,y+d,h]].map(c => project(c[0],c[1],c[2]));
-      const alpha = ghost ? 0.18 : 0.92;
-      const faces = [
-        {idx:[0,1,2,3], fill:`rgba(45,62,76,${alpha*.72})`, depth:0},
-        {idx:[4,5,6,7], fill:active ? `rgba(84,234,142,${alpha*.72})` : `rgba(220,163,84,${alpha*.78})`, depth:0},
-        {idx:[0,1,5,4], fill:`rgba(120,85,48,${alpha*.72})`, depth:0},
-        {idx:[1,2,6,5], fill:`rgba(204,141,62,${alpha*.78})`, depth:0},
-        {idx:[2,3,7,6], fill:`rgba(174,113,52,${alpha*.76})`, depth:0},
-        {idx:[3,0,4,7], fill:`rgba(103,75,52,${alpha*.70})`, depth:0}
+    function drawRackShape(ctx2, project, r, active=false, ghost=false){
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(18,Number(r.w)||80), d=Math.max(18,Number(r.h)||40), h=getRackRenderHeight3D(r);
+      const rackRef = findNav3DRackById(r.id) || r;
+      const model = rackModel(rackRef?.modelId) || baseRackModel();
+      const slots = Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2));
+      const levels = Math.max(1, Math.min(9, Number(model.levels || 4) || 4));
+      const alpha = ghost ? 0.15 : 0.98;
+      const steelStroke = active ? 'rgba(138,255,183,.85)' : `rgba(214,231,248,${ghost ? .10 : .36})`;
+      const postStroke = active ? 'rgba(143,255,191,.95)' : `rgba(214,231,248,${ghost ? .16 : .50})`;
+      const shelfTop = active ? `rgba(84,234,142,${alpha*.40})` : `rgba(145,177,206,${alpha*.22})`;
+      const shelfFront = active ? `rgba(59,196,110,${alpha*.34})` : `rgba(96,127,160,${alpha*.26})`;
+      const boxFill = active ? `rgba(255,215,92,${ghost ? .20 : .90})` : `rgba(215,160,88,${ghost ? .16 : .76})`;
+      const boxSide = active ? `rgba(224,180,72,${ghost ? .18 : .82})` : `rgba(192,133,60,${ghost ? .14 : .68})`;
+      const boxTop = active ? `rgba(255,232,154,${ghost ? .22 : .92})` : `rgba(235,198,131,${ghost ? .18 : .74})`;
+      const floorPts = [[x-10,y-8,0],[x+w+10,y-8,0],[x+w+10,y+d+10,0],[x-10,y+d+10,0]].map(c => project(c[0],c[1],c[2]));
+      drawPoly(ctx2, floorPts, ghost ? 'rgba(255,255,255,.02)' : 'rgba(255,255,255,.04)', `rgba(255,255,255,${ghost ? .08 : .14})`, 1);
+
+      const edges = [
+        [[x,y,0],[x,y,h]], [[x+w,y,0],[x+w,y,h]], [[x+w,y+d,0],[x+w,y+d,h]], [[x,y+d,0],[x,y+d,h]],
+        [[x,y,0],[x+w,y,0]], [[x+w,y,0],[x+w,y+d,0]], [[x+w,y+d,0],[x,y+d,0]], [[x,y+d,0],[x,y,0]],
+        [[x,y,h],[x+w,y,h]], [[x+w,y,h],[x+w,y+d,h]], [[x+w,y+d,h],[x,y+d,h]], [[x,y+d,h],[x,y,h]]
       ];
-      faces.forEach(f => f.depth = f.idx.reduce((s,i)=>s+corners[i].depth,0)/f.idx.length);
-      faces.sort((a,b)=>a.depth-b.depth).forEach(f => drawPoly(ctx2, f.idx.map(i=>corners[i]), f.fill, active ? 'rgba(138,255,183,.78)' : `rgba(255,255,255,${ghost?.07:.18})`, active ? 2 : 1));
+      ctx2.save();
+      if(active){ ctx2.shadowColor='rgba(89,255,155,.22)'; ctx2.shadowBlur=16; }
+      edges.forEach(seg => {
+        const a = project(seg[0][0],seg[0][1],seg[0][2]);
+        const b = project(seg[1][0],seg[1][1],seg[1][2]);
+        ctx2.beginPath();
+        ctx2.moveTo(a.x,a.y); ctx2.lineTo(b.x,b.y);
+        ctx2.strokeStyle = (seg[0][2] !== seg[1][2]) ? postStroke : steelStroke;
+        ctx2.lineWidth = (seg[0][2] !== seg[1][2]) ? 2.6 : 1.6;
+        ctx2.stroke();
+      });
+      ctx2.restore();
+
+      const levelStep = h / levels;
+      for(let li=0; li<levels; li++){
+        const z0 = li * levelStep + 2;
+        const zShelf = Math.max(0, z0 - 3);
+        const shelf = [
+          [x,y,zShelf],[x+w,y,zShelf],[x+w,y+d,zShelf],[x,y+d,zShelf]
+        ].map(c => project(c[0],c[1],c[2]));
+        drawPoly(ctx2, [shelf[0], shelf[1], shelf[2], shelf[3]], shelfTop, steelStroke, 1);
+        const front = [[x,y+d,zShelf],[x+w,y+d,zShelf],[x+w,y+d,zShelf+3],[x,y+d,zShelf+3]].map(c => project(c[0],c[1],c[2]));
+        drawPoly(ctx2, front, shelfFront, null, 0);
+
+        const slotGap = Math.max(2, w * 0.03);
+        const innerW = Math.max(10, w - slotGap * (slots + 1));
+        const boxW = innerW / slots;
+        const boxH = Math.max(10, levelStep * 0.72);
+        const boxD = Math.max(8, d * 0.72);
+        for(let si=0; si<slots; si++){
+          const bx = x + slotGap + si * (boxW + slotGap);
+          const by = y + (d - boxD) * 0.54;
+          const bz = z0 + Math.max(2, (levelStep - boxH) * 0.18);
+          const isTarget = active && Number(prod?.nivel || prod?.nivelStore || 0) === li + 1 && Number(prod?.slot || prod?.slotStore || 0) === si + 1;
+          const corners = [[bx,by,bz],[bx+boxW,by,bz],[bx+boxW,by+boxD,bz],[bx,by+boxD,bz],[bx,by,bz+boxH],[bx+boxW,by,bz+boxH],[bx+boxW,by+boxD,bz+boxH],[bx,by+boxD,bz+boxH]].map(c => project(c[0],c[1],c[2]));
+          const faces = [
+            {idx:[4,5,6,7], fill:isTarget ? 'rgba(163,255,88,.92)' : boxTop},
+            {idx:[3,2,6,7], fill:isTarget ? 'rgba(122,230,64,.88)' : boxFill},
+            {idx:[1,2,6,5], fill:isTarget ? 'rgba(99,194,51,.86)' : boxSide}
+          ];
+          faces.forEach(f => drawPoly(ctx2, f.idx.map(i => corners[i]), f.fill, isTarget ? 'rgba(255,255,190,.95)' : `rgba(255,255,255,${ghost ? .06 : .16})`, isTarget ? 1.6 : 0.8));
+        }
+      }
       if(active){ const topCenter = project(x+w/2, y+d/2, h+20); ctx2.save(); ctx2.shadowColor='rgba(89,255,155,.75)'; ctx2.shadowBlur=18; ctx2.fillStyle='#5cff9a'; ctx2.beginPath(); ctx2.arc(topCenter.x, topCenter.y, 7, 0, Math.PI*2); ctx2.fill(); ctx2.restore(); }
-      drawLabel(ctx2, project(x+w/2, y+d/2, h+36), r.id, active);
+      drawLabel(ctx2, project(x+w/2, y+d/2, h+38), r.id, active);
     }
+
 
     function getProductMarkerPoint(project, r){
       if(!prod || !r) return null;
@@ -6165,20 +6239,63 @@ function getSheetBranchOpenMap(){
       const zones = getNav3DZones().filter(z => state.isolation==='all' || focusZoneIds.has(z.id));
       const racks = getNav3DRacks().filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
       zones.forEach(z => { const active = focusZoneIds.has(z.id); const pts = (z.pts||[]).map(pt => project(Number(pt.x)||0, Number(pt.y)||0, 0)); drawPoly(ctx2, pts, active ? 'rgba(87,210,146,.18)' : 'rgba(125,170,210,.13)', active ? 'rgba(112,255,177,.52)' : 'rgba(180,220,255,.17)', active ? 2 : 1); const c = centroid(z.pts || []); drawLabel(ctx2, project(c.x,c.y,8), z.name || z.id, active); });
-      racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawBox(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
+      racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawRackShape(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
       if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
       renderNav3DSideRacks();
     }
-    function resetFocus(){ state.yaw = -Math.PI/4; state.pitch = .78; state.zoom = 1; state.panX = 0; state.panY = 0; render(); }
-    modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => { const action = btn.dataset.nav3dAction; if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action; if(action === 'ghost') state.ghost = !state.ghost; if(action === 'labels') state.labels = !state.labels; if(action === 'route') state.route = !state.route; if(action === 'slot'){ state.isolation='rack'; resetFocus(); state.zoom=2.35; render(); } if(action === 'focus') resetFocus(); modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation)); modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost); modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels); modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', state.route); render(); }));
+    function resetFocus(){
+      state.targetYaw = -Math.PI/4;
+      state.targetPitch = .78;
+      state.targetZoom = 1;
+      state.targetPanX = 0;
+      state.targetPanY = 0;
+      requestSmoothRender();
+    }
+    modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
+      const action = btn.dataset.nav3dAction;
+      if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action;
+      if(action === 'ghost') state.ghost = !state.ghost;
+      if(action === 'labels') state.labels = !state.labels;
+      if(action === 'route') state.route = !state.route;
+      if(action === 'slot'){
+        state.isolation='rack';
+        resetFocus();
+        state.targetZoom = 1.75;
+      }
+      if(action === 'focus') resetFocus();
+      modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation));
+      modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost);
+      modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels);
+      modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', state.route);
+      requestSmoothRender();
+    }));
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => { state.dragging = true; state.lastX=e.clientX; state.lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
-    canvas.addEventListener('pointermove', e => { if(!state.dragging) return; const dx=e.clientX-state.lastX, dy=e.clientY-state.lastY; state.lastX=e.clientX; state.lastY=e.clientY; if(e.shiftKey || e.buttons === 4 || e.button === 1){ state.panX += dx; state.panY += dy; } else { state.yaw += dx*0.008; state.pitch = Math.max(0.28, Math.min(1.22, state.pitch + dy*0.006)); } render(); });
+    canvas.addEventListener('pointermove', e => {
+      if(!state.dragging) return;
+      const dx=e.clientX-state.lastX, dy=e.clientY-state.lastY;
+      state.lastX=e.clientX; state.lastY=e.clientY;
+      if(e.shiftKey || e.buttons === 4 || e.button === 1){
+        state.targetPanX += dx * 0.72;
+        state.targetPanY += dy * 0.72;
+      } else {
+        state.targetYaw += dx * 0.0032;
+        state.targetPitch = clamp(state.targetPitch + dy * 0.0024, 0.34, 1.18);
+      }
+      requestSmoothRender();
+    });
     canvas.addEventListener('pointerup', e => { state.dragging=false; try{canvas.releasePointerCapture(e.pointerId)}catch{}; });
-    canvas.addEventListener('wheel', e => { e.preventDefault(); state.zoom = Math.max(.35, Math.min(3.8, state.zoom * (e.deltaY > 0 ? .9 : 1.1))); render(); }, { passive:false });
-    window.addEventListener('resize', render); setTimeout(render, 40);
+    canvas.addEventListener('pointerleave', () => { state.dragging = false; });
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.94 : 1.06;
+      state.targetZoom = clamp(state.targetZoom * factor, .45, 3.2);
+      requestSmoothRender();
+    }, { passive:false });
+    window.addEventListener('resize', render);
+    setTimeout(() => { render(); requestSmoothRender(); }, 40);
   }
 
   function openProductLocationModal(product = appState.selectedProduct){
