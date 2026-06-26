@@ -5700,6 +5700,140 @@ function getSheetBranchOpenMap(){
     return { minX, maxX, minY, maxY, w:Math.max(1,maxX-minX), h:Math.max(1,maxY-minY), cx:(minX+maxX)/2, cy:(minY+maxY)/2 };
   }
 
+
+  function productHasValidLocation(product){
+    const p = product || {};
+    return !!String(p.ubicacion || p.location || '').trim();
+  }
+
+  function getProductLocationIssue(product){
+    const p = product || {};
+    const loc = String(p.ubicacion || '').trim();
+    if(!loc) return 'Sin ubicación';
+    const rackId = p.rack || parseLocationCode(loc, '').rackId || '';
+    if(rackId && !findRackById(rackId)) return `Rack no existe: ${rackId}`;
+    if(rackId){
+      const rack = findRackById(rackId);
+      const model = rack ? (appState.models.find(m => m.id === rack.modelId) || appState.models[0] || {}) : {};
+      const levels = Math.max(1, Number(model.levels || 4));
+      const slots = Math.max(1, Number(model.slots || 2));
+      const level = Number(p.nivel || parseLocationCode(loc, '').level || 0);
+      const slot = Number(p.slot || parseLocationCode(loc, '').slot || 0);
+      if(level && (level < 1 || level > levels)) return `Nivel fuera de rango: N${level}`;
+      if(slot && (slot < 1 || slot > slots)) return `Slot fuera de rango: S${slot}`;
+    }
+    return '';
+  }
+
+  function analyzeInventoryData(){
+    const products = Array.isArray(appState.products) ? appState.products : [];
+    const counters = { total:products.length, missingName:0, missingSku:0, missingCategory:0, missingGender:0, missingImage:0, missingLocation:0, badLocation:0, rackMissing:0 };
+    const issues = [];
+    products.forEach((p, idx) => {
+      const row = p?._rowIndex || idx + 1;
+      const sku = String(p?.sku || '').trim();
+      const name = String(p?.nombre || '').trim();
+      const add = (type, detail) => { if(issues.length < 180) issues.push({ row, sku: sku || '—', name: name || '—', type, detail }); };
+      if(!name){ counters.missingName++; add('Sin nombre', 'El producto no tiene nombre.'); }
+      if(!sku){ counters.missingSku++; add('Sin SKU', 'No se detectó SKU/código.'); }
+      if(!getProductCategoryValue(p)){ counters.missingCategory++; add('Sin categoría', 'Completa la columna Categoria.'); }
+      if(!getProductGenderValue(p)){ counters.missingGender++; add('Sin género', 'Completa la columna Genero: Mujer, Varón, Niños o Niñas.'); }
+      if(!getProductImageUrls(p).length){ counters.missingImage++; add('Sin imagen', 'No hay Imagen 1–6 para este producto.'); }
+      const locIssue = getProductLocationIssue(p);
+      if(locIssue){
+        if(locIssue === 'Sin ubicación') counters.missingLocation++;
+        else counters.badLocation++;
+        if(locIssue.startsWith('Rack no existe')) counters.rackMissing++;
+        add('Ubicación', locIssue);
+      }
+    });
+    return { counters, issues };
+  }
+
+  function openDataQualityModal(){
+    const existing = document.getElementById('dataQualityModal');
+    if(existing) existing.remove();
+    const { counters, issues } = analyzeInventoryData();
+    const total = Math.max(1, counters.total || 0);
+    const scoreRaw = 100 - Math.round(((counters.missingName + counters.missingSku + counters.missingCategory + counters.missingGender + counters.missingImage + counters.missingLocation + counters.badLocation) / total) * 100);
+    const score = Math.max(0, Math.min(100, scoreRaw));
+    const cards = [
+      ['Total', counters.total, 'registros importados'],
+      ['Sin nombre', counters.missingName, 'deben corregirse'],
+      ['Sin SKU', counters.missingSku, 'afecta búsquedas'],
+      ['Sin categoría', counters.missingCategory, 'afecta filtros'],
+      ['Sin género', counters.missingGender, 'Mujer/Varón/Niños/Niñas'],
+      ['Sin imagen', counters.missingImage, 'afecta catálogo'],
+      ['Sin ubicación', counters.missingLocation, 'sin rack/slot'],
+      ['Ubicación inválida', counters.badLocation, 'rack, nivel o slot']
+    ].map(([label, value, hint]) => `<div class="dq-card ${Number(value)>0 && label !== 'Total' ? 'warn' : ''}"><b>${Number(value||0).toLocaleString('es-PE')}</b><span>${escapeHtml(label)}</span><small>${escapeHtml(hint)}</small></div>`).join('');
+    const rows = issues.slice(0, 80).map(item => `<tr><td>${escapeHtml(String(item.row))}</td><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td></tr>`).join('');
+    const modal = document.createElement('div');
+    modal.id = 'dataQualityModal';
+    modal.className = 'data-quality-backdrop show';
+    modal.innerHTML = `
+      <div class="data-quality-shell">
+        <div class="data-quality-head">
+          <div><div class="search-card-kicker">Control de calidad</div><h2>Diagnóstico de datos</h2><p>Detecta problemas del Sheet antes de ubicar productos en el layout o en el 3D.</p></div>
+          <div class="data-quality-actions"><span class="dq-score">Calidad ${score}%</span><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
+        </div>
+        <div class="data-quality-grid">${cards}</div>
+        <div class="data-quality-table-wrap">
+          <div class="data-quality-table-head"><b>Observaciones detectadas</b><span>${issues.length.toLocaleString('es-PE')} alertas encontradas · se muestran hasta 80</span></div>
+          <table class="data-quality-table"><thead><tr><th>Fila</th><th>SKU</th><th>Producto</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No se detectaron observaciones críticas.</td></tr>'}</tbody></table>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelector('.location-modal-close')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if(e.target === modal) close(); });
+  }
+
+  function openProductVariantsModal(product = appState.selectedProduct){
+    const prod = product || appState.selectedProduct;
+    if(!prod){ showToast('Selecciona un producto primero.', 'warning'); return; }
+    const key = norm(prod.nombre || prod.sku || '');
+    const variants = (appState.products || []).filter(p => norm(p.nombre || p.sku || '') === key);
+    const existing = document.getElementById('productVariantsModal');
+    if(existing) existing.remove();
+    const rows = variants.map((v, idx) => {
+      const color = getProductColorValue(v);
+      const colorChip = color ? `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>` : '—';
+      return `<tr data-variant-idx="${idx}"><td>${escapeHtml(v.sku || '—')}</td><td>${escapeHtml(getProductSizeValue(v) || '—')}</td><td>${colorChip}</td><td>${escapeHtml(v.ubicacion || '—')}</td><td>${escapeHtml(v.almacen || '—')}</td><td><button class="tiny-btn" data-select-variant="${idx}">Ver</button></td></tr>`;
+    }).join('');
+    const modal = document.createElement('div');
+    modal.id = 'productVariantsModal';
+    modal.className = 'data-quality-backdrop show';
+    modal.innerHTML = `
+      <div class="product-variants-shell">
+        <div class="data-quality-head"><div><div class="search-card-kicker">Variantes</div><h2>${escapeHtml(prod.nombre || 'Producto')}</h2><p>${variants.length.toLocaleString('es-PE')} variantes detectadas para este modelo.</p></div><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
+        <div class="variant-table-wrap"><table class="data-quality-table"><thead><tr><th>SKU</th><th>Talla</th><th>Color</th><th>Ubicación</th><th>Almacén</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6">No hay variantes detectadas.</td></tr>'}</tbody></table></div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelector('.location-modal-close')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    modal.querySelectorAll('[data-select-variant]').forEach(btn => btn.addEventListener('click', () => {
+      const v = variants[Number(btn.dataset.selectVariant || 0)];
+      if(v){ close(); selectProduct(v); focusSelectedProductInViewer({ product:v, switchScreen:false }); }
+    }));
+  }
+
+  async function copySelectedProductLocation(product = appState.selectedProduct){
+    const prod = product || appState.selectedProduct;
+    if(!prod){ showToast('Selecciona un producto primero.', 'warning'); return; }
+    const ctx = getViewerProductLocationContext(prod);
+    const textToCopy = `SKU: ${prod.sku || '—'} | ${prod.nombre || 'Producto'} | Ubicación: ${ctx.primaryLoc || '—'} | Almacén: ${ctx.storeLoc || '—'}`;
+    try{
+      await navigator.clipboard.writeText(textToCopy);
+      showToast('Ubicación copiada al portapapeles.', 'success');
+    }catch{
+      const ta = document.createElement('textarea');
+      ta.value = textToCopy; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+      showToast('Ubicación copiada.', 'success');
+    }
+  }
+
   function openNavigable3DModal(prod = appState.selectedProduct){
     const existing = document.getElementById('navigable3DModal');
     if(existing) existing.remove();
@@ -5722,6 +5856,8 @@ function getSheetBranchOpenMap(){
             <button class="iso-tool" data-nav3d-action="rack">Rack</button>
             <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
             <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
+            <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
+            <button class="iso-tool" data-nav3d-action="slot">Slot</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
@@ -5740,7 +5876,7 @@ function getSheetBranchOpenMap(){
     document.body.appendChild(modal);
     const canvas = modal.querySelector('#nav3dCanvas');
     const compass = modal.querySelector('#nav3dCompass');
-    const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, dragging:false, lastX:0, lastY:0 };
+    const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, route:true, dragging:false, lastX:0, lastY:0 };
     const close = () => { window.removeEventListener('resize', render); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -5797,6 +5933,35 @@ function getSheetBranchOpenMap(){
       if(active){ const topCenter = project(x+w/2, y+d/2, h+20); ctx2.save(); ctx2.shadowColor='rgba(89,255,155,.75)'; ctx2.shadowBlur=18; ctx2.fillStyle='#5cff9a'; ctx2.beginPath(); ctx2.arc(topCenter.x, topCenter.y, 7, 0, Math.PI*2); ctx2.fill(); ctx2.restore(); }
       drawLabel(ctx2, project(x+w/2, y+d/2, h+36), r.id, active);
     }
+
+    function getProductMarkerPoint(project, r){
+      if(!prod || !r) return null;
+      const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
+      const slots = Math.max(1, Number(model.slots || 2));
+      const levels = Math.max(1, Number(model.levels || 4));
+      const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(10,Number(r.w)||80), d=Math.max(10,Number(r.h)||40), h=getRackRenderHeight3D(r);
+      const slot = Math.min(slots, Math.max(1, Number(prod.slot || prod.slotStore || 1)));
+      const level = Math.min(levels, Math.max(1, Number(prod.nivel || prod.nivelStore || 1)));
+      const px = x + (slot - .5) * (w / slots), py = y + d * .52, pz = (level / levels) * h;
+      return { point: project(px,py,pz+16), labelPoint: project(px,py,pz+46), level, slot, x:px, y:py, z:pz };
+    }
+
+    function drawProductRoute(ctx2, project, r){
+      if(!state.route || !prod || !r) return;
+      const z = (appState.layout?.zones || []).find(zone => zone.id === r.zoneId || zone.id === prod.zona || zone.id === prod.zonaStore);
+      const c = z ? centroid(z.pts || []) : { x:Number(r.x)||0, y:Number(r.y)||0 };
+      const rackCenter = project((Number(r.x)||0)+(Math.max(10,Number(r.w)||80)/2), (Number(r.y)||0)+(Math.max(10,Number(r.h)||40)/2), getRackRenderHeight3D(r)+20);
+      const start = project(c.x, c.y, 16);
+      const marker = getProductMarkerPoint(project, r);
+      if(!marker) return;
+      ctx2.save();
+      ctx2.strokeStyle='rgba(255,216,90,.95)'; ctx2.lineWidth=4; ctx2.setLineDash([12,8]); ctx2.lineCap='round'; ctx2.lineJoin='round';
+      ctx2.shadowColor='rgba(255,216,90,.65)'; ctx2.shadowBlur=12;
+      ctx2.beginPath(); ctx2.moveTo(start.x,start.y); ctx2.lineTo(rackCenter.x,rackCenter.y); ctx2.lineTo(marker.point.x,marker.point.y); ctx2.stroke();
+      [start,rackCenter,marker.point].forEach((p,i)=>{ ctx2.fillStyle=i===2?'#ffd85a':'#55e591'; ctx2.beginPath(); ctx2.arc(p.x,p.y,i===2?7:5,0,Math.PI*2); ctx2.fill(); });
+      ctx2.restore();
+    }
+
     function drawProductMarker(ctx2, project, r){
       if(!prod || !r) return;
       const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
@@ -5821,11 +5986,12 @@ function getSheetBranchOpenMap(){
       const racks = (appState.layout?.racks || []).filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
       zones.forEach(z => { const active = focusZoneIds.has(z.id); const pts = (z.pts||[]).map(pt => project(Number(pt.x)||0, Number(pt.y)||0, 0)); drawPoly(ctx2, pts, active ? 'rgba(87,210,146,.18)' : 'rgba(125,170,210,.13)', active ? 'rgba(112,255,177,.52)' : 'rgba(180,220,255,.17)', active ? 2 : 1); const c = centroid(z.pts || []); drawLabel(ctx2, project(c.x,c.y,8), z.name || z.id, active); });
       racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawBox(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
+      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
       focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
       if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
     }
     function resetFocus(){ state.yaw = -Math.PI/4; state.pitch = .78; state.zoom = 1; state.panX = 0; state.panY = 0; render(); }
-    modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => { const action = btn.dataset.nav3dAction; if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action; if(action === 'ghost') state.ghost = !state.ghost; if(action === 'labels') state.labels = !state.labels; if(action === 'focus') resetFocus(); modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation)); modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost); modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels); render(); }));
+    modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => { const action = btn.dataset.nav3dAction; if(action === 'all' || action === 'zone' || action === 'rack') state.isolation = action; if(action === 'ghost') state.ghost = !state.ghost; if(action === 'labels') state.labels = !state.labels; if(action === 'route') state.route = !state.route; if(action === 'slot'){ state.isolation='rack'; resetFocus(); state.zoom=2.35; render(); } if(action === 'focus') resetFocus(); modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === state.isolation)); modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', state.ghost); modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', state.labels); modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', state.route); render(); }));
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     canvas.addEventListener('pointerdown', e => { state.dragging = true; state.lastX=e.clientX; state.lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', e => { if(!state.dragging) return; const dx=e.clientX-state.lastX, dy=e.clientY-state.lastY; state.lastX=e.clientX; state.lastY=e.clientY; if(e.shiftKey || e.buttons === 4 || e.button === 1){ state.panX += dx; state.panY += dy; } else { state.yaw += dx*0.008; state.pitch = Math.max(0.28, Math.min(1.22, state.pitch + dy*0.006)); } render(); });
@@ -6007,10 +6173,12 @@ function getSheetBranchOpenMap(){
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
           </div>
         </div>
-        <div class="viewer-location-actions"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button></div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button><button class="btn secondary viewer-location-btn" type="button" id="btnCopyLocation"><span>⧉</span> Copiar ubicación</button></div>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
     document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
+    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
+    document.getElementById('btnCopyLocation')?.addEventListener('click', () => copySelectedProductLocation(prod));
     bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
   }
 
@@ -10547,6 +10715,7 @@ function zoomLayout(factor, center){
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
   if($('#btnOpenCategoryPinterest')) { $('#btnOpenCategoryPinterest').addEventListener('click', openCategoryPinterestModal); updateCategoryFilterButton(); }
+  if($('#btnOpenDataQuality')) { $('#btnOpenDataQuality').addEventListener('click', openDataQualityModal); }
   if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.add('active'); $('#toggleGroupProducts').textContent = 'Productos'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = true; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
