@@ -4596,3 +4596,31 @@ body.theme-light .brand-box{
   .iso-toolbar{justify-content:flex-start;max-width:100%;margin-top:10px}
   .dual-rack-head{align-items:flex-start;flex-direction:column}
 }
+
+/* V34: controles isométricos visibles dentro del modal Ver ubicación */
+.modal-iso-head{
+  align-items:flex-start;
+  gap:12px;
+}
+.modal-iso-toolbar{
+  max-width:min(720px, 100%);
+  justify-content:flex-end;
+}
+.location-modal-card .iso-tool{
+  min-height:34px;
+  padding:7px 11px;
+  border-radius:999px;
+  font-size:11px;
+}
+.location-modal-card .iso-compass{
+  min-height:34px;
+  padding:7px 11px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+@media(max-width:1100px){
+  .modal-iso-head{flex-direction:column;align-items:stretch}
+  .modal-iso-toolbar{justify-content:flex-start;max-width:100%}
+}

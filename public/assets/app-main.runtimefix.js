@@ -5703,7 +5703,19 @@ function getSheetBranchOpenMap(){
         </div>
         <div class="location-modal-body">
           <div class="location-modal-main dual-rack-card">
-            <div class="dual-rack-head"><div><b>Plano general 3D isométrico</b><div class="muted tiny">Vista general con el rack y slot resaltados.</div></div><span class="chip">${escapeHtml(prod.zona || '—')} / ${escapeHtml(prod.zonaStore || '—')}</span></div>
+            <div class="dual-rack-head modal-iso-head">
+              <div><b>Plano general 3D isométrico</b><div class="muted tiny">Cambia el ángulo sin perder la ubicación activa.</div></div>
+              <div class="iso-toolbar modal-iso-toolbar" id="locationModalIsoToolbar">
+                ${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-modal-iso-view="${v}">${v}</button>`).join('')}
+                <button type="button" class="iso-tool" data-modal-iso-rotate="-1">↺</button>
+                <button type="button" class="iso-tool" data-modal-iso-rotate="1">↻</button>
+                <button type="button" class="iso-tool ${appState.ui.isoIsolation==='zone'?'active':''}" data-modal-iso-isolate="zone">Zona</button>
+                <button type="button" class="iso-tool ${appState.ui.isoIsolation==='rack'?'active':''}" data-modal-iso-isolate="rack">Rack</button>
+                <button type="button" class="iso-tool ${appState.ui.isoIsolation==='all'?'active':''}" data-modal-iso-isolate="all">Todo</button>
+                <button type="button" class="iso-tool ${appState.ui.isoGhost?'active':''}" data-modal-iso-ghost="toggle">Ghost</button>
+                <span class="iso-compass">${escapeHtml(getIsoViewConfig().compass)}</span>
+              </div>
+            </div>
             <div class="detail-stage"><svg id="locationModalIsoMap" viewBox="-560 -160 1220 820"></svg></div>
           </div>
           <div class="location-modal-side">
@@ -5715,12 +5727,24 @@ function getSheetBranchOpenMap(){
     document.body.appendChild(modal);
     modal.querySelector('.location-modal-close')?.addEventListener('click', () => modal.remove());
     modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
-    const iso = modal.querySelector('#locationModalIsoMap');
-    const rackPrimary = modal.querySelector('#locationModalRackPrimary');
-    const rackStore = modal.querySelector('#locationModalRackStore');
-    renderIsoLocationSvg(iso, prod);
-    renderRackDetail(ctx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label: 'Ubicación', fullLabel: ctx.primaryLoc }, rackPrimary);
-    renderRackDetail(ctx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label: 'Almacén', fullLabel: ctx.storeLoc }, rackStore);
+    const redrawModalViews = () => {
+      const updatedCtx = getViewerProductLocationContext(prod);
+      const iso = modal.querySelector('#locationModalIsoMap');
+      const rackPrimary = modal.querySelector('#locationModalRackPrimary');
+      const rackStore = modal.querySelector('#locationModalRackStore');
+      const toolbar = modal.querySelector('#locationModalIsoToolbar');
+      if(toolbar){
+        toolbar.innerHTML = `${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-modal-iso-view="${v}">${v}</button>`).join('')}<button type="button" class="iso-tool" data-modal-iso-rotate="-1">↺</button><button type="button" class="iso-tool" data-modal-iso-rotate="1">↻</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='zone'?'active':''}" data-modal-iso-isolate="zone">Zona</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='rack'?'active':''}" data-modal-iso-isolate="rack">Rack</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='all'?'active':''}" data-modal-iso-isolate="all">Todo</button><button type="button" class="iso-tool ${appState.ui.isoGhost?'active':''}" data-modal-iso-ghost="toggle">Ghost</button><span class="iso-compass">${escapeHtml(getIsoViewConfig().compass)}</span>`;
+      }
+      renderIsoLocationSvg(iso, prod);
+      renderRackDetail(updatedCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label: 'Ubicación', fullLabel: updatedCtx.primaryLoc }, rackPrimary);
+      renderRackDetail(updatedCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label: 'Almacén', fullLabel: updatedCtx.storeLoc }, rackStore);
+      modal.querySelectorAll('[data-modal-iso-view]').forEach(btn => { btn.onclick = () => { setIsoView(btn.dataset.modalIsoView || 'NE'); redrawModalViews(); }; });
+      modal.querySelectorAll('[data-modal-iso-rotate]').forEach(btn => { btn.onclick = () => { rotateIsoView(Number(btn.dataset.modalIsoRotate || 1)); redrawModalViews(); }; });
+      modal.querySelectorAll('[data-modal-iso-isolate]').forEach(btn => { btn.onclick = () => { appState.ui.isoIsolation = btn.dataset.modalIsoIsolate || 'all'; redrawModalViews(); }; });
+      modal.querySelectorAll('[data-modal-iso-ghost]').forEach(btn => { btn.onclick = () => { appState.ui.isoGhost = !appState.ui.isoGhost; redrawModalViews(); }; });
+    };
+    redrawModalViews();
   }
 
 
