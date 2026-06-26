@@ -5939,17 +5939,75 @@ function getSheetBranchOpenMap(){
     const rackZoomMeta = modal.querySelector('#nav3dRackZoomMeta');
     const rackExpandButtons = Array.from(modal.querySelectorAll('[data-rack-expand]'));
     const state = { yaw: -Math.PI/4, pitch:.78, zoom:1, panX:0, panY:0, isolation:'all', ghost:true, labels:true, route:true, dragging:false, lastX:0, lastY:0 };
+    const baseRackModel = () => rackModel(appState.selectedModelId) || appState.models?.[0] || { id:'std_4', name:'Rack estándar', levels:4, slots:2, width:120, depth:40, height:240, clearance:0, style:'metallic' };
+    const makeVirtualRack = (rackId, loc, isStore=false, index=0) => {
+      const model = baseRackModel();
+      const parsed = parseLocationCode(loc || rackId || '', isStore ? 'ALM-E1' : 'Z1-E1');
+      const id = rackId || parsed.rackId || (isStore ? 'ALM-E1' : 'Z1-E1');
+      return {
+        id,
+        modelId:model.id,
+        zoneId:parsed.zoneId || (isStore ? 'ALM' : 'Z1'),
+        x:isStore ? 190 : 0,
+        y:index * 110,
+        w:Number(model.width || 120) || 120,
+        h:Number(model.depth || 56) || 56,
+        rackHeight:Number(model.height || 240) || 240,
+        baseHeight:0,
+        _virtual:true
+      };
+    };
+    const getVirtualRacks = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      const out = [];
+      if(liveCtx.primaryRackId && !findRackById(liveCtx.primaryRackId)) out.push(makeVirtualRack(liveCtx.primaryRackId, liveCtx.primaryLoc, false, 0));
+      if(liveCtx.storeRackId && liveCtx.storeRackId !== liveCtx.primaryRackId && !findRackById(liveCtx.storeRackId)) out.push(makeVirtualRack(liveCtx.storeRackId, liveCtx.storeLoc, true, 1));
+      if(!out.length && !(appState.layout?.racks || []).length){
+        out.push(makeVirtualRack(liveCtx.primaryRackId || 'Z1-E1', liveCtx.primaryLoc || 'Z1-E1-N1-S1', false, 0));
+        if(liveCtx.storeRackId && liveCtx.storeRackId !== liveCtx.primaryRackId) out.push(makeVirtualRack(liveCtx.storeRackId, liveCtx.storeLoc, true, 1));
+      }
+      return out;
+    };
+    const getNav3DRacks = () => {
+      const real = Array.isArray(appState.layout?.racks) ? appState.layout.racks.slice() : [];
+      const virtual = getVirtualRacks();
+      const realIds = new Set(real.map(r => r.id));
+      virtual.forEach(r => { if(!realIds.has(r.id)) real.push(r); });
+      return real;
+    };
+    const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
+    const getNav3DZones = () => {
+      const zones = Array.isArray(appState.layout?.zones) ? appState.layout.zones.slice() : [];
+      const zoneIds = new Set(zones.map(z => z.id));
+      getNav3DRacks().forEach(r => {
+        if(!zoneIds.has(r.zoneId)){
+          const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(140,Number(r.w)||120), h=Math.max(90,Number(r.h)||56);
+          zones.push({ id:r.zoneId || 'Z1', name:r.zoneId || 'Zona', pts:[{x:x-60,y:y-40},{x:x+w+60,y:y-40},{x:x+w+60,y:y+h+60},{x:x-60,y:y+h+60}], _virtual:true });
+          zoneIds.add(r.zoneId);
+        }
+      });
+      return zones;
+    };
+    const getNav3DSceneBounds = () => {
+      const pts = [];
+      getNav3DZones().forEach(z => (z.pts || []).forEach(pt => pts.push({x:Number(pt.x)||0,y:Number(pt.y)||0})));
+      getNav3DRacks().forEach(r => { const x=Number(r.x)||0,y=Number(r.y)||0,w=Math.max(10,Number(r.w)||80),d=Math.max(10,Number(r.h)||40); pts.push({x,y},{x:x+w,y},{x:x+w,y:y+d},{x,y:y+d}); });
+      if(!pts.length) pts.push({x:-200,y:-160},{x:200,y:160});
+      const minX=Math.min(...pts.map(p=>p.x)), maxX=Math.max(...pts.map(p=>p.x));
+      const minY=Math.min(...pts.map(p=>p.y)), maxY=Math.max(...pts.map(p=>p.y));
+      return { minX,maxX,minY,maxY,w:Math.max(1,maxX-minX),h:Math.max(1,maxY-minY),cx:(minX+maxX)/2,cy:(minY+maxY)/2 };
+    };
     const close = () => { window.removeEventListener('resize', render); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
     function getFocusSets(){
       const focusRackIds = new Set([prod?.rack, prod?.rackStore].filter(Boolean));
       const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
-      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
+      focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
       return { focusRackIds, focusZoneIds };
     }
     function projectFactory(width,height){
-      const bounds = getScene3DBounds();
+      const bounds = getNav3DSceneBounds();
       const base = Math.min(width/(bounds.w*1.45 || 1), height/(bounds.h*1.2 + 220 || 1));
       const scale = Math.max(0.4, Math.min(3.2, base * 0.95 * state.zoom));
       const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw), cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
@@ -6066,7 +6124,7 @@ function getSheetBranchOpenMap(){
       rackZoomTitle.textContent = isPrimary ? 'Rack de ubicación' : 'Rack de almacén';
       rackZoomChip.textContent = rackId || '—';
       rackZoomMeta.innerHTML = buildRackMetaHtml(rackId, nivel, slot, fullLabel);
-      renderRackDetail(rackId, { nivel, slot, label: isPrimary ? 'Ubicación' : 'Almacén', fullLabel }, rackZoomSvg);
+      renderRackDetail(rackId, { nivel, slot, label: isPrimary ? 'Ubicación' : 'Almacén', fullLabel }, rackZoomSvg, null, findNav3DRackById(rackId));
       rackZoom.hidden = false;
       rackZoom.classList.add('show');
     };
@@ -6076,10 +6134,10 @@ function getSheetBranchOpenMap(){
     function renderNav3DSideRacks(){
       const liveCtx = getViewerProductLocationContext(prod);
       if(rackPrimarySvg){
-        renderRackDetail(liveCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label:'Ubicación', fullLabel: liveCtx.primaryLoc || 'Sin ubicación' }, rackPrimarySvg);
+        renderRackDetail(liveCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label:'Ubicación', fullLabel: liveCtx.primaryLoc || 'Sin ubicación' }, rackPrimarySvg, null, findNav3DRackById(liveCtx.primaryRackId));
       }
       if(rackStoreSvg){
-        renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel: liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg);
+        renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel: liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg, null, findNav3DRackById(liveCtx.storeRackId));
       }
       modal.querySelectorAll('.nav3d-rack-card .chip').forEach((chip, idx) => {
         const value = idx === 0 ? (liveCtx.primaryRackId || '—') : (liveCtx.storeRackId || '—');
@@ -6104,12 +6162,12 @@ function getSheetBranchOpenMap(){
       const ctx2 = canvas.getContext('2d'); ctx2.setTransform(dpr,0,0,dpr,0,0); ctx2.clearRect(0,0,w,h);
       const grad = ctx2.createLinearGradient(0,0,0,h); grad.addColorStop(0,'#0c1724'); grad.addColorStop(1,'#050b13'); ctx2.fillStyle=grad; ctx2.fillRect(0,0,w,h);
       const project = projectFactory(w,h); const { focusRackIds, focusZoneIds } = getFocusSets();
-      const zones = (appState.layout?.zones || []).filter(z => state.isolation==='all' || focusZoneIds.has(z.id));
-      const racks = (appState.layout?.racks || []).filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
+      const zones = getNav3DZones().filter(z => state.isolation==='all' || focusZoneIds.has(z.id));
+      const racks = getNav3DRacks().filter(r => state.isolation==='all' || (state.isolation==='zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
       zones.forEach(z => { const active = focusZoneIds.has(z.id); const pts = (z.pts||[]).map(pt => project(Number(pt.x)||0, Number(pt.y)||0, 0)); drawPoly(ctx2, pts, active ? 'rgba(87,210,146,.18)' : 'rgba(125,170,210,.13)', active ? 'rgba(112,255,177,.52)' : 'rgba(180,220,255,.17)', active ? 2 : 1); const c = centroid(z.pts || []); drawLabel(ctx2, project(c.x,c.y,8), z.name || z.id, active); });
       racks.slice().sort((a,b)=> ((Number(a.y)||0)+(Number(a.x)||0)) - ((Number(b.y)||0)+(Number(b.x)||0)) ).forEach(r => drawBox(ctx2, project, r, focusRackIds.has(r.id), state.ghost && !!prod && !focusRackIds.has(r.id)));
-      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
-      focusRackIds.forEach(rid => { const r = findRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
+      focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductRoute(ctx2, project, r); });
+      focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r) drawProductMarker(ctx2, project, r); });
       if(compass){ const deg = Math.round((((state.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
       renderNav3DSideRacks();
     }
@@ -7264,7 +7322,7 @@ function getSheetBranchOpenMap(){
     if(prod && !main && !store && !searchHit) g.classList.add('dim');
 
     const styleKind = normalizeRackStyle(model.style);
-    if(isUnderStairsStyle(styleKind)) return buildUnderStairsIsoRack(r, prod);
+    if(isUnderStairsStyle(styleKind)) return buildUnderStairsIsoRack(rack, prod);
 
     const plan = getRackIsoPlan(r);
     const levels = Math.max(2, Number(model.levels || 4) || 4);
@@ -7463,11 +7521,13 @@ function getSheetBranchOpenMap(){
   }
 
   function renderRackDetail(rackId, prod = null, targetSvg = null, forcedModel = null, forcedRack = null){
-    const rack = forcedRack || findRackById(rackId) || appState.layout.racks[0];
-    const model = forcedModel || (rack ? rackModel(rack.modelId) : rackModel(appState.selectedModelId));
+    const fallbackModel = rackModel(appState.selectedModelId) || appState.models?.[0] || { id:'std_4', name:'Rack estándar', levels:4, slots:2, width:120, depth:40, height:240, clearance:0, style:'metallic' };
+    const foundRack = forcedRack || findRackById(rackId) || appState.layout?.racks?.[0] || null;
+    const rack = foundRack || { id:rackId || fallbackModel.id || 'Rack', modelId:fallbackModel.id, x:0, y:0, w:fallbackModel.width || 120, h:fallbackModel.depth || 40, rackHeight:fallbackModel.height || 240, zoneId:'' };
+    const model = forcedModel || rackModel(rack.modelId) || fallbackModel;
     const holder = targetSvg || $('#rackView');
     if(model && isUnderStairsStyle(model.style)) return renderUnderStairsDetail(rackId, prod, holder, model, rack);
-    if(!holder) return;
+    if(!holder || !model) return;
     holder.innerHTML = '';
     holder.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
@@ -7481,7 +7541,7 @@ function getSheetBranchOpenMap(){
     const levelSlots = buildLevelSlots(model);
     const levelHeights = buildLevelHeights(model);
     const styleKind = normalizeRackStyle(model.style);
-    if(isUnderStairsStyle(styleKind)) return buildUnderStairsIsoRack(r, prod);
+    if(isUnderStairsStyle(styleKind)) return buildUnderStairsIsoRack(rack, prod);
     const rackDims = { x:-68, y:-22, w:model.width || 150, d:model.depth || 82, h:model.height || 238, levels:model.levels || 4, slots:Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2)), clearance };
     const selectedLayoutRack = forcedRack || findRackById(rackId) || null;
     const renderContextMode = !!selectedLayoutRack && ['rackViewPrimary','rackViewStore','nav3dRackPrimary','nav3dRackStore'].includes(holder.id);
