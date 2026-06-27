@@ -6596,9 +6596,13 @@ function getSheetBranchOpenMap(){
       const scale = 0.035;
       const hScale = 0.020;
       const world = new THREE.Group(); scene.add(world);
-      // V48: corregimos orientación: el layout 2D usa Y hacia abajo; en Three.js usamos Z invertido para respetar el plano del editor.
-      const toWorld = (x,y,z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, -(Number(y||0)-bounds.cy)*scale);
-      const rackYaw = (r) => THREE.MathUtils.degToRad(Number(r?.rot || 0) || 0);
+      // V49: sistema único layout 2D → mundo 3D.
+      // El editor usa X hacia la derecha e Y hacia abajo. En Three.js usamos X igual y Z como profundidad positiva,
+      // para que una vista superior conserve la misma lectura del plano 2D.
+      const layoutToWorld = (x, y, z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, (Number(y||0)-bounds.cy)*scale);
+      const layoutToShapePoint = (pt) => new THREE.Vector2((Number(pt?.x||0)-bounds.cx)*scale, -(Number(pt?.y||0)-bounds.cy)*scale);
+      const toWorld = layoutToWorld;
+      const rackYaw = (r) => -THREE.MathUtils.degToRad(Number(r?.rot || 0) || 0);
       const makeFloorTexture = () => {
         const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
         const g = c.getContext('2d');
@@ -6614,15 +6618,24 @@ function getSheetBranchOpenMap(){
         const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2,2); return tex;
       };
       const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
-      const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45 });
+      const layoutZones = Array.isArray(appState.layout?.zones) ? appState.layout.zones.filter(z => (z.pts || []).length >= 3) : [];
+      const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .08 : 1 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 30, 0x6ff0b4, 0x2f6680); grid.position.y=.022; grid.material.transparent = true; grid.material.opacity = visual.grid; world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.38, visual.grid*.52); world.add(grid);
 
-      const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:ui.visual === 'oscuro' ? .085 : .13, side:THREE.DoubleSide, depthWrite:false });
-      (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => {
-        // La rotación X del plano convierte Y local en -Z mundo, por eso los puntos se mantienen con Y layout positivo.
-        const pts = (z.pts || []).map(p => new THREE.Vector2((Number(p.x||0)-bounds.cx)*scale, (Number(p.y||0)-bounds.cy)*scale));
-        if(pts.length >= 3){ const shape = new THREE.Shape(pts); const geo = new THREE.ShapeGeometry(shape); const mesh = new THREE.Mesh(geo, zoneMat.clone()); mesh.rotation.x = -Math.PI/2; mesh.position.y=.025; world.add(mesh); }
+      const zoneFloorMat = new THREE.MeshStandardMaterial({ color:visual.floor, roughness:.52, metalness:.18, transparent:false, opacity:1, side:THREE.DoubleSide });
+      const zoneOverlayMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:ui.visual === 'oscuro' ? .10 : .16, side:THREE.DoubleSide, depthWrite:false });
+      const zoneLineMat = new THREE.LineBasicMaterial({ color:0x86ffd0, transparent:true, opacity:ui.visual === 'oscuro' ? .38 : .55 });
+      layoutZones.forEach(z => {
+        const pts = (z.pts || []).map(layoutToShapePoint);
+        if(pts.length >= 3){
+          const shape = new THREE.Shape(pts);
+          const geo = new THREE.ShapeGeometry(shape);
+          const floorMesh = new THREE.Mesh(geo, zoneFloorMat.clone()); floorMesh.rotation.x = -Math.PI/2; floorMesh.position.y=.018; floorMesh.receiveShadow = true; world.add(floorMesh);
+          const overlay = new THREE.Mesh(geo.clone(), zoneOverlayMat.clone()); overlay.rotation.x = -Math.PI/2; overlay.position.y=.038; world.add(overlay);
+          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, .052, -v.y));
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), zoneLineMat); world.add(line);
+        }
       });
 
       const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:visual.ghost, roughness:.82, metalness:.10, depthWrite:false });
