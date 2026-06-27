@@ -5100,3 +5100,72 @@ body.theme-light .brand-box{
   .v60-product-location-body{grid-template-columns:1fr;grid-template-rows:minmax(420px,1fr) minmax(280px,.7fr)}
   .viewer-location-actions-extended{grid-template-columns:1fr;}
 }
+
+/* V62: zonas ghost + cards laterales de racks más centradas y visibles */
+.nav3d-webgl-mode .nav3d-side{
+  grid-template-rows:minmax(360px,1.12fr) minmax(300px,.88fr);
+  gap:18px;
+  padding:20px;
+}
+.nav3d-webgl-mode .nav3d-rack-card{
+  grid-template-rows:auto minmax(300px,1fr) auto;
+  border-radius:26px;
+}
+.nav3d-webgl-mode .nav3d-rack-card.target-active{
+  border-color:rgba(126,255,184,.74);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 0 0 1px rgba(126,255,184,.26),
+    0 0 34px rgba(65,245,140,.18),
+    0 20px 52px rgba(0,0,0,.28);
+}
+.nav3d-webgl-mode .nav3d-rack-card.target-active::before{
+  content:'Rack activo';
+  position:absolute;
+  top:12px;
+  right:52px;
+  z-index:2;
+  padding:5px 9px;
+  border-radius:999px;
+  border:1px solid rgba(126,255,184,.32);
+  background:rgba(42,210,116,.14);
+  color:#bcffd8;
+  font-size:10px;
+  font-weight:1000;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.nav3d-webgl-mode .nav3d-rack-card.target-active .nav3d-rack-stage{
+  padding:18px;
+}
+.nav3d-webgl-mode .nav3d-rack-stage{
+  display:grid;
+  place-items:center;
+  min-height:300px;
+}
+.nav3d-webgl-mode .nav3d-rack-stage svg{
+  width:100%;
+  height:100%;
+  max-height:100%;
+  object-fit:contain;
+  background:
+    radial-gradient(circle at 50% 38%,rgba(126,255,184,.10),transparent 34%),
+    radial-gradient(circle at 50% 20%,rgba(104,152,196,.14),transparent 42%),
+    linear-gradient(180deg,rgba(7,14,24,.97),rgba(4,9,16,.99));
+}
+.nav3d-webgl-mode .nav3d-rack-card.target-active .nav3d-rack-stage svg{
+  box-shadow:
+    inset 0 0 0 1px rgba(126,255,184,.20),
+    inset 0 0 34px rgba(74,255,150,.08);
+}
+.nav3d-webgl-mode .nav3d-rack-meta{
+  justify-content:center;
+  padding:0 16px 16px;
+}
+.nav3d-webgl-mode .nav3d-rack-badge.is-active{
+  transform:scale(1.04);
+}
+@media(max-width:1280px){
+  .nav3d-webgl-mode .nav3d-side{grid-template-rows:minmax(330px,1.08fr) minmax(280px,.92fr)}
+  .nav3d-webgl-mode .nav3d-rack-card{grid-template-rows:auto minmax(280px,1fr) auto}
+}

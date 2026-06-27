@@ -6958,23 +6958,29 @@ function getSheetBranchOpenMap(){
       const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
       const { focusRackIds, focusZoneIds } = getFocusSets();
       const layoutZonesRaw = Array.isArray(appState.layout?.zones) ? appState.layout.zones.filter(z => (z.pts || []).length >= 3) : [];
-      const layoutZones = ui.isolation === 'solo' ? layoutZonesRaw.filter(z => focusZoneIds.has(z.id)) : layoutZonesRaw;
-      const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .08 : 1 });
+      // V62: mantener el layout completo como referencia espacial. Las zonas fuera del foco quedan en modo ghost,
+      // mientras que la zona activa conserva mayor presencia visual.
+      const layoutZones = layoutZonesRaw;
+      const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .055 : 1 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.38, visual.grid*.52); world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.34, visual.grid*.48); world.add(grid);
 
-      const zoneFloorMat = new THREE.MeshStandardMaterial({ color:visual.floor, roughness:.52, metalness:.18, transparent:false, opacity:1, side:THREE.DoubleSide });
-      const zoneOverlayMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:ui.visual === 'oscuro' ? .10 : .16, side:THREE.DoubleSide, depthWrite:false });
-      const zoneLineMat = new THREE.LineBasicMaterial({ color:0x86ffd0, transparent:true, opacity:ui.visual === 'oscuro' ? .38 : .55 });
+      const makeZoneMaterials = (active=false) => ({
+        floor: new THREE.MeshStandardMaterial({ color:active ? 0x183d52 : visual.floor, roughness:.52, metalness:.18, transparent:true, opacity:active ? .92 : .16, side:THREE.DoubleSide, depthWrite:active }),
+        overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .12 : .18) : .035, side:THREE.DoubleSide, depthWrite:false }),
+        line: new THREE.LineBasicMaterial({ color:active ? 0x86ffd0 : 0x91bad3, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .46 : .68) : .20 })
+      });
       layoutZones.forEach(z => {
         const pts = (z.pts || []).map(layoutToShapePoint);
         if(pts.length >= 3){
+          const isActiveZone = focusZoneIds.has(z.id);
+          const mats = makeZoneMaterials(isActiveZone);
           const shape = new THREE.Shape(pts);
           const geo = new THREE.ShapeGeometry(shape);
-          const floorMesh = new THREE.Mesh(geo, zoneFloorMat.clone()); floorMesh.rotation.x = -Math.PI/2; floorMesh.position.y=.018; floorMesh.receiveShadow = true; world.add(floorMesh);
-          const overlay = new THREE.Mesh(geo.clone(), zoneOverlayMat.clone()); overlay.rotation.x = -Math.PI/2; overlay.position.y=.038; world.add(overlay);
-          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, .052, -v.y));
-          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), zoneLineMat); world.add(line);
+          const floorMesh = new THREE.Mesh(geo, mats.floor); floorMesh.rotation.x = -Math.PI/2; floorMesh.position.y=isActiveZone ? .022 : .012; floorMesh.receiveShadow = isActiveZone; world.add(floorMesh);
+          const overlay = new THREE.Mesh(geo.clone(), mats.overlay); overlay.rotation.x = -Math.PI/2; overlay.position.y=isActiveZone ? .044 : .031; world.add(overlay);
+          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, isActiveZone ? .064 : .045, -v.y));
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), mats.line); world.add(line);
         }
       });
 
@@ -7074,12 +7080,12 @@ function getSheetBranchOpenMap(){
       const visibleRacks = getNav3DRacks().filter(r => {
         if(ui.isolation === 'all') return true;
         if(ui.isolation === 'zone') return focusZoneIds.has(r.zoneId);
-        if(ui.isolation === 'solo') return focusRackIds.has(r.id);
+        if(ui.isolation === 'solo') return focusRackIds.has(r.id) || focusZoneIds.has(r.zoneId);
         return focusRackIds.has(r.id);
       });
       visibleRacks.forEach(r => {
         const active = focusRackIds.has(r.id);
-        const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, ui.ghost);
+        const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, true);
         rackObject.userData.rackId = r.id;
         rackObject.traverse(obj => {
           obj.userData.rackId = r.id;
