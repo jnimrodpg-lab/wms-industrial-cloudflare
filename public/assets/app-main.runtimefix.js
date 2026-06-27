@@ -6366,7 +6366,7 @@ function getSheetBranchOpenMap(){
           <div>
             <div class="search-card-kicker">Visor libre · WebGL</div>
             <h2>Entorno 3D navegable</h2>
-            <p>Three.js activo: modo operativo con mejor iluminación, contraste y ruta 3D.</p>
+            <p>Three.js activo: orientación corregida según el layout, iluminación operativa y ruta 3D.</p>
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
@@ -6596,7 +6596,9 @@ function getSheetBranchOpenMap(){
       const scale = 0.035;
       const hScale = 0.020;
       const world = new THREE.Group(); scene.add(world);
-      const toWorld = (x,y,z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, (Number(y||0)-bounds.cy)*scale);
+      // V48: corregimos orientación: el layout 2D usa Y hacia abajo; en Three.js usamos Z invertido para respetar el plano del editor.
+      const toWorld = (x,y,z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, -(Number(y||0)-bounds.cy)*scale);
+      const rackYaw = (r) => THREE.MathUtils.degToRad(Number(r?.rot || 0) || 0);
       const makeFloorTexture = () => {
         const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
         const g = c.getContext('2d');
@@ -6618,6 +6620,7 @@ function getSheetBranchOpenMap(){
 
       const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:ui.visual === 'oscuro' ? .085 : .13, side:THREE.DoubleSide, depthWrite:false });
       (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => {
+        // La rotación X del plano convierte Y local en -Z mundo, por eso los puntos se mantienen con Y layout positivo.
         const pts = (z.pts || []).map(p => new THREE.Vector2((Number(p.x||0)-bounds.cx)*scale, (Number(p.y||0)-bounds.cy)*scale));
         if(pts.length >= 3){ const shape = new THREE.Shape(pts); const geo = new THREE.ShapeGeometry(shape); const mesh = new THREE.Mesh(geo, zoneMat.clone()); mesh.rotation.x = -Math.PI/2; mesh.position.y=.025; world.add(mesh); }
       });
@@ -6658,6 +6661,7 @@ function getSheetBranchOpenMap(){
         const slots = Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2));
         const p = toWorld(Number(r.x||0) + Number(r.w||model.width||120)/2, Number(r.y||0) + Number(r.h||model.depth||56)/2, 0);
         group.position.set(p.x, 0, p.z);
+        group.rotation.y = rackYaw(r);
         const postW = Math.max(.045, w*.045);
         const beamH = Math.max(.035, rackH*.014);
         [[-w/2,-d/2],[w/2,-d/2],[-w/2,d/2],[w/2,d/2]].forEach(([x,z]) => addBox(group, postW, rackH, postW, x, rackH/2, z, matFrame));
@@ -6697,6 +6701,7 @@ function getSheetBranchOpenMap(){
         const w = Math.max(.8, (Number(r.w || model.width || 120))*scale), d = Math.max(.45, (Number(r.h || model.depth || 56))*scale), rackH = Math.max(1.1, (Number(r.rackHeight || model.height || 240))*hScale);
         const p = toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2, Number(r.y||0)+Number(r.h||model.depth||56)/2, 0);
         group.position.set(p.x,0,p.z);
+        group.rotation.y = rackYaw(r);
         const mesh = addBox(group, w, rackH, d, 0, rackH/2, 0, ghost ? matGhost : matActive, false);
         mesh.material.opacity = active ? .34 : (ghost ? .13 : .24);
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), active ? new THREE.LineBasicMaterial({ color:0x55ff99, transparent:true, opacity:.85 }) : matGhostWire);
