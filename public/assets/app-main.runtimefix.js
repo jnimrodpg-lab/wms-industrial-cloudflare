@@ -6120,7 +6120,7 @@ function getSheetBranchOpenMap(){
             <p>Arrastra para orbitar, rueda para zoom, Shift + arrastrar para mover la cámara.</p>
           </div>
           <div class="nav3d-actions">
-            <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
             <div class="nav3d-target-switch" id="nav3dTargetSwitch">
               <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
               <button type="button" data-nav3d-target="store">Almacén</button>
@@ -6128,9 +6128,11 @@ function getSheetBranchOpenMap(){
             </div>
             <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
-            <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
-            <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
-            <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
+            <div class="nav3d-visual-switch">
+              <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
+              <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
+              <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
+            </div>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
@@ -6633,10 +6635,10 @@ function getSheetBranchOpenMap(){
           <div>
             <div class="search-card-kicker">Ubicación visual · WebGL</div>
             <h2>3D enfocado al producto</h2>
-            <p>Vista directa a zona, rack, nivel y slot del producto seleccionado.</p>
+            <p>Visualización limpia del rack y slot activo.</p>
           </div>
           <div class="nav3d-actions">
-            <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
             <div class="nav3d-target-switch" id="nav3dTargetSwitch">
               <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
               <button type="button" data-nav3d-target="store">Almacén</button>
@@ -6644,9 +6646,11 @@ function getSheetBranchOpenMap(){
             </div>
             <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
-            <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
-            <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
-            <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
+            <div class="nav3d-visual-switch">
+              <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
+              <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
+              <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
+            </div>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
@@ -6669,16 +6673,16 @@ function getSheetBranchOpenMap(){
           <div class="nav3d-side">
             <div class="nav3d-rack-card is-primary">
               <div class="nav3d-rack-head">
-                <div><b>Rack de ubicación</b><div class="muted tiny">${escapeHtml(ctx.primaryLoc || 'Sin ubicación principal')}</div></div>
-                <div class="nav3d-rack-tools"><span class="chip">${escapeHtml(ctx.primaryRackId || '—')}</span><button class="nav3d-rack-expand" type="button" data-rack-expand="primary">⤢</button></div>
+                <div><b>Rack de ubicación</b><div class="muted tiny">${escapeHtml(ctx.primaryRackId || '—')}</div></div>
+                <div class="nav3d-rack-tools"><button class="nav3d-rack-expand" type="button" data-rack-expand="primary">⤢</button></div>
               </div>
               <div class="nav3d-rack-stage"><svg id="nav3dRackPrimary"></svg></div>
               <div class="nav3d-rack-meta" id="nav3dRackPrimaryMeta"></div>
             </div>
             <div class="nav3d-rack-card is-store">
               <div class="nav3d-rack-head">
-                <div><b>Rack de almacén</b><div class="muted tiny">${escapeHtml(ctx.storeLoc || 'Sin ubicación de almacén')}</div></div>
-                <div class="nav3d-rack-tools"><span class="chip">${escapeHtml(ctx.storeRackId || '—')}</span><button class="nav3d-rack-expand" type="button" data-rack-expand="store">⤢</button></div>
+                <div><b>Rack de almacén</b><div class="muted tiny">${escapeHtml(ctx.storeRackId || '—')}</div></div>
+                <div class="nav3d-rack-tools"><button class="nav3d-rack-expand" type="button" data-rack-expand="store">⤢</button></div>
               </div>
               <div class="nav3d-rack-stage"><svg id="nav3dRackStore"></svg></div>
               <div class="nav3d-rack-meta" id="nav3dRackStoreMeta"></div>
@@ -6773,7 +6777,7 @@ function getSheetBranchOpenMap(){
       const slotCount = Math.max(1, Number(model.slots || model.capacity || 1) || 1);
       const activeLevel = Math.max(1, Number(nivel || 1) || 1);
       const activeSlot = Math.max(1, Number(slot || 1) || 1);
-      return `<span class="nav3d-rack-badge is-active">Activo N${activeLevel} · S${activeSlot}</span><span class="nav3d-rack-badge">Niveles ${levelCount}</span><span class="nav3d-rack-badge">Slots ${slotCount}</span><span class="nav3d-rack-badge">WebGL</span>${extraActive ? `<span class="nav3d-rack-badge is-accent">${escapeHtml(extraActive)}</span>` : ''}`;
+      return `<span class="nav3d-rack-badge is-active">Activo N${activeLevel} · S${activeSlot}</span><span class="nav3d-rack-badge">${levelCount} niveles</span><span class="nav3d-rack-badge">${slotCount} slots</span>${extraActive ? `<span class="nav3d-rack-badge is-accent">${escapeHtml(extraActive)}</span>` : ''}`;
     };
     const renderSideRacks = () => {
       const liveCtx = getViewerProductLocationContext(prod);
@@ -6801,6 +6805,7 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
+    const activePulseTargets = [];
     const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
@@ -6854,36 +6859,33 @@ function getSheetBranchOpenMap(){
     const renderProductOperationalCard = () => {
       if(!productCard) return;
       const liveCtx = getViewerProductLocationContext(prod);
-      const targetRackId = getTargetRackId();
-      const targetLoc = getTargetLoc();
       const isBoth = ui.target === 'both';
+      const targetLoc = getTargetLoc();
       const level = ui.target === 'store' ? (prod?.nivelStore || '—') : (prod?.nivel || '—');
       const slot = ui.target === 'store' ? (prod?.slotStore || '—') : (prod?.slot || '—');
+      const rackId = ui.target === 'store' ? (liveCtx.storeRackId || prod?.rackStore || '—') : (liveCtx.primaryRackId || prod?.rack || '—');
       productCard.innerHTML = `
-        <div class="nav3d-product-topline">
+        <div class="nav3d-product-topline compact">
           <div>
-            <div class="nav3d-product-kicker">Producto activo · ${isBoth ? 'Ambas ubicaciones' : ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
+            <div class="nav3d-product-kicker">Producto activo</div>
             <b>${escapeHtml(prod?.nombre || 'Producto sin nombre')}</b>
           </div>
           <div class="nav3d-product-sku">${escapeHtml(prod?.sku || 'SKU —')}</div>
         </div>
+        <div class="nav3d-product-inline-location">${escapeHtml(isBoth ? `${liveCtx.primaryLoc || '—'} · ${liveCtx.storeLoc || '—'}` : targetLoc)}</div>
         ${isBoth ? `
-          <div class="nav3d-product-grid nav3d-product-grid-both">
-            <span>Ubicación</span><strong>${escapeHtml(liveCtx.primaryLoc || '—')}</strong>
-            <span>Almacén</span><strong>${escapeHtml(liveCtx.storeLoc || '—')}</strong>
+          <div class="nav3d-product-focus dual">
+            <span class="nav3d-focus-pill">Ubicación <b>${escapeHtml(liveCtx.primaryRackId || '—')}</b></span>
+            <span class="nav3d-focus-pill">Almacén <b>${escapeHtml(liveCtx.storeRackId || '—')}</b></span>
           </div>` : `
-          <div class="nav3d-product-grid">
-            <span>Destino</span><strong>${escapeHtml(targetLoc)}</strong>
-            <span>Rack</span><strong>${escapeHtml(targetRackId || '—')}</strong>
-          </div>
           <div class="nav3d-product-focus">
+            <span class="nav3d-focus-pill">Rack <b>${escapeHtml(rackId)}</b></span>
             <span class="nav3d-focus-pill">Nivel <b>${escapeHtml(String(level))}</b></span>
             <span class="nav3d-focus-pill nav3d-focus-pill-slot">Slot <b>${escapeHtml(String(slot))}</b></span>
           </div>`}
-        <div class="nav3d-product-actions nav3d-product-actions-focused">
+        <div class="nav3d-product-actions nav3d-product-actions-focused compact">
           <button type="button" data-nav3d-product-action="center">Centrar</button>
           <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
-          <button type="button" data-nav3d-product-action="variants">Variantes</button>
         </div>`;
     };
     const renderMiniMap = () => {
@@ -7084,21 +7086,13 @@ function getSheetBranchOpenMap(){
             const isTarget = active && li === target.level && si === target.slot;
             const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, ((li+si)%4===0) ? matWrap : ((li+si)%2 ? matBox : matBox2));
             if(isTarget){
-              addBox(group, bw*.96, boxH*1.18, boxD*1.18, bx, baseY + boxH/2, d*.05, matActive, false);
-              const markerY = baseY + boxH + .34;
-              const pin = new THREE.Mesh(new THREE.SphereGeometry(.19, 32, 18), matRoute);
-              pin.position.set(bx, markerY, d*.05); group.add(pin);
-              const ring = new THREE.Mesh(new THREE.TorusGeometry(.38, .03, 16, 72), matRoute);
-              ring.position.set(bx, markerY-.13, d*.05); ring.rotation.x = Math.PI/2; group.add(ring);
-              const ringHalo = new THREE.Mesh(new THREE.TorusGeometry(.48, .028, 14, 72), matRouteHalo);
-              ringHalo.position.set(bx, markerY-.13, d*.05); ringHalo.rotation.x = Math.PI/2; group.add(ringHalo);
-              const stem = new THREE.Mesh(new THREE.CylinderGeometry(.024,.024,.56,14), matRoute);
-              stem.position.set(bx, markerY-.35, d*.05); group.add(stem);
-              const beam = new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,Math.max(.65, rackH - baseY - boxH),10), matRouteHalo);
-              beam.position.set(bx, markerY + ((rackH - baseY - boxH) * .5) - .20, d*.05); group.add(beam);
+              const activeShell = addBox(group, bw*.96, boxH*1.18, boxD*1.18, bx, baseY + boxH/2, d*.05, matActive, false);
+              const glowShell = addBox(group, bw*1.08, boxH*1.26, boxD*1.26, bx, baseY + boxH/2, d*.05, new THREE.MeshBasicMaterial({ color:0xffdd70, transparent:true, opacity:.14, depthWrite:false }), false);
+              const markerY = baseY + boxH + .28;
               const slotLabel = createSlotLabelSprite(`N${li} · S${si}`);
-              slotLabel.position.set(bx, markerY + .58, d*.05);
+              slotLabel.position.set(bx, markerY + .42, d*.05);
               group.add(slotLabel);
+              activePulseTargets.push({ activeShell, glowShell, slotLabel, baseScale:1, labelY:slotLabel.position.y });
             }
           }
         }
@@ -7216,11 +7210,11 @@ function getSheetBranchOpenMap(){
         renderRackPopover(rackId);
         if(center) focusRackCamera(rackId, true);
         else focusRackCamera(rackId, false);
-        setTimeout(() => { close(); openNavigable3DModal(prod); }, 160);
+        setTimeout(() => { renderSideRacks(); renderProductOperationalCard(); renderMiniMap(); syncToolbar(); }, 60);
       };
       const resize = () => { const rect = canvas.getBoundingClientRect(); renderer.setSize(Math.max(320,rect.width), Math.max(260,rect.height), false); camera.aspect = Math.max(1,rect.width)/Math.max(1,rect.height); camera.updateProjectionMatrix(); };
       resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas); resize();
-      const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); renderer.render(scene,camera); };
+      const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); const t = performance.now() * 0.0032; activePulseTargets.forEach(item => { const pulse = 0.72 + (Math.sin(t) + 1) * 0.34; if(item.activeShell?.material){ item.activeShell.material.opacity = 0.48 + pulse * 0.24; item.activeShell.material.emissiveIntensity = 1.25 + pulse * 1.15; } if(item.glowShell){ const s = 0.98 + pulse * 0.08; item.glowShell.scale.set(s,s,s); if(item.glowShell.material) item.glowShell.material.opacity = 0.07 + pulse * 0.11; } if(item.slotLabel){ item.slotLabel.material.opacity = 0.74 + pulse * 0.22; item.slotLabel.position.y = item.labelY + pulse * 0.04; } }); renderer.render(scene,camera); };
       animate();
       canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); });
       canvas.addEventListener('pointermove', e => {
@@ -8965,7 +8959,7 @@ function getSheetBranchOpenMap(){
           toIso(x0+sw, shelfY1 - 8, z + 1),
           toIso(x0, shelfY1 - 8, z + 1)
         ],{fill:slotClass?'rgba(255,216,77,.92)':'transparent',stroke:slotClass?'#ffc400':'rgba(201,216,237,.18)','stroke-width':slotClass?'2.35':'1',filter:slotClass?'url(#slotGlow)':''}));
-        if(slotClass){ const mk = toIso(x0 + sw/2, shelfY0 + (shelfY1-shelfY0)/2, z + Math.min(88, dividerH * 0.7)); root.appendChild(buildBlinkMarker(mk.x, mk.y, '#ffd84d', true)); }
+
         if(styleKind === 'melamine'){
           const boxDepth = getRackBoxDepth(shelfY1 - shelfY0, 3, 18);
           const boxInsetX = Math.max(2.6, Math.min(4.8, sw * 0.06));
