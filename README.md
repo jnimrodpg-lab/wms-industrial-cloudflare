@@ -75,3 +75,7 @@ Esta versión reencamina la app para que el flujo principal sea buscar un produc
 - Selector de enfoque: Ubicación / Almacén / Ambas.
 - Zoom automático al rack/zona activa usando el mismo sistema de coordenadas del layout.
 - Se mantiene eliminado el botón Copiar ubicación del panel principal.
+
+## V61 - 3D enfocado al producto
+
+Esta versión ajusta el visor 3D para que abra directamente enfocado en la ubicación visual del producto: zona, rack, nivel y slot. Se simplifica la interfaz del modal 3D y se refuerza el marcador del slot activo.

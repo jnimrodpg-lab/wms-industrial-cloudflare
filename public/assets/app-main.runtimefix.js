@@ -6124,15 +6124,9 @@ function getSheetBranchOpenMap(){
             <div class="nav3d-target-switch" id="nav3dTargetSwitch">
               <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
               <button type="button" data-nav3d-target="store">Almacén</button>
+              <button type="button" data-nav3d-target="both">Ambas</button>
             </div>
-            <button class="iso-tool active" data-nav3d-action="all">Todo</button>
-            <button class="iso-tool" data-nav3d-action="zone">Zona</button>
-            <button class="iso-tool" data-nav3d-action="rack">Rack</button>
-            <button class="iso-tool nav3d-solo-location" data-nav3d-action="solo">Solo ubicación</button>
-            <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
-            <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
-            <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
-            <button class="iso-tool" data-nav3d-action="slot">Slot</button>
+            <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
             <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
             <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
@@ -6637,24 +6631,18 @@ function getSheetBranchOpenMap(){
       <div class="nav3d-shell">
         <div class="nav3d-head">
           <div>
-            <div class="search-card-kicker">Visor libre · WebGL</div>
-            <h2>Entorno 3D navegable</h2>
-            <p>Three.js activo: orientación corregida según el layout, iluminación operativa y ruta 3D.</p>
+            <div class="search-card-kicker">Ubicación visual · WebGL</div>
+            <h2>3D enfocado al producto</h2>
+            <p>Vista directa a zona, rack, nivel y slot del producto seleccionado.</p>
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
             <div class="nav3d-target-switch" id="nav3dTargetSwitch">
               <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
               <button type="button" data-nav3d-target="store">Almacén</button>
+              <button type="button" data-nav3d-target="both">Ambas</button>
             </div>
-            <button class="iso-tool active" data-nav3d-action="all">Todo</button>
-            <button class="iso-tool" data-nav3d-action="zone">Zona</button>
-            <button class="iso-tool" data-nav3d-action="rack">Rack</button>
-            <button class="iso-tool nav3d-solo-location" data-nav3d-action="solo">Solo ubicación</button>
-            <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
-            <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
-            <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
-            <button class="iso-tool" data-nav3d-action="slot">Slot</button>
+            <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
             <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
             <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
@@ -6751,10 +6739,12 @@ function getSheetBranchOpenMap(){
     const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
     const getTargetRackId = () => {
       const liveCtx = getViewerProductLocationContext(prod);
-      return ui.target === 'store' ? (liveCtx.storeRackId || prod?.rackStore || '') : (liveCtx.primaryRackId || prod?.rack || '');
+      if(ui.target === 'store') return liveCtx.storeRackId || prod?.rackStore || '';
+      return liveCtx.primaryRackId || prod?.rack || '';
     };
     const getTargetLoc = () => {
       const liveCtx = getViewerProductLocationContext(prod);
+      if(ui.target === 'both') return `${liveCtx.primaryLoc || 'Sin ubicación principal'}${liveCtx.storeLoc && liveCtx.storeLoc !== liveCtx.primaryLoc ? ' · ' + liveCtx.storeLoc : ''}`;
       return ui.target === 'store' ? (liveCtx.storeLoc || 'Sin ubicación de almacén') : (liveCtx.primaryLoc || 'Sin ubicación principal');
     };
     const getFocusSets = () => {
@@ -6763,8 +6753,8 @@ function getSheetBranchOpenMap(){
       const focusRackIds = new Set([targetRackId, ui.selectedRackId, appState.ui?.nav3DSelectedRackId].filter(Boolean));
       if(ui.isolation === 'solo') [liveCtx.primaryRackId, liveCtx.storeRackId].filter(Boolean).forEach(id => focusRackIds.add(id));
       const focusZoneIds = new Set([]);
-      if(ui.target === 'store' && prod?.zonaStore) focusZoneIds.add(prod.zonaStore);
-      if(ui.target !== 'store' && prod?.zona) focusZoneIds.add(prod.zona);
+      if((ui.target === 'store' || ui.target === 'both') && prod?.zonaStore) focusZoneIds.add(prod.zonaStore);
+      if((ui.target !== 'store' || ui.target === 'both') && prod?.zona) focusZoneIds.add(prod.zona);
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
       return { focusRackIds, focusZoneIds };
     };
@@ -6789,8 +6779,8 @@ function getSheetBranchOpenMap(){
       renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel:liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg, null, findNav3DRackById(liveCtx.storeRackId));
       modal.querySelector('#nav3dRackPrimaryMeta').innerHTML = buildRackMetaHtml(liveCtx.primaryRackId, prod?.nivel, prod?.slot);
       modal.querySelector('#nav3dRackStoreMeta').innerHTML = buildRackMetaHtml(liveCtx.storeRackId, prod?.nivelStore, prod?.slotStore);
-      modal.querySelector('.nav3d-rack-card.is-primary')?.classList.toggle('target-active', ui.target === 'primary');
-      modal.querySelector('.nav3d-rack-card.is-store')?.classList.toggle('target-active', ui.target === 'store');
+      modal.querySelector('.nav3d-rack-card.is-primary')?.classList.toggle('target-active', ui.target === 'primary' || ui.target === 'both');
+      modal.querySelector('.nav3d-rack-card.is-store')?.classList.toggle('target-active', ui.target === 'store' || ui.target === 'both');
       renderProductOperationalCard();
       renderMiniMap();
     };
@@ -6809,7 +6799,7 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
-    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
+    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -6864,19 +6854,24 @@ function getSheetBranchOpenMap(){
       const liveCtx = getViewerProductLocationContext(prod);
       const targetRackId = getTargetRackId();
       const targetLoc = getTargetLoc();
+      const isBoth = ui.target === 'both';
       const level = ui.target === 'store' ? (prod?.nivelStore || '—') : (prod?.nivel || '—');
       const slot = ui.target === 'store' ? (prod?.slotStore || '—') : (prod?.slot || '—');
       productCard.innerHTML = `
-        <div class="nav3d-product-kicker">Producto activo · ${ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
+        <div class="nav3d-product-kicker">Producto activo · ${isBoth ? 'Ambas ubicaciones' : ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
         <b>${escapeHtml(prod?.nombre || 'Producto sin nombre')}</b>
         <div class="nav3d-product-sku">${escapeHtml(prod?.sku || 'SKU —')}</div>
-        <div class="nav3d-product-grid">
-          <span>Destino</span><strong>${escapeHtml(targetLoc)}</strong>
-          <span>Rack</span><strong>${escapeHtml(targetRackId || '—')}</strong>
-          <span>Nivel / Slot</span><strong>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</strong>
-        </div>
-        <div class="nav3d-product-actions">
-          <button type="button" data-nav3d-product-action="copy">Copiar ubicación</button>
+        ${isBoth ? `
+          <div class="nav3d-product-grid nav3d-product-grid-both">
+            <span>Ubicación</span><strong>${escapeHtml(liveCtx.primaryLoc || '—')}</strong>
+            <span>Almacén</span><strong>${escapeHtml(liveCtx.storeLoc || '—')}</strong>
+          </div>` : `
+          <div class="nav3d-product-grid">
+            <span>Destino</span><strong>${escapeHtml(targetLoc)}</strong>
+            <span>Rack</span><strong>${escapeHtml(targetRackId || '—')}</strong>
+            <span>Nivel / Slot</span><strong>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</strong>
+          </div>`}
+        <div class="nav3d-product-actions nav3d-product-actions-focused">
           <button type="button" data-nav3d-product-action="variants">Variantes</button>
           <button type="button" data-nav3d-product-action="center">Centrar</button>
           <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
@@ -6990,7 +6985,7 @@ function getSheetBranchOpenMap(){
       const matBox = new THREE.MeshStandardMaterial({ color:0xca9a5a, roughness:.86, metalness:.025 });
       const matBox2 = new THREE.MeshStandardMaterial({ color:0xd8d1bd, roughness:.74, metalness:.02 });
       const matWrap = new THREE.MeshStandardMaterial({ color:0xeff3e9, roughness:.62, metalness:.03 });
-      const matActive = new THREE.MeshStandardMaterial({ color:0x9eff6e, emissive:0x39f06e, emissiveIntensity:1.25, transparent:true, opacity:.56, roughness:.28, metalness:.08 });
+      const matActive = new THREE.MeshStandardMaterial({ color:0xc7ff4d, emissive:0x75ff5e, emissiveIntensity:1.95, transparent:true, opacity:.72, roughness:.22, metalness:.06 });
       const matRoute = new THREE.MeshStandardMaterial({ color:0x47ff91, emissive:0x38ff86, emissiveIntensity:1.6, roughness:.2, metalness:.05 });
       const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:ui.visual === 'oscuro' ? .22 : .32, depthWrite:false });
 
@@ -7040,7 +7035,16 @@ function getSheetBranchOpenMap(){
             const bx = -w*.39 + bw*(si-.5);
             const isTarget = active && li === target.level && si === target.slot;
             const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, ((li+si)%4===0) ? matWrap : ((li+si)%2 ? matBox : matBox2));
-            if(isTarget){ addBox(group, bw*.86, boxH*1.08, boxD*1.08, bx, baseY + boxH/2, d*.05, matActive, false); }
+            if(isTarget){
+              addBox(group, bw*.94, boxH*1.18, boxD*1.18, bx, baseY + boxH/2, d*.05, matActive, false);
+              const markerY = baseY + boxH + .34;
+              const pin = new THREE.Mesh(new THREE.SphereGeometry(.16, 28, 16), matRoute);
+              pin.position.set(bx, markerY, d*.05); group.add(pin);
+              const ring = new THREE.Mesh(new THREE.TorusGeometry(.33, .022, 12, 64), matRoute);
+              ring.position.set(bx, markerY-.13, d*.05); ring.rotation.x = Math.PI/2; group.add(ring);
+              const stem = new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,.50,12), matRoute);
+              stem.position.set(bx, markerY-.33, d*.05); group.add(stem);
+            }
           }
         }
         if(active){
@@ -7112,10 +7116,10 @@ function getSheetBranchOpenMap(){
       const initialPan = cameraFocusRack
         ? toWorld(Number(cameraFocusRack.x||0)+Number(cameraFocusRack.w||120)/2, Number(cameraFocusRack.y||0)+Number(cameraFocusRack.h||56)/2, 18)
         : new THREE.Vector3(0,0,0);
-      const initialDistance = Math.max(6, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .46 : .68));
+      const initialDistance = Math.max(5.2, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .34 : .58));
       const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
-      const selectedInitial = ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
-      if(selectedInitial) renderRackPopover(selectedInitial);
+      const selectedInitial = getTargetRackId() || ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
+      if(selectedInitial) { ui.selectedRackId = selectedInitial; appState.ui.nav3DSelectedRackId = selectedInitial; renderRackPopover(selectedInitial); }
       const updateCamera = () => {
         controls.yaw += (controls.targetYaw-controls.yaw)*.16;
         controls.pitch += (controls.targetPitch-controls.pitch)*.16;
@@ -7145,7 +7149,7 @@ function getSheetBranchOpenMap(){
         if(!rack) return;
         const target = toWorld(Number(rack.x||0)+Number(rack.w||120)/2, Number(rack.y||0)+Number(rack.h||56)/2, 18);
         controls.targetPan.copy(target);
-        controls.targetDistance = closeDistance ? Math.max(4.5, initialDistance * .45) : Math.max(6, initialDistance * .66);
+        controls.targetDistance = closeDistance ? Math.max(4.2, initialDistance * .34) : Math.max(5.2, initialDistance * .54);
       };
       const selectRackFromScene = (rackId, center = false) => {
         if(!rackId) return;
@@ -7208,7 +7212,6 @@ function getSheetBranchOpenMap(){
       productCard?.addEventListener('click', e => {
         const action = e.target?.dataset?.nav3dProductAction;
         if(!action) return;
-        if(action === 'copy') copySelectedProductLocation(prod);
         if(action === 'variants') openProductVariantsModal(prod);
         if(action === 'center') focusRackCamera(getTargetRackId(), true);
         if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); close(); openNavigable3DModal(prod); }
@@ -7218,7 +7221,7 @@ function getSheetBranchOpenMap(){
         if(action === 'focus' || action === 'slot'){
           controls.targetYaw = -Math.PI/4;
           controls.targetPitch = .68;
-          controls.targetDistance = action === 'slot' ? Math.max(4.8, floorW*.42) : initialDistance;
+          controls.targetDistance = action === 'slot' ? Math.max(4.2, initialDistance*.36) : Math.max(5.2, initialDistance*.48);
           controls.targetPan.copy(initialPan);
         }
         if(action && action.startsWith('visual-')){
