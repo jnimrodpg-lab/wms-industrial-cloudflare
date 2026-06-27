@@ -42,3 +42,8 @@ El archivo `public/assets/app-main.js` legacy fue eliminado porque `public/index
 - En **Vincular Sheet** ahora se pueden mapear `Imagen 1` a `Imagen 6`.
 - Los mapeos antiguos de video se ignoran para evitar que aparezcan videos dentro del card.
 
+
+
+## V52 - Salud del almacén
+
+Se agregó un diagnóstico avanzado para validar datos importados del Sheet, ubicaciones, duplicados, racks y zonas antes de operar picking, reposición o integraciones como Bsale. El reporte permite exportar observaciones en CSV para corregir los datos de origen.

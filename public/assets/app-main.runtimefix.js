@@ -5706,86 +5706,231 @@ function getSheetBranchOpenMap(){
     return !!String(p.ubicacion || p.location || '').trim();
   }
 
-  function getProductLocationIssue(product){
+  function isProbablyUrl(value){
+    const v = String(value || '').trim();
+    if(!v) return false;
+    if(/^https?:\/\//i.test(v)) return true;
+    if(/^data:image\//i.test(v)) return true;
+    if(/^\/\//.test(v)) return true;
+    if(/^\/[^\s]+\.(png|jpe?g|webp|gif|avif)(\?.*)?$/i.test(v)) return true;
+    return false;
+  }
+
+  function getProductLocationIssue(product, mode='primary'){
     const p = product || {};
-    const loc = String(p.ubicacion || '').trim();
-    if(!loc) return 'Sin ubicación';
-    const rackId = p.rack || parseLocationCode(loc, '').rackId || '';
+    const loc = String(mode === 'store' ? (p.almacen || '') : (p.ubicacion || '')).trim();
+    if(!loc) return mode === 'store' ? 'Sin ubicación de almacén' : 'Sin ubicación';
+    const parsed = mode === 'store'
+      ? parseLocationCode(loc, /^Z\d+/i.test(loc) ? 'Z1-E1' : 'ALM-E1')
+      : parseLocationCode(loc, 'Z1-E1');
+    const rackId = mode === 'store' ? (p.rackStore || parsed.rackId || '') : (p.rack || parsed.rackId || '');
     if(rackId && !findRackById(rackId)) return `Rack no existe: ${rackId}`;
     if(rackId){
       const rack = findRackById(rackId);
       const model = rack ? (appState.models.find(m => m.id === rack.modelId) || appState.models[0] || {}) : {};
       const levels = Math.max(1, Number(model.levels || 4));
       const slots = Math.max(1, Number(model.slots || 2));
-      const level = Number(p.nivel || parseLocationCode(loc, '').level || 0);
-      const slot = Number(p.slot || parseLocationCode(loc, '').slot || 0);
-      if(level && (level < 1 || level > levels)) return `Nivel fuera de rango: N${level}`;
-      if(slot && (slot < 1 || slot > slots)) return `Slot fuera de rango: S${slot}`;
+      const level = Number(mode === 'store' ? (p.nivelStore || parsed.level || 0) : (p.nivel || parsed.level || 0));
+      const slot = Number(mode === 'store' ? (p.slotStore || parsed.slot || 0) : (p.slot || parsed.slot || 0));
+      if(level && (level < 1 || level > levels)) return `Nivel fuera de rango: N${level} / máximo N${levels}`;
+      if(slot && (slot < 1 || slot > slots)) return `Slot fuera de rango: S${slot} / máximo S${slots}`;
     }
     return '';
   }
 
   function analyzeInventoryData(){
     const products = Array.isArray(appState.products) ? appState.products : [];
-    const counters = { total:products.length, missingName:0, missingSku:0, missingCategory:0, missingGender:0, missingImage:0, missingLocation:0, badLocation:0, rackMissing:0 };
+    const racks = Array.isArray(appState.layout?.racks) ? appState.layout.racks : [];
+    const zones = Array.isArray(appState.layout?.zones) ? appState.layout.zones : [];
+    const counters = {
+      total:products.length,
+      missingName:0,
+      missingSku:0,
+      missingBarcode:0,
+      missingCategory:0,
+      missingGender:0,
+      missingImage:0,
+      invalidImage:0,
+      missingLocation:0,
+      missingStoreLocation:0,
+      badLocation:0,
+      badStoreLocation:0,
+      rackMissing:0,
+      duplicateSku:0,
+      duplicateBarcode:0,
+      emptyRacks:0,
+      occupiedRacks:0,
+      overCapacityRacks:0,
+      racksTotal:racks.length,
+      zonesTotal:zones.length
+    };
     const issues = [];
+    const skuMap = new Map();
+    const barcodeMap = new Map();
+    const rackUsage = new Map(racks.map(r => [r.id, { id:r.id, products:0, capacity:0, zoneId:r.zoneId || '', overflow:0 }]));
+    const zoneUsage = new Map(zones.map(z => [z.id, { id:z.id, name:z.name || z.id, products:0, racks:0 }]));
+    racks.forEach(r => {
+      const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
+      const capacity = Math.max(1, Number(model.levels || 4)) * Math.max(1, Number(model.slots || 2));
+      const item = rackUsage.get(r.id);
+      if(item) item.capacity = capacity;
+      const z = zoneUsage.get(r.zoneId);
+      if(z) z.racks += 1;
+    });
+    const addIssue = (severity, type, detail, product=null, extra={}) => {
+      const row = product?._rowIndex || extra.row || '—';
+      const sku = String(product?.sku || extra.sku || '').trim() || '—';
+      const name = String(product?.nombre || extra.name || '').trim() || '—';
+      issues.push({ severity, row, sku, name, type, detail, ...extra });
+    };
     products.forEach((p, idx) => {
-      const row = p?._rowIndex || idx + 1;
       const sku = String(p?.sku || '').trim();
+      const barcode = String(p?.barras || '').trim();
       const name = String(p?.nombre || '').trim();
-      const add = (type, detail) => { if(issues.length < 180) issues.push({ row, sku: sku || '—', name: name || '—', type, detail }); };
-      if(!name){ counters.missingName++; add('Sin nombre', 'El producto no tiene nombre.'); }
-      if(!sku){ counters.missingSku++; add('Sin SKU', 'No se detectó SKU/código.'); }
-      if(!getProductCategoryValue(p)){ counters.missingCategory++; add('Sin categoría', 'Completa la columna Categoria.'); }
-      if(!getProductGenderValue(p)){ counters.missingGender++; add('Sin género', 'Completa la columna Genero: Mujer, Varón, Niños o Niñas.'); }
-      if(!getProductImageUrls(p).length){ counters.missingImage++; add('Sin imagen', 'No hay Imagen 1–6 para este producto.'); }
-      const locIssue = getProductLocationIssue(p);
+      if(sku){ const key = norm(sku); if(!skuMap.has(key)) skuMap.set(key, []); skuMap.get(key).push(p); }
+      if(barcode){ const key = norm(barcode); if(!barcodeMap.has(key)) barcodeMap.set(key, []); barcodeMap.get(key).push(p); }
+      if(!name){ counters.missingName++; addIssue('Alta','Sin nombre','El producto no tiene nombre. Esto impide mostrarlo correctamente.',p); }
+      if(!sku){ counters.missingSku++; addIssue('Alta','Sin SKU','No se detectó SKU/código. Afecta búsqueda, picking y cruce con Bsale.',p); }
+      if(!barcode){ counters.missingBarcode++; }
+      if(!getProductCategoryValue(p)){ counters.missingCategory++; addIssue('Media','Sin categoría','Completa la columna Categoria/Categoría para que los filtros funcionen.',p); }
+      if(!getProductGenderValue(p)){ counters.missingGender++; addIssue('Media','Sin género','Completa la columna Genero/Género: Mujer, Varón, Niños o Niñas.',p); }
+      const imgs = getProductImageUrls(p);
+      if(!imgs.length){ counters.missingImage++; addIssue('Baja','Sin imagen','No hay Imagen 1–6 para este producto.',p); }
+      else {
+        const badImgs = imgs.filter(v => !isProbablyUrl(v));
+        if(badImgs.length){ counters.invalidImage++; addIssue('Media','Imagen inválida',`Hay ${badImgs.length} imagen(es) con formato no reconocido. Usa URL https o data:image.`,p); }
+      }
+      const locIssue = getProductLocationIssue(p, 'primary');
       if(locIssue){
         if(locIssue === 'Sin ubicación') counters.missingLocation++;
         else counters.badLocation++;
         if(locIssue.startsWith('Rack no existe')) counters.rackMissing++;
-        add('Ubicación', locIssue);
+        addIssue(locIssue === 'Sin ubicación' ? 'Alta' : 'Alta','Ubicación principal',locIssue,p);
+      }
+      const storeIssue = getProductLocationIssue(p, 'store');
+      if(storeIssue){
+        if(storeIssue === 'Sin ubicación de almacén') counters.missingStoreLocation++;
+        else counters.badStoreLocation++;
+        if(storeIssue.startsWith('Rack no existe')) counters.rackMissing++;
+        addIssue(storeIssue === 'Sin ubicación de almacén' ? 'Media' : 'Alta','Ubicación almacén',storeIssue,p);
+      }
+      [p?.rack, p?.rackStore].filter(Boolean).forEach(rid => {
+        const usage = rackUsage.get(rid);
+        if(usage) usage.products += 1;
+      });
+      [p?.zona, p?.zonaStore].filter(Boolean).forEach(zid => {
+        const usage = zoneUsage.get(zid);
+        if(usage) usage.products += 1;
+      });
+    });
+    skuMap.forEach((items, key) => {
+      if(items.length > 1){
+        counters.duplicateSku += items.length;
+        items.slice(0, 30).forEach(p => addIssue('Alta','SKU duplicado',`El SKU aparece ${items.length} veces. Revisa variantes o códigos repetidos.`,p,{ duplicateKey:key }));
       }
     });
-    return { counters, issues };
+    barcodeMap.forEach((items, key) => {
+      if(items.length > 1){
+        counters.duplicateBarcode += items.length;
+        items.slice(0, 30).forEach(p => addIssue('Media','Barras duplicadas',`El código de barras aparece ${items.length} veces.`,p,{ duplicateKey:key }));
+      }
+    });
+    const rackStats = Array.from(rackUsage.values()).map(r => {
+      const overflow = Math.max(0, Number(r.products || 0) - Number(r.capacity || 0));
+      r.overflow = overflow;
+      if(Number(r.products || 0) <= 0) counters.emptyRacks++;
+      else counters.occupiedRacks++;
+      if(overflow > 0){ counters.overCapacityRacks++; addIssue('Media','Rack sobrecapacidad',`${r.id} tiene ${r.products} productos para ${r.capacity} posiciones estimadas.`,null,{ row:'—', sku:r.id, name:'Rack', rackId:r.id }); }
+      return r;
+    }).sort((a,b) => (b.products - a.products) || String(a.id).localeCompare(String(b.id)));
+    const zoneStats = Array.from(zoneUsage.values()).sort((a,b) => (b.products - a.products) || String(a.id).localeCompare(String(b.id)));
+    const high = issues.filter(i => i.severity === 'Alta').length;
+    const medium = issues.filter(i => i.severity === 'Media').length;
+    const low = issues.filter(i => i.severity === 'Baja').length;
+    const weighted = high * 3 + medium * 1.6 + low * .6;
+    const base = Math.max(1, counters.total * 3);
+    const score = Math.max(0, Math.min(100, Math.round(100 - (weighted / base) * 100)));
+    return { counters, issues, rackStats, zoneStats, score, severity:{ high, medium, low } };
+  }
+
+  function exportDataQualityCsv(report){
+    const data = report || analyzeInventoryData();
+    const header = ['Severidad','Fila','SKU','Producto','Tipo','Detalle'];
+    const esc = value => `"${String(value ?? '').replace(/"/g,'""')}"`;
+    const lines = [header.map(esc).join(',')].concat((data.issues || []).map(i => [i.severity,i.row,i.sku,i.name,i.type,i.detail].map(esc).join(',')));
+    const blob = new Blob([lines.join('\n')], { type:'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `diagnostico-wms-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1200);
+    showToast('Reporte CSV descargado.', 'success');
   }
 
   function openDataQualityModal(){
     const existing = document.getElementById('dataQualityModal');
     if(existing) existing.remove();
-    const { counters, issues } = analyzeInventoryData();
-    const total = Math.max(1, counters.total || 0);
-    const scoreRaw = 100 - Math.round(((counters.missingName + counters.missingSku + counters.missingCategory + counters.missingGender + counters.missingImage + counters.missingLocation + counters.badLocation) / total) * 100);
-    const score = Math.max(0, Math.min(100, scoreRaw));
+    const report = analyzeInventoryData();
+    const { counters, issues, rackStats, zoneStats, score, severity } = report;
     const cards = [
-      ['Total', counters.total, 'registros importados'],
-      ['Sin nombre', counters.missingName, 'deben corregirse'],
-      ['Sin SKU', counters.missingSku, 'afecta búsquedas'],
-      ['Sin categoría', counters.missingCategory, 'afecta filtros'],
-      ['Sin género', counters.missingGender, 'Mujer/Varón/Niños/Niñas'],
-      ['Sin imagen', counters.missingImage, 'afecta catálogo'],
-      ['Sin ubicación', counters.missingLocation, 'sin rack/slot'],
-      ['Ubicación inválida', counters.badLocation, 'rack, nivel o slot']
-    ].map(([label, value, hint]) => `<div class="dq-card ${Number(value)>0 && label !== 'Total' ? 'warn' : ''}"><b>${Number(value||0).toLocaleString('es-PE')}</b><span>${escapeHtml(label)}</span><small>${escapeHtml(hint)}</small></div>`).join('');
-    const rows = issues.slice(0, 80).map(item => `<tr><td>${escapeHtml(String(item.row))}</td><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td></tr>`).join('');
+      ['Productos', counters.total, 'registros importados', 'ok'],
+      ['Calidad', `${score}%`, `${severity.high} altas · ${severity.medium} medias`, score >= 85 ? 'ok' : 'warn'],
+      ['Sin ubicación', counters.missingLocation, 'ubicación principal vacía', 'warn'],
+      ['Ubicación inválida', counters.badLocation + counters.badStoreLocation, 'rack, nivel o slot', 'warn'],
+      ['Racks no encontrados', counters.rackMissing, 'no existen en layout', 'warn'],
+      ['SKU duplicado', counters.duplicateSku, 'registros afectados', 'warn'],
+      ['Barras duplicadas', counters.duplicateBarcode, 'registros afectados', 'warn'],
+      ['Sin nombre', counters.missingName, 'deben corregirse', 'warn'],
+      ['Sin SKU', counters.missingSku, 'afecta búsquedas', 'warn'],
+      ['Sin categoría', counters.missingCategory, 'afecta filtros', 'warn'],
+      ['Sin género', counters.missingGender, 'afecta filtros', 'warn'],
+      ['Imágenes inválidas', counters.invalidImage, 'URL no reconocida', 'warn'],
+      ['Racks vacíos', counters.emptyRacks, `${counters.racksTotal} racks en layout`, counters.emptyRacks ? 'neutral' : 'ok'],
+      ['Sobrecapacidad', counters.overCapacityRacks, 'racks con exceso estimado', 'warn'],
+      ['Zonas', counters.zonesTotal, 'zonas del layout', 'ok'],
+      ['Racks ocupados', counters.occupiedRacks, 'con productos vinculados', 'ok']
+    ].map(([label, value, hint, state]) => `<div class="dq-card ${state === 'warn' && Number(value)>0 ? 'warn' : state === 'neutral' ? 'neutral' : ''}"><b>${typeof value === 'number' ? Number(value||0).toLocaleString('es-PE') : escapeHtml(value)}</b><span>${escapeHtml(label)}</span><small>${escapeHtml(hint)}</small></div>`).join('');
+    const rows = issues.slice(0, 160).map(item => `<tr><td><span class="dq-severity ${norm(item.severity)}">${escapeHtml(item.severity)}</span></td><td>${escapeHtml(String(item.row))}</td><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td></tr>`).join('');
+    const rackRows = rackStats.slice(0, 18).map(r => `<tr><td>${escapeHtml(r.id)}</td><td>${escapeHtml(r.zoneId || '—')}</td><td>${Number(r.products||0).toLocaleString('es-PE')}</td><td>${Number(r.capacity||0).toLocaleString('es-PE')}</td><td>${r.overflow ? `<span class="dq-severity media">+${r.overflow}</span>` : 'OK'}</td></tr>`).join('');
+    const zoneRows = zoneStats.slice(0, 12).map(z => `<tr><td>${escapeHtml(z.id)}</td><td>${escapeHtml(z.name || z.id)}</td><td>${Number(z.racks||0).toLocaleString('es-PE')}</td><td>${Number(z.products||0).toLocaleString('es-PE')}</td></tr>`).join('');
     const modal = document.createElement('div');
     modal.id = 'dataQualityModal';
     modal.className = 'data-quality-backdrop show';
     modal.innerHTML = `
-      <div class="data-quality-shell">
+      <div class="data-quality-shell dq-health-shell">
         <div class="data-quality-head">
-          <div><div class="search-card-kicker">Control de calidad</div><h2>Diagnóstico de datos</h2><p>Detecta problemas del Sheet antes de ubicar productos en el layout o en el 3D.</p></div>
-          <div class="data-quality-actions"><span class="dq-score">Calidad ${score}%</span><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
+          <div><div class="search-card-kicker">Control de calidad · v52</div><h2>Salud del almacén</h2><p>Valida productos, ubicaciones, racks, duplicados e imágenes antes de operar picking, reposición o Bsale.</p></div>
+          <div class="data-quality-actions"><span class="dq-score ${score < 75 ? 'danger' : score < 90 ? 'warning' : ''}">Calidad ${score}%</span><button class="iso-tool" type="button" data-dq-export>Exportar CSV</button><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
         </div>
-        <div class="data-quality-grid">${cards}</div>
-        <div class="data-quality-table-wrap">
-          <div class="data-quality-table-head"><b>Observaciones detectadas</b><span>${issues.length.toLocaleString('es-PE')} alertas encontradas · se muestran hasta 80</span></div>
-          <table class="data-quality-table"><thead><tr><th>Fila</th><th>SKU</th><th>Producto</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No se detectaron observaciones críticas.</td></tr>'}</tbody></table>
+        <div class="data-quality-grid dq-health-grid">${cards}</div>
+        <div class="dq-health-tabs">
+          <button class="active" data-dq-tab="issues">Observaciones</button>
+          <button data-dq-tab="racks">Racks</button>
+          <button data-dq-tab="zones">Zonas</button>
+        </div>
+        <div class="data-quality-table-wrap dq-tab-panel active" data-dq-panel="issues">
+          <div class="data-quality-table-head"><b>Observaciones detectadas</b><span>${issues.length.toLocaleString('es-PE')} alertas encontradas · se muestran hasta 160</span></div>
+          <table class="data-quality-table"><thead><tr><th>Severidad</th><th>Fila</th><th>SKU</th><th>Producto</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No se detectaron observaciones críticas.</td></tr>'}</tbody></table>
+        </div>
+        <div class="data-quality-table-wrap dq-tab-panel" data-dq-panel="racks">
+          <div class="data-quality-table-head"><b>Uso por rack</b><span>${rackStats.length.toLocaleString('es-PE')} racks revisados</span></div>
+          <table class="data-quality-table"><thead><tr><th>Rack</th><th>Zona</th><th>Productos</th><th>Capacidad estimada</th><th>Estado</th></tr></thead><tbody>${rackRows || '<tr><td colspan="5">No hay racks creados en el layout.</td></tr>'}</tbody></table>
+        </div>
+        <div class="data-quality-table-wrap dq-tab-panel" data-dq-panel="zones">
+          <div class="data-quality-table-head"><b>Uso por zona</b><span>${zoneStats.length.toLocaleString('es-PE')} zonas revisadas</span></div>
+          <table class="data-quality-table"><thead><tr><th>Zona</th><th>Nombre</th><th>Racks</th><th>Productos vinculados</th></tr></thead><tbody>${zoneRows || '<tr><td colspan="4">No hay zonas creadas en el layout.</td></tr>'}</tbody></table>
         </div>
       </div>`;
     document.body.appendChild(modal);
     const close = () => modal.remove();
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
+    modal.querySelector('[data-dq-export]')?.addEventListener('click', () => exportDataQualityCsv(report));
+    modal.querySelectorAll('[data-dq-tab]').forEach(btn => btn.addEventListener('click', () => {
+      const tab = btn.dataset.dqTab;
+      modal.querySelectorAll('[data-dq-tab]').forEach(b => b.classList.toggle('active', b === btn));
+      modal.querySelectorAll('[data-dq-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.dqPanel === tab));
+    }));
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
   }
 

@@ -4879,3 +4879,21 @@ body.theme-light .brand-box{
 .nav3d-rack-card.target-active .nav3d-rack-head{background:linear-gradient(180deg,rgba(126,255,184,.10),rgba(255,255,255,0))}
 @media(max-width:1100px){.nav3d-product-card{position:absolute;width:min(300px,calc(100% - 36px))}.nav3d-minimap{width:210px}.nav3d-product-actions{grid-template-columns:1fr}}
 @media(max-width:680px){.nav3d-product-card{display:none}.nav3d-minimap{display:none}.nav3d-target-switch{order:2;width:100%;justify-content:center}.nav3d-target-switch button{flex:1}}
+
+/* V52: salud del almacén y diagnóstico avanzado */
+.dq-health-shell{grid-template-rows:auto auto auto minmax(0,1fr)!important}
+.dq-health-grid{grid-template-columns:repeat(4,1fr)}
+.dq-card.neutral{border-color:rgba(133,170,212,.22);background:linear-gradient(180deg,rgba(133,170,212,.10),rgba(255,255,255,.018))}
+.dq-score.warning{background:rgba(255,213,105,.14);border-color:rgba(255,213,105,.28);color:#ffe6a8}
+.dq-score.danger{background:rgba(255,105,105,.14);border-color:rgba(255,105,105,.28);color:#ffd0d0}
+.dq-health-tabs{display:flex;gap:8px;align-items:center;padding:12px 22px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.dq-health-tabs button{border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.035);color:rgba(234,247,239,.76);font-weight:1000;border-radius:999px;padding:10px 14px;cursor:pointer}
+.dq-health-tabs button.active{background:linear-gradient(180deg,rgba(111,224,161,.22),rgba(255,255,255,.035));border-color:rgba(111,224,161,.34);color:#fff}
+.dq-tab-panel{display:none}
+.dq-tab-panel.active{display:block}
+.dq-severity{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:1000;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#eaf7ef}
+.dq-severity.alta{background:rgba(255,105,105,.14);border-color:rgba(255,105,105,.34);color:#ffd2d2}
+.dq-severity.media{background:rgba(255,213,105,.14);border-color:rgba(255,213,105,.32);color:#ffe8ae}
+.dq-severity.baja{background:rgba(125,180,255,.14);border-color:rgba(125,180,255,.30);color:#d7e9ff}
+@media(max-width:1180px){.dq-health-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:680px){.dq-health-tabs{overflow:auto;padding:10px 14px 0}.dq-health-grid{grid-template-columns:1fr}.dq-health-shell .data-quality-table{min-width:980px}}
