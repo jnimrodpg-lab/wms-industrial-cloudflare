@@ -12800,6 +12800,138 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   setTimeout(applyV57CleanLocationFocus, 1800);
 
 
+  // V58 - Restaura el cuadro de propiedades del producto al diseño v54, manteniendo el resto del flujo actual.
+  renderViewerProductInfoPanel = function(){
+    clearViewerImageRotationTimer();
+    if(typeof removeOperationalStockUi === 'function') removeOperationalStockUi();
+    const ctx = getViewerProductLocationContext(appState.selectedProduct);
+    const prod = appState.selectedProduct || null;
+    detailTitle.textContent = 'Información del producto';
+    detailSubtitle.textContent = '';
+    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
+    detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
+    if(!prod){
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver sus variantes.</div></div></div>`;
+      return;
+    }
+    const images = getProductImageUrls(prod).filter(Boolean);
+    const img = images[0] || '';
+    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
+    const family = getViewerProductFamilySummary(prod);
+    const sizesHtml = family.sizes.length
+      ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
+      : '<span class="muted tiny">Sin tallas detectadas</span>';
+    const colorsHtml = family.colors.length
+      ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('')
+      : '<span class="muted tiny">Sin colores detectados</span>';
+    detailWrap.innerHTML = `
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel v58-restored-product-panel">
+        <div class="viewer-product-top-layout">
+          <div class="viewer-media-col">
+            <div class="viewer-product-media ${img ? '' : 'empty'}">
+              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+            </div>
+            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
+          </div>
+          <div class="viewer-side-col">
+            <div class="viewer-product-copy tight">
+              <div class="search-card-kicker">Producto</div>
+              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
+            </div>
+            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid location-only-grid">
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-bottom-info product-variants-only">
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas del modelo</b><small>${family.sizes.length || 0} registradas</small></div></div>
+            <div class="viewer-variant-chip-wrap">${sizesHtml}</div>
+          </div>
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon color-dot"></span><div><b>Colores del modelo</b><small>${family.colors.length || 0} registrados</small></div></div>
+            <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
+          </div>
+        </div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
+      </div>`;
+    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
+    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
+    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
+  };
+
+
+
+  // V59 - Restaura el cuadro de propiedades del producto al diseño base v54, manteniendo el resto del sistema actual.
+  renderViewerProductInfoPanel = function(){
+    clearViewerImageRotationTimer();
+    if(typeof removeOperationalStockUi === 'function') removeOperationalStockUi();
+    const ctx = getViewerProductLocationContext(appState.selectedProduct);
+    const prod = appState.selectedProduct || null;
+    detailTitle.textContent = 'Información del producto';
+    detailSubtitle.textContent = '';
+    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
+    detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
+    if(!prod){
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver sus variantes.</div></div></div>`;
+      return;
+    }
+    const images = getProductImageUrls(prod).filter(Boolean);
+    const img = images[0] || '';
+    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
+    const family = getViewerProductFamilySummary(prod);
+    const sizesHtml = family.sizes.length
+      ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
+      : '<span class="muted tiny">Sin tallas detectadas</span>';
+    const colorsHtml = family.colors.length
+      ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('')
+      : '<span class="muted tiny">Sin colores detectados</span>';
+    detailWrap.innerHTML = `
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel">
+        <div class="viewer-product-top-layout">
+          <div class="viewer-media-col">
+            <div class="viewer-product-media ${img ? '' : 'empty'}">
+              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+            </div>
+            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
+          </div>
+          <div class="viewer-side-col">
+            <div class="viewer-product-copy tight">
+              <div class="search-card-kicker">Producto</div>
+              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
+            </div>
+            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid location-only-grid">
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
+              <div class="search-meta-block emphasis"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-bottom-info product-variants-only">
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas del modelo</b><small>${family.sizes.length || 0} registradas</small></div></div>
+            <div class="viewer-variant-chip-wrap">${sizesHtml}</div>
+          </div>
+          <div class="viewer-variant-panel">
+            <div class="viewer-variant-head"><span class="viewer-info-icon color-dot"></span><div><b>Colores del modelo</b><small>${family.colors.length || 0} registrados</small></div></div>
+            <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
+          </div>
+        </div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
+      </div>`;
+    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
+    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
+    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
+  };
+
+
+
 
   bootstrapApp();
 
