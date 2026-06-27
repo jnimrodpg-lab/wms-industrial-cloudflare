@@ -6989,13 +6989,18 @@ function getSheetBranchOpenMap(){
       const buildWallSegmentsFromLayout = () => {
         try { syncZonePerimeterWalls(); ensureLayoutDecorations(); } catch(_err) {}
         return (appState.layout?.walls || []).map(w => ({
+          raw:w,
           a:{ x:Number(w.x1||0), y:Number(w.y1||0) },
           b:{ x:Number(w.x2||0), y:Number(w.y2||0) },
           zoneIds:new Set([w.zoneId].filter(Boolean)),
           thickness:Number(w.thickness || DEFAULT_WALL_THICKNESS),
           height:Number(w.height || DEFAULT_WALL_HEIGHT),
           id:w.id,
-          type:w.kind || 'wall'
+          type:w.kind || 'wall',
+          autoZoneEdge:!!w.autoZoneEdge,
+          zoneId:w.zoneId || '',
+          edgeIndex:Number(w.edgeIndex),
+          side:getWallSideSign(w.side)
         }));
       };
       const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
@@ -7011,33 +7016,50 @@ function getSheetBranchOpenMap(){
           const baseHeight = Math.max(2.8, (Number(seg.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
           const height = wallCut ? Math.min(1.25, baseHeight) : baseHeight;
           const thickness = Math.max(.24, (Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS) * scale);
-          const mid = toWorld((Number(seg.a?.x||0) + Number(seg.b?.x||0))/2, (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2, 0);
-          const angle = Math.atan2(dy, dx);
           const wallMat = new THREE.MeshStandardMaterial({
             color:isActive ? 0xf2f7fb : 0xb8c8d8,
             transparent:true,
             opacity:wallCut ? (isActive ? .52 : .30) : (isActive ? .92 : .58),
             roughness:.78,
-            metalness:.03
+            metalness:.03,
+            side:THREE.DoubleSide
           });
-          const wall = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), wallMat);
-          wall.position.set(mid.x, height/2, mid.z);
-          wall.rotation.y = angle;
-          wall.castShadow = isActive;
-          wall.receiveShadow = true;
-          group.add(wall);
-          const edgeOpacity = isActive ? (ui.visual === 'oscuro' ? .48 : .60) : .20;
-          const edges = new THREE.LineSegments(
-            new THREE.EdgesGeometry(wall.geometry),
-            new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:edgeOpacity })
-          );
-          edges.position.copy(wall.position);
-          edges.rotation.copy(wall.rotation);
-          group.add(edges);
+          const autoPoly = seg.autoZoneEdge && seg.zoneId && Number.isFinite(seg.edgeIndex) ? getAutoWallPolygon(seg.raw || seg) : null;
+          if(Array.isArray(autoPoly) && autoPoly.length >= 4){
+            const pts = autoPoly.map(pt => new THREE.Vector2((Number(pt.x||0) - bounds.cx) * scale, (Number(pt.y||0) - bounds.cy) * scale));
+            const shape = new THREE.Shape(pts);
+            const geom = new THREE.ExtrudeGeometry(shape, { depth:height, bevelEnabled:false, steps:1 });
+            geom.rotateX(Math.PI / 2);
+            geom.translate(0, height, 0);
+            const wall = new THREE.Mesh(geom, wallMat);
+            wall.castShadow = isActive;
+            wall.receiveShadow = true;
+            group.add(wall);
+            const edges = new THREE.LineSegments(
+              new THREE.EdgesGeometry(geom),
+              new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:isActive ? (ui.visual === 'oscuro' ? .48 : .60) : .20 })
+            );
+            group.add(edges);
+          } else {
+            const mid = toWorld((Number(seg.a?.x||0) + Number(seg.b?.x||0))/2, (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2, 0);
+            const angle = Math.atan2(dy, dx);
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), wallMat);
+            wall.position.set(mid.x, height/2, mid.z);
+            wall.rotation.y = angle;
+            wall.castShadow = isActive;
+            wall.receiveShadow = true;
+            group.add(wall);
+            const edges = new THREE.LineSegments(
+              new THREE.EdgesGeometry(wall.geometry),
+              new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:isActive ? (ui.visual === 'oscuro' ? .48 : .60) : .20 })
+            );
+            edges.position.copy(wall.position);
+            edges.rotation.copy(wall.rotation);
+            group.add(edges);
+          }
         });
         return group;
       };
-
       const makeZoneMaterials = (active=false) => ({
         floor: new THREE.MeshStandardMaterial({ color:active ? 0x18394b : visual.floor, roughness:.56, metalness:.15, transparent:true, opacity:active ? .54 : .07, side:THREE.DoubleSide, depthWrite:active }),
         overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .08 : .12) : .014, side:THREE.DoubleSide, depthWrite:false }),
@@ -9270,8 +9292,10 @@ function getSheetBranchOpenMap(){
       enabled:true,
       thickness:Number(prev.thickness || getZoneWallThickness(zone) || 14),
       height:Number(prev.height || appState.layout?.meta?.defaultWallHeight || 290),
+      side:Number(prev.side || 1) >= 0 ? 1 : -1,
       ...prev,
       ...updates,
+      side:Number((updates.side ?? prev.side ?? 1)) >= 0 ? 1 : -1,
       enabled: updates.enabled === false ? false : true
     };
     return walls[key];
@@ -9279,6 +9303,90 @@ function getSheetBranchOpenMap(){
   function removeZoneEdgeWall(zone, edgeIndex){
     if(!zone || !zone.edgeWalls) return;
     delete zone.edgeWalls[String(edgeIndex)];
+  }
+
+  function lineIntersection2D(a1, a2, b1, b2){
+    const x1 = Number(a1?.x || 0), y1 = Number(a1?.y || 0);
+    const x2 = Number(a2?.x || 0), y2 = Number(a2?.y || 0);
+    const x3 = Number(b1?.x || 0), y3 = Number(b1?.y || 0);
+    const x4 = Number(b2?.x || 0), y4 = Number(b2?.y || 0);
+    const den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if(Math.abs(den) < 0.00001) return null;
+    const px = ((x1*y2 - y1*x2) * (x3 - x4) - (x1 - x2) * (x3*y4 - y3*x4)) / den;
+    const py = ((x1*y2 - y1*x2) * (y3 - y4) - (y1 - y2) * (x3*y4 - y3*x4)) / den;
+    if(!Number.isFinite(px) || !Number.isFinite(py)) return null;
+    return { x:px, y:py };
+  }
+
+  function getWallSideSign(value){
+    return Number(value || 1) >= 0 ? 1 : -1;
+  }
+
+  function getZoneEdgeWallPolygon(zone, edgeIndex, wallData = null){
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 2 || edgeIndex < 0) return null;
+    const count = zone.pts.length;
+    const a = zone.pts[edgeIndex];
+    const b = zone.pts[(edgeIndex + 1) % count];
+    const wall = wallData || getZoneEdgeWall(zone, edgeIndex);
+    if(!a || !b || !wall || (wall.enabled === false && !wallData)) return null;
+    const thickness = Math.max(8, Number(wall.thickness || getZoneWallThickness(zone) || 14));
+    const side = getWallSideSign(wall.side);
+    const nBase = getZoneOutwardEdgeNormal(zone, a, b);
+    const n = { x:nBase.x * side, y:nBase.y * side };
+    let outerA = { x:a.x + n.x * thickness, y:a.y + n.y * thickness };
+    let outerB = { x:b.x + n.x * thickness, y:b.y + n.y * thickness };
+
+    const prevIdx = (edgeIndex - 1 + count) % count;
+    const prevWall = getZoneEdgeWall(zone, prevIdx);
+    if(prevWall?.enabled && getWallSideSign(prevWall.side) === side){
+      const pa = zone.pts[prevIdx];
+      const pb = zone.pts[edgeIndex];
+      if(pa && pb){
+        const prevTh = Math.max(8, Number(prevWall.thickness || getZoneWallThickness(zone) || 14));
+        const pnBase = getZoneOutwardEdgeNormal(zone, pa, pb);
+        const pn = { x:pnBase.x * side, y:pnBase.y * side };
+        const prevOuterA = { x:pa.x + pn.x * prevTh, y:pa.y + pn.y * prevTh };
+        const prevOuterB = { x:pb.x + pn.x * prevTh, y:pb.y + pn.y * prevTh };
+        const hit = lineIntersection2D(prevOuterA, prevOuterB, outerA, outerB);
+        if(hit) outerA = hit;
+      }
+    }
+
+    const nextIdx = (edgeIndex + 1) % count;
+    const nextWall = getZoneEdgeWall(zone, nextIdx);
+    if(nextWall?.enabled && getWallSideSign(nextWall.side) === side){
+      const na = zone.pts[nextIdx];
+      const nb = zone.pts[(nextIdx + 1) % count];
+      if(na && nb){
+        const nextTh = Math.max(8, Number(nextWall.thickness || getZoneWallThickness(zone) || 14));
+        const nnBase = getZoneOutwardEdgeNormal(zone, na, nb);
+        const nn = { x:nnBase.x * side, y:nnBase.y * side };
+        const nextOuterA = { x:na.x + nn.x * nextTh, y:na.y + nn.y * nextTh };
+        const nextOuterB = { x:nb.x + nn.x * nextTh, y:nb.y + nn.y * nextTh };
+        const hit = lineIntersection2D(outerA, outerB, nextOuterA, nextOuterB);
+        if(hit) outerB = hit;
+      }
+    }
+
+    return [
+      { x:Number(a.x || 0), y:Number(a.y || 0) },
+      { x:Number(b.x || 0), y:Number(b.y || 0) },
+      outerB,
+      outerA
+    ];
+  }
+
+  function wallPolygonPath(poly){
+    if(!Array.isArray(poly) || poly.length < 3) return '';
+    return `M ${poly.map((pt, idx) => `${idx ? 'L' : ''} ${Number(pt.x||0)} ${Number(pt.y||0)}`).join(' ')} Z`;
+  }
+
+  function getAutoWallPolygon(wall){
+    if(!wall?.autoZoneEdge) return null;
+    const zone = findZoneById(wall.zoneId);
+    const edgeIndex = Number(wall.edgeIndex);
+    if(!zone || !Number.isFinite(edgeIndex)) return null;
+    return getZoneEdgeWallPolygon(zone, edgeIndex, wall);
   }
   function getSelectedEdgeWallContext(){
     const sel = appState.selectedEdge || { zoneId:'', a:-1, b:-1 };
@@ -9332,6 +9440,7 @@ function getSheetBranchOpenMap(){
           y2:Number(b.y || 0),
           thickness:Math.max(8, Number(edgeWall.thickness || getZoneWallThickness(zone) || 14)),
           height:Math.max(120, Number(edgeWall.height || appState.layout?.meta?.defaultWallHeight || 290)),
+          side:getWallSideSign(edgeWall.side),
           kind:'zone-wall',
           autoZoneEdge:true,
           zoneId:zone.id,
@@ -9399,955 +9508,36 @@ function getSheetBranchOpenMap(){
     ensureLayoutDecorations();
     let best = null;
     (appState.layout.walls || []).forEach(wall => {
-      const proj = projectPointToSegment(point, {x:Number(wall.x1||0), y:Number(wall.y1||0)}, {x:Number(wall.x2||0), y:Number(wall.y2||0)});
-      const d = Math.sqrt(dist2(point, proj));
-      if(d <= threshold && (!best || d < best.d)) best = { wall, proj, d };
-    });
-    return best;
-  }
-  function createWallSegment(a, b){
-    ensureLayoutDecorations();
-    const dx = Number(b.x||0) - Number(a.x||0), dy = Number(b.y||0) - Number(a.y||0);
-    if(Math.sqrt(dx*dx + dy*dy) < 24) return null;
-    const wall = { id:nextWallId(), name:'Pared', x1:snapGrid(a.x), y1:snapGrid(a.y), x2:snapGrid(b.x), y2:snapGrid(b.y), thickness:12, kind:'wall' };
-    appState.layout.walls.push(wall);
-    appState.selectedWallId = wall.id;
-    appState.selectedOpeningId = '';
-    appState.selectedRackLayoutId = '';
-    return wall;
-  }
-  function createOpeningAtPoint(point, type='door'){
-    ensureLayoutDecorations();
-    const nearest = findNearestWallProjection(point, 28);
-    if(!nearest || !nearest.wall) return null;
-    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:type==='window' ? 110 : 90, type };
-    opening.t = openingClampT(nearest.wall, opening.width, opening.t);
-    appState.layout.openings.push(opening);
-    appState.selectedOpeningId = opening.id;
-    appState.selectedWallId = nearest.wall.id;
-    appState.selectedRackLayoutId = '';
-    return opening;
-  }
-  function cleanupDetachedOpenings(){
-    ensureLayoutDecorations();
-    const ids = new Set((appState.layout.walls || []).map(w => w.id));
-    appState.layout.openings = (appState.layout.openings || []).filter(o => ids.has(o.wallId));
-    if(appState.selectedOpeningId && !findOpeningById(appState.selectedOpeningId)) appState.selectedOpeningId = '';
-    if(appState.selectedWallId && !findWallById(appState.selectedWallId)) appState.selectedWallId = '';
-  }
-
-  function layoutSelectedSummary(){
-    const opening = findOpeningById(appState.selectedOpeningId);
-    const wall = findWallById(appState.selectedWallId);
-    const zone = findZoneById(appState.selectedZoneId);
-    const rack = findRackById(appState.selectedRackLayoutId);
-    if(opening){
-      const host = findWallById(opening.wallId);
-      return { type:'opening', title:opening.type === 'window' ? 'Ventana' : 'Puerta / vano', subtitle:`${opening.id} · ${host?.id || 'sin pared'} · ${Math.round(Number(opening.width||90))} u` };
-    }
-    if(wall){
-      return { type:'wall', title:wall.name || wall.id, subtitle:`${wall.id} · ${Math.round(wallLength(wall))} u · espesor ${Math.round(Number(wall.thickness||12))}` };
-    }
-    if(rack) return { type:'rack', title:rack.id, subtitle:`${rack.zoneId} · ${escapeHtml((rackModel(rack.modelId)||{}).name || rack.modelId || 'Rack')}` };
-    if(zone) return { type:'zone', title:zone.name || zone.id, subtitle:`${zone.id} · ${(appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).length} racks` };
-    return { type:'none', title:'Sin selección', subtitle:'Selecciona una zona, rack, pared o vano' };
-  }
-
-  function formatUnitNumber(value){
-    const n = Number(value || 0);
-    return Number.isFinite(n) ? Math.round(n) : 0;
-  }
-
-  function setRectZoneBounds(zone, updates={}){
-    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return;
-    const b = zoneBounds(zone);
-    const nextX = Number.isFinite(Number(updates.x)) ? Number(updates.x) : b.minX;
-    const nextY = Number.isFinite(Number(updates.y)) ? Number(updates.y) : b.minY;
-    const nextW = Math.max(40, Number.isFinite(Number(updates.w)) ? Number(updates.w) : (b.maxX - b.minX));
-    const nextH = Math.max(40, Number.isFinite(Number(updates.h)) ? Number(updates.h) : (b.maxY - b.minY));
-    // Mantener forma rectangular si la zona tiene 4 vértices; si tiene más, escalar proporcionalmente.
-    if(zone.pts.length === 4){
-      zone.pts = [
-        {x:snapGrid(nextX), y:snapGrid(nextY)},
-        {x:snapGrid(nextX+nextW), y:snapGrid(nextY)},
-        {x:snapGrid(nextX+nextW), y:snapGrid(nextY+nextH)},
-        {x:snapGrid(nextX), y:snapGrid(nextY+nextH)}
-      ];
-    } else {
-      const oldW = Math.max(1, b.maxX - b.minX), oldH = Math.max(1, b.maxY - b.minY);
-      zone.pts = zone.pts.map(pt => ({
-        x: snapGrid(nextX + ((pt.x - b.minX) / oldW) * nextW),
-        y: snapGrid(nextY + ((pt.y - b.minY) / oldH) * nextH)
-      }));
-    }
-    // Mantener racks contenidos después de redimensionar.
-    (appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).forEach(r => keepRackInsideZone(r, zone));
-  }
-
-  function addWarehouseTemplate(){
-    const bounds = getLayoutContentBounds();
-    const x = snapGrid(bounds.x + bounds.w + 100);
-    const y = snapGrid(bounds.y + 60);
-    const id = nextZoneId();
-    const zone = { id, name:'Almacén', color:'#62d7a0', wallThickness:14, pts:[{x,y},{x:x+520,y},{x:x+520,y:y+360},{x,y:y+360}] };
-    appState.layout.zones.push(zone);
-    appState.selectedZoneId = zone.id;
-    appState.selectedRackLayoutId = '';
-    normalizeZoneAndRackIds();
-    persistActiveLayout();
-    renderLayoutEditor();
-  }
-
-  function addZoneWithRackTemplate(){
-    const bounds = getLayoutContentBounds();
-    const x = snapGrid(bounds.x + bounds.w + 90);
-    const y = snapGrid(bounds.y + 80);
-    const id = nextZoneId();
-    const zone = { id, name:`Zona ${id}`, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x,y},{x:x+420,y},{x:x+420,y:y+280},{x,y:y+280}] };
-    appState.layout.zones.push(zone);
-    const fp = getRackFootprint(appState.selectedModelId, 0);
-    const rack = { id:`${id}-E1`, zoneId:id, x:x+40, y:y+40, w:fp.w, h:fp.h, rot:0, modelId:appState.selectedModelId, front:'auto', baseHeight:0, rackHeight:(rackModel(appState.selectedModelId)?.height || 238) };
-    appState.layout.racks.push(rack);
-    appState.selectedZoneId = id;
-    appState.selectedRackLayoutId = rack.id;
-    normalizeZoneAndRackIds();
-    persistActiveLayout();
-    renderLayoutEditor();
-  }
-
-  function addRackRowTemplate(count=5){
-    const zone = findZoneById(appState.selectedZoneId) || appState.layout.zones[0];
-    if(!zone){ addZoneWithRackTemplate(); return; }
-    const b = zoneBounds(zone);
-    const fp = getRackFootprint(appState.selectedModelId, 0);
-    const gap = 16;
-    const totalW = (fp.w * count) + (gap * (count - 1));
-    const startX = snapGrid(b.minX + Math.max(18, ((b.maxX - b.minX) - totalW) / 2));
-    const y = snapGrid(b.minY + 38);
-    for(let i=0;i<count;i++){
-      const rack = { id:nextRackId(zone.id), zoneId:zone.id, x:startX + i*(fp.w+gap), y, w:fp.w, h:fp.h, rot:0, modelId:appState.selectedModelId, front:'auto', baseHeight:0, rackHeight:(rackModel(appState.selectedModelId)?.height || 238) };
-      keepRackInsideZone(rack, zone);
-      appState.layout.racks.push(rack);
-      appState.selectedRackLayoutId = rack.id;
-    }
-    normalizeZoneAndRackIds();
-    persistActiveLayout();
-    renderLayoutEditor();
-  }
-
-  function distributeSelectedZoneRacks(){
-    const zone = findZoneById(appState.selectedZoneId);
-    if(!zone) return;
-    const racks = (appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).sort((a,b)=>a.x-b.x || a.y-b.y);
-    if(racks.length < 2) return;
-    const b = zoneBounds(zone);
-    const margin = 24;
-    const maxRackW = Math.max(...racks.map(r=>Number(r.w||0)), 1);
-    const usableW = Math.max(1, (b.maxX-b.minX) - margin*2 - maxRackW);
-    const step = racks.length === 1 ? 0 : usableW/(racks.length-1);
-    racks.forEach((rack,i)=>{
-      rack.x = snapGrid(b.minX + margin + step*i);
-      rack.y = snapGrid(Math.max(b.minY+margin, Math.min(b.maxY - rack.h - margin, rack.y)));
-      keepRackInsideZone(rack, zone);
-    });
-    persistActiveLayout();
-    renderLayoutEditor();
-  }
-
-  function renderLayoutMiniMapMarkup(){
-    const bounds = getLayoutContentBounds();
-    const pad = 30;
-    const vb = `${bounds.x-pad} ${bounds.y-pad} ${bounds.w+pad*2} ${bounds.h+pad*2}`;
-    const zones = (appState.layout.zones||[]).map(zone => {
-      const d = zone.pts.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ') + ' Z';
-      const active = zone.id === appState.selectedZoneId;
-      return `<path d="${escapeHtml(d)}" class="mini-zone ${active?'active':''}" fill="${escapeHtml(hexToRgba(zone.color||'#6ff0a8', active ? .32 : .16))}" stroke="${escapeHtml(zone.color||'#6ff0a8')}"/>`;
-    }).join('');
-    const walls = (appState.layout.walls||[]).map(w => `<line x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke="${w.id===appState.selectedWallId?'#ffd66f':'#d7e5f5'}" stroke-width="${Math.max(2, Number(w.thickness||12)/4)}" stroke-linecap="round" opacity=".9"/>`).join('');
-    const openings = (appState.layout.openings||[]).map(o => { const wall=(appState.layout.walls||[]).find(w=>w.id===o.wallId); if(!wall) return ''; const seg=getOpeningSegment(o, wall); if(!seg) return ''; return `<line x1="${seg.a.x}" y1="${seg.a.y}" x2="${seg.b.x}" y2="${seg.b.y}" stroke="${o.id===appState.selectedOpeningId?'#7dffaf':'#5bf3d0'}" stroke-width="3" stroke-linecap="round"/>`; }).join('');
-    const racks = (appState.layout.racks||[]).map(r => `<rect x="${r.x}" y="${r.y}" width="${Math.max(2,r.w)}" height="${Math.max(2,r.h)}" rx="4" class="mini-rack ${r.id===appState.selectedRackLayoutId?'active':''}"/>`).join('');
-    return `<svg class="layout-mini-svg" viewBox="${vb}">${zones}${walls}${openings}${racks}</svg>`;
-  }
-
-  function renderLayerToggle(id, label, checked){
-    return `<label class="layout-layer-toggle"><input type="checkbox" id="${id}" ${checked?'checked':''}><span>${label}</span></label>`;
-  }
-
-  function renderLayoutRightPanelMarkup(){
-    ensureLayoutEditorState();
-    const zone = findZoneById(appState.selectedZoneId);
-    const rack = findRackById(appState.selectedRackLayoutId);
-    const summary = layoutSelectedSummary();
-    const zoneB = zone ? zoneBounds(zone) : null;
-    const model = rack ? rackModel(rack.modelId) : null;
-    const fp = rack ? getRackFootprint(rack.modelId, rack.rot || 0) : null;
-    const modelOptions = appState.models.map(m=>`<option value="${escapeHtml(m.id)}" ${rack?.modelId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
-    return `
-      <div class="layout-right-head">
-        <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
-        <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Pared' : summary.type === 'opening' ? 'Vano' : 'Plano'}</span>
-      </div>
-      <div class="layout-right-scroll">
-        <section class="layout-prop-card selected-summary">
-          <div class="layout-prop-title">Selección activa</div>
-          <div class="layout-selected-title">${escapeHtml(summary.title)}</div>
-          <div class="tiny muted">Modo actual: ${escapeHtml(appState.editor.mode || 'select')}</div>
-        </section>
-        <section class="layout-prop-card">
-          <div class="layout-prop-title">Capas</div>
-          <div class="layout-layer-grid">
-            ${renderLayerToggle('lyGrid','Grilla', appState.editor.showGrid !== false)}
-            ${renderLayerToggle('lyZones','Zonas', appState.editor.showZones !== false)}
-            ${renderLayerToggle('lyWalls','Paredes', appState.editor.wallsVisible !== false)}
-            ${renderLayerToggle('lyOpenings','Aberturas', appState.editor.openingsVisible !== false)}
-            ${renderLayerToggle('lyRacks','Racks', appState.editor.racksVisible !== false)}
-            ${renderLayerToggle('lyLabels','Etiquetas', appState.editor.showLabels !== false)}
-            ${renderLayerToggle('lyDims','Cotas', !!appState.editor.showDims)}
-            ${renderLayerToggle('lyMini','Mini mapa', appState.editor.showMiniMap !== false)}
-          </div>
-        </section>
-        <section class="layout-prop-card">
-          <div class="layout-prop-title">Snap y precisión</div>
-          <div class="layout-prop-grid two">
-            <label>Snap<input id="rpSnapEnabled" type="checkbox" ${isSnapEnabled()?'checked':''}></label>
-            <label>Tamaño snap<input id="rpSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
-            <label>Tamaño letra cotas<input id="rpDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
-            <label>Estado<input value="${isSnapEnabled() ? 'Activo' : 'Desactivado'}" disabled></label>
-          </div>
-          <div class="tiny muted" style="margin-top:8px">Menor número = más precisión. Recomendado: 2, 5 o 10 unidades.</div>
-        </section>
-        <section class="layout-prop-card">
-          <div class="layout-prop-title">Plantillas rápidas</div>
-          <div class="layout-template-grid">
-            <button class="seg-btn" id="tplZoneRack">Zona + rack</button>
-            <button class="seg-btn" id="tplWarehouse">Almacén</button>
-            <button class="seg-btn" id="tplRackRow">Fila de racks</button>
-            <button class="seg-btn" id="tplDistribute">Distribuir racks</button>
-          </div>
-        </section>
-        <section class="layout-prop-card">
-          <div class="layout-prop-title">Plano de fondo</div>
-          <input type="file" id="layoutBgInput" accept="image/*" style="display:none">
-          <div class="layout-template-grid">
-            <button class="seg-btn" id="btnLayoutBgUpload">Subir imagen</button>
-            <button class="seg-btn" id="btnLayoutBgClear" ${appState.layout?.meta?.backgroundImage ? '' : 'disabled'}>Quitar fondo</button>
-          </div>
-          <div class="tiny muted" style="margin-top:8px">Úsalo para calcar encima de un plano real. Queda bloqueado detrás de zonas y racks.</div>
-        </section>
-        ${zone ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Zona</div>
-          <div class="layout-prop-grid two">
-            <label>Nombre<input id="rpZoneName" value="${escapeHtml(zone.name||'')}"></label>
-            <label>Código<input id="rpZoneCode" value="${escapeHtml(zone.id||'')}"></label>
-            <label>X<input id="rpZoneX" type="number" value="${formatUnitNumber(zoneB.minX)}"></label>
-            <label>Y<input id="rpZoneY" type="number" value="${formatUnitNumber(zoneB.minY)}"></label>
-            <label>Ancho<input id="rpZoneW" type="number" min="40" value="${formatUnitNumber(zoneB.maxX-zoneB.minX)}"></label>
-            <label>Alto<input id="rpZoneH" type="number" min="40" value="${formatUnitNumber(zoneB.maxY-zoneB.minY)}"></label>
-            <label>Color<input id="rpZoneColor" type="color" value="${escapeHtml(zone.color||'#6ff0a8')}"></label>
-            <label>Escala cm/u<input id="rpScaleCm" type="number" min="0.1" step="0.1" value="${getScaleCmPerUnit()}"></label>
-            <label>Rotación zona<input id="rpZoneRot" type="number" step="1" value="${Math.round(getZoneRotationDegrees(zone))}"></label>
-            <label>Contenido<input value="${(appState.layout.racks||[]).filter(r => r.zoneId === zone.id).length} racks vinculados" disabled></label>
-          </div>
-          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px"><button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → pared</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar paredes zona</button></div>
-        </section>` : ''}
-        ${rack ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Rack</div>
-          <div class="layout-prop-grid two">
-            <label>ID<input value="${escapeHtml(rack.id)}" disabled></label>
-            <label>Zona<input value="${escapeHtml(rack.zoneId)}" disabled></label>
-            <label>Modelo<select id="rpRackModel">${modelOptions}</select></label>
-            <label>Rotación<input id="rpRackRot" type="number" step="1" value="${Math.round(Number(rack.rot||0))}"></label>
-            <label>X<input id="rpRackX" type="number" value="${formatUnitNumber(rack.x)}"></label>
-            <label>Y<input id="rpRackY" type="number" value="${formatUnitNumber(rack.y)}"></label>
-            <label>Huella<input value="${formatUnitNumber(fp?.w||rack.w)} × ${formatUnitNumber(fp?.h||rack.h)}" disabled></label>
-            <label>Altura<input id="rpRackHeight" type="number" min="60" step="10" value="${Math.round(Number(rack.rackHeight || model?.height || 238))}"></label>
-          </div>
-          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpDuplicateRack">Duplicar rack</button><button class="seg-btn" id="rpRack45">Girar 45°</button><button class="seg-btn" id="rpRack90">Girar 90°</button><button class="seg-btn" id="rpAddAbove">Agregar encima</button></div>
-        </section>` : ''}
-        ${findWallById(appState.selectedWallId) ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Pared</div>
-          <div class="layout-prop-grid two">
-            <label>ID<input value="${escapeHtml(findWallById(appState.selectedWallId).id)}" disabled></label>
-            <label>Nombre<input id="rpWallName" value="${escapeHtml(findWallById(appState.selectedWallId).name||'Pared')}"></label>
-            <label>Espesor<input id="rpWallThickness" type="number" min="4" max="80" step="1" value="${formatUnitNumber(findWallById(appState.selectedWallId).thickness||12)}"></label>
-            <label>Largo<input value="${formatUnitNumber(wallLength(findWallById(appState.selectedWallId)))}" disabled></label>
-          </div>
-          <div class="tiny muted" style="margin-top:8px">Esta pared viene de una arista convertida de la zona. Para editarla, selecciona la arista y ajusta espesor/altura.</div>
-        </section>` : ''}
-        ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Abertura</div>
-          <div class="layout-prop-grid two">
-            <label>ID<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).id)}" disabled></label>
-            <label>Tipo<select id="rpOpeningType"><option value="door" ${findOpeningById(appState.selectedOpeningId).type!=='window'?'selected':''}>Puerta / vano</option><option value="window" ${findOpeningById(appState.selectedOpeningId).type==='window'?'selected':''}>Ventana</option></select></label>
-            <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="260" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).width||90)}"></label>
-            <label>Pared<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).wallId||'') }" disabled></label>
-          </div>
-          <div class="tiny muted" style="margin-top:8px">Tip: selecciona “Agregar vano” y haz clic sobre una pared.</div>
-        </section>` : ''}
-        ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
-      </div>`;
-  }
-
-  function bindLayoutRightPanel(){
-    const bindCheck = (id, key, rerender=true) => {
-      const el = document.getElementById(id);
-      if(!el) return;
-      el.onchange = e => { appState.editor[key] = !!e.target.checked; if(rerender) renderLayoutEditor(); else renderLayoutSvg(document.getElementById('layoutSvg')); };
-    };
-    bindCheck('lyGrid','showGrid');
-    bindCheck('lyZones','showZones');
-    bindCheck('lyWalls','wallsVisible');
-    bindCheck('lyOpenings','openingsVisible');
-    bindCheck('lyRacks','racksVisible');
-    bindCheck('lyLabels','showLabels');
-    bindCheck('lyDims','showDims');
-    bindCheck('lyMini','showMiniMap');
-    if($('#rpSnapEnabled')) $('#rpSnapEnabled').onchange = e => { appState.editor.snapEnabled = !!e.target.checked; clearRackSnapPreview(); persistActiveLayout(); renderLayoutEditor(); };
-    const updateSnapSize = value => { appState.editor.snapSize = Math.max(1, Math.min(80, Number(value || DEFAULT_GRID_SIZE) || DEFAULT_GRID_SIZE)); appState.editor.snapPrecisionMigrated = true; persistActiveLayout(); renderLayoutEditor(); };
-    const updateDimFont = value => { appState.editor.dimFontSize = Math.max(14, Math.min(72, Number(value || DEFAULT_DIM_FONT_SIZE) || DEFAULT_DIM_FONT_SIZE)); appState.editor.dimFontMigrated = true; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpSnapSize')) $('#rpSnapSize').onchange = e => updateSnapSize(e.target.value);
-    if($('#rpDimFontSize')) $('#rpDimFontSize').onchange = e => updateDimFont(e.target.value);
-    if($('#layoutSnapEnabled')) $('#layoutSnapEnabled').onchange = e => { appState.editor.snapEnabled = !!e.target.checked; clearRackSnapPreview(); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#layoutSnapSize')) $('#layoutSnapSize').onchange = e => updateSnapSize(e.target.value);
-    if($('#layoutDimFontSize')) $('#layoutDimFontSize').onchange = e => updateDimFont(e.target.value);
-    const zone = findZoneById(appState.selectedZoneId);
-    const rack = findRackById(appState.selectedRackLayoutId);
-    const applyZoneGeometry = () => {
-      if(!zone) return;
-      setRectZoneBounds(zone, { x:$('#rpZoneX')?.value, y:$('#rpZoneY')?.value, w:$('#rpZoneW')?.value, h:$('#rpZoneH')?.value });
-      persistActiveLayout(); renderLayoutEditor();
-    };
-    if($('#rpZoneName')) $('#rpZoneName').onchange = e => { zone.name = e.target.value; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpZoneCode')) $('#rpZoneCode').onchange = e => { renameZoneId(zone.id, e.target.value); renderLayoutEditor(); };
-    ['rpZoneX','rpZoneY','rpZoneW','rpZoneH'].forEach(id=>{ const el=$('#'+id); if(el) el.onchange = applyZoneGeometry; });
-    if($('#rpZoneColor')) $('#rpZoneColor').oninput = e => { zone.color=e.target.value; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpScaleCm')) $('#rpScaleCm').onchange = e => { ensureLayoutMeta(); appState.layout.meta.scaleCmPerUnit = Math.max(0.1, Number(e.target.value||1)||1); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpZoneRot')) $('#rpZoneRot').onchange = e => { if(zone) setZoneRotation(zone.id, Number(e.target.value || 0) || 0); };
-    if($('#rpZoneMinus15')) $('#rpZoneMinus15').onclick = () => { if(zone) rotateZoneWithContents(zone.id, -15); };
-    if($('#rpZone15')) $('#rpZone15').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 15); };
-    if($('#rpZone45')) $('#rpZone45').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 45); };
-    if($('#rpZone90')) $('#rpZone90').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 90); };
-    if($('#rpDuplicateZone')) $('#rpDuplicateZone').onclick = () => duplicateSelectedZone();
-    if($('#rpLockZones')) $('#rpLockZones').onclick = () => { appState.editor.zonesLocked = !appState.editor.zonesLocked; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpAllEdgesWalls')) $('#rpAllEdgesWalls').onclick = () => {
-      if(!zone) return;
-      (zone.pts || []).forEach((_, idx) => setZoneEdgeWall(zone, idx, { thickness:getZoneWallThickness(zone), height:Number(appState.layout?.meta?.defaultWallHeight || 290) || 290 }));
-      syncZonePerimeterWalls(); persistActiveLayout(); renderLayoutEditor();
-    };
-    if($('#rpClearEdgesWalls')) $('#rpClearEdgesWalls').onclick = () => {
-      if(!zone) return;
-      zone.edgeWalls = {}; syncZonePerimeterWalls(); cleanupDetachedOpenings(); persistActiveLayout(); renderLayoutEditor();
-    };
-
-    const applyRackPosition = () => {
-      if(!rack) return;
-      rack.x = snapGrid(Number($('#rpRackX')?.value || rack.x) || 0);
-      rack.y = snapGrid(Number($('#rpRackY')?.value || rack.y) || 0);
-      const host = findZoneById(rack.zoneId) || nearestZoneForPoint({x:rack.x+rack.w/2,y:rack.y+rack.h/2});
-      if(host) keepRackSnapped(rack, host);
-      persistActiveLayout(); renderLayoutEditor();
-    };
-    if($('#rpRackModel')) $('#rpRackModel').onchange = e => { if(!rack) return; rack.modelId=e.target.value; syncRackFootprint(rack,true); const host=findZoneById(rack.zoneId); if(host) keepRackSnapped(rack, host); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpRackRot')) $('#rpRackRot').onchange = e => { if(!rack) return; applyRackRotation(rack, Number(e.target.value||0)||0); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpRackX')) $('#rpRackX').onchange = applyRackPosition;
-    if($('#rpRackY')) $('#rpRackY').onchange = applyRackPosition;
-    if($('#rpRackHeight')) $('#rpRackHeight').onchange = e => { if(!rack) return; rack.rackHeight = Math.max(60, Number(e.target.value||60)||60); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpDuplicateRack')) $('#rpDuplicateRack').onclick = () => duplicateSelectedRack();
-    if($('#rpRack45')) $('#rpRack45').onclick = () => { if(!rack) return; applyRackRotation(rack, Number(rack.rot||0)+45); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpRack90')) $('#rpRack90').onclick = () => { if(!rack) return; applyRackRotation(rack, Number(rack.rot||0)+90); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpAddAbove')) $('#rpAddAbove').onclick = () => { if(!rack) return; duplicateRackLayout(rack.id); };
-
-    const selectedWall = findWallById(appState.selectedWallId);
-    const selectedOpening = findOpeningById(appState.selectedOpeningId);
-    if($('#rpWallName')) $('#rpWallName').onchange = e => { if(!selectedWall) return; selectedWall.name = e.target.value || 'Pared'; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpWallThickness')) $('#rpWallThickness').onchange = e => {
-      if(!selectedWall) return;
-      const nextThickness = Math.max(8, Math.min(80, Number(e.target.value || 14) || 14));
-      selectedWall.thickness = nextThickness;
-      if(selectedWall.autoZoneEdge){
-        const zone = findZoneById(selectedWall.zoneId);
-        if(zone) setZoneEdgeWall(zone, Number(selectedWall.edgeIndex || 0) || 0, { thickness:nextThickness });
-      }
-      syncZonePerimeterWalls();
-      persistActiveLayout();
-      renderLayoutEditor();
-    };
-    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window' && Number(selectedOpening.width || 0) < 100) selectedOpening.width = 110; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
-
-    if($('#tplZoneRack')) $('#tplZoneRack').onclick = addZoneWithRackTemplate;
-    if($('#tplWarehouse')) $('#tplWarehouse').onclick = addWarehouseTemplate;
-    if($('#tplRackRow')) $('#tplRackRow').onclick = () => addRackRowTemplate(5);
-    if($('#tplDistribute')) $('#tplDistribute').onclick = distributeSelectedZoneRacks;
-    if($('#btnLayoutBgUpload')) $('#btnLayoutBgUpload').onclick = () => $('#layoutBgInput')?.click();
-    if($('#layoutBgInput')) $('#layoutBgInput').onchange = e => {
-      const file = e.target.files && e.target.files[0];
-      if(!file) return;
-      const reader = new FileReader();
-      reader.onload = () => { ensureLayoutMeta(); appState.layout.meta.backgroundImage = String(reader.result || ''); persistActiveLayout(); renderLayoutEditor(); };
-      reader.readAsDataURL(file);
-    };
-    if($('#btnLayoutBgClear')) $('#btnLayoutBgClear').onclick = () => { ensureLayoutMeta(); delete appState.layout.meta.backgroundImage; persistActiveLayout(); renderLayoutEditor(); };
-  }
-
-  function renderLayoutEditor(){
-    ensureLayoutEditorState();
-    if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
-    ensureRackProps();
-    contentTitle.textContent = 'Edición de Layout';
-    appState.editor.view = 'ortho';
-    const isIsoView = false;
-    const selectedRack = findRackById(appState.selectedRackLayoutId);
-    const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
-    const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = 'Vista ortogonal editable: selecciona aristas de zona y conviértelas en paredes.';
-    detailTitle.textContent = 'Edición de layout';
-    detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
-    setTags([
-      { label:'↶ Undo', active: true, action:'history-undo-layout', extraClass:'history-chip' },
-      { label:'↷ Redo', active: true, action:'history-redo-layout', extraClass:'history-chip' },
-      { label:'Seleccionar', active: appState.editor.mode === 'select', action:'toggle-select' },
-      { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
-      { label:'Bloquear zonas', active: !!appState.editor.zonesLocked, action:'toggle-lock-zones' },
-      { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
-      { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
-      { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
-      { label:'Paredes 3D', active: appState.editor.wallsVisible !== false, action:'toggle-walls' },
-      { label:'Vanos', active: appState.editor.openingsVisible !== false, action:'toggle-openings' },
-      { label:'Racks', active: appState.editor.racksVisible !== false, action:'toggle-racks' },
-      { label:'Capas', active: true, action:'noop-layers' },
-      { label:'Propiedades', active: appState.editor.rightPanelOpen !== false, action:'toggle-right-props' }
-    ]);
-
-    contentWrap.innerHTML = `
-      <div class="stage layout-premium-render" style="position:relative;height:100%">
-        <div id="layoutHeaderCards" class="layout-header-cards"></div>
-        <div class="layout-shell layout-shell-with-right ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''}">
-          <aside class="layout-inner-sidebar">
-            <div class="layout-tool-top">
-              <div class="save-strip" style="display:grid;gap:8px"><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
-              <select id="layoutBranchSelect" class="seg-btn" style="width:100%;padding-right:28px">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
-            </div>
-            <div class="layout-tool-list">
-              <div class="layout-tool-group">
-                <div class="layout-tool-group-title">Edición de layout</div>
-                <button class="seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlus">Agregar zona</button>
-                <button class="seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus">Agregar puerta / ventana</button>
-                <button class="seg-btn" id="btnDuplicateZone">Duplicar zona</button>
-                <button class="seg-btn" id="btnVertexPlus">Agregar vértice</button>
-                <button class="seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack">Agregar rack</button>
-                <button class="seg-btn" id="btnDuplicateRack">Duplicar rack</button>
-                <button class="seg-btn" id="btnDeleteSelected">Eliminar selección</button>
-                <button class="seg-btn" id="btnSaveLayoutRemote">Guardar layout</button>
-                ${selectedRack ? `
-                <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
-                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido rack</div>
-                <div class="tag-row">
-                  <button class="seg-btn quick-angle" data-angle="45">45°</button>
-                  <button class="seg-btn quick-angle" data-angle="90">90°</button>
-                </div>` : ''}
-                ${(!selectedRack && appState.selectedZoneId) ? `
-                <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
-                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido zona</div>
-                <div class="tag-row">
-                  <button class="seg-btn quick-zone-angle" data-angle="-15">-15°</button>
-                  <button class="seg-btn quick-zone-angle" data-angle="15">15°</button>
-                  <button class="seg-btn quick-zone-angle" data-angle="90">90°</button>
-                </div>` : ''}
-              </div>
-              <div id="layoutSidebarInspector"></div>
-              <div class="layout-tool-group" style="margin-top:2px">
-                <div class="layout-tool-group-title">Snap / precisión</div>
-                <label class="layout-check-row"><input type="checkbox" id="layoutSnapEnabled" ${isSnapEnabled()?'checked':''}> Snap activo</label>
-                <div class="layout-inline-2">
-                  <label class="layout-mini-field">Snap<input id="layoutSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
-                  <label class="layout-mini-field">Cotas<input id="layoutDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
-                </div>
-                <div class="tiny muted">Usa 1–2 para máxima precisión.</div>
-              </div>
-              <div class="layout-tool-group" style="margin-top:2px">
-                <div class="layout-tool-group-title">Zoom</div>
-                <div class="layout-inline-3">
-                  <button class="seg-btn" id="btnZoomOut">−</button>
-                  <div class="zoom-chip" id="zoomLabel">100%</div>
-                  <button class="seg-btn" id="btnZoomIn">+</button>
-                </div>
-                <button class="seg-btn" id="btnZoomFit">Ajustar</button>
-              </div>
-            </div>
-          </aside>
-          <div class="layout-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
-            <div class="layout-canvas-wrap">
-              <div class="layout-canvas-card detail-stage"><svg id="layoutSvg"></svg></div>
-              <div id="layoutStackMenu" class="layout-stack-overlay"></div>
-            </div>
-            <div id="layoutSectionWrap"></div>
-          </div>
-          <aside id="layoutRightPanel" class="layout-right-panel">${renderLayoutRightPanelMarkup()}</aside>
-        </div>
-      </div>`;
-
-    const svg = $('#layoutSvg');
-    const currentBox = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
-    if(!appState.editor.viewBoxCustomized || (currentBox.x===0 && currentBox.y===0 && currentBox.w===900 && currentBox.h===620)) fitLayoutViewBox();
-    svg.setAttribute('preserveAspectRatio','xMidYMid meet');
-    renderLayoutSvg(svg);
-    renderLayoutSection();
-    renderLayoutInspector();
-    renderLayoutStackMenu();
-    bindLayoutToolbar();
-    bindLayoutRightPanel();
-    bindLayoutAutoFit();
-    const undoBtn = document.querySelector('[data-history-undo="layout"]'); if(undoBtn) undoBtn.onclick = () => undoHistory('layout');
-    const redoBtn = document.querySelector('[data-history-redo="layout"]'); if(redoBtn) redoBtn.onclick = () => redoHistory('layout');
-    updateUndoRedoUi();
-    const zl = $('#zoomLabel'); if(zl){ const vb = appState.editor.viewBox || {w:900}; zl.textContent = `${Math.round((900 / vb.w) * 100)}%`; }
-  }
-
-  function renderLayoutStackMenu(){
-    const mount = document.getElementById('layoutStackMenu');
-    if(!mount) return;
-    const state = appState.editor.stackMenu || { open:false };
-    const rack = findRackById(state.rackId);
-    const summary = rack ? rackStackSummary(rack) : { count:0, members:[] };
-    if(!state.open || !rack || summary.count <= 1){
-      mount.innerHTML = '';
-      return;
-    }
-    const rows = summary.members.map(member => {
-      const active = member.id === appState.selectedRackLayoutId;
-      const model = rackModel(member.modelId);
-      const topCm = Number(member.baseHeight||0) + Number(member.rackHeight || model.height || 238);
-      return `<button type="button" class="stack-row ${active?'active':''}" data-stack-rack="${member.id}" style="width:100%;text-align:left;border:1px solid rgba(255,255,255,.08);background:${active?'rgba(86,210,255,.15)':'rgba(255,255,255,.03)'};color:#e8f1fb;border-radius:12px;padding:10px 12px;cursor:pointer;display:grid;gap:4px"><b>${escapeHtml(member.id)}</b><span class="tiny muted">N${getRackStackLevel(member)} · ${escapeHtml(model.name)} · ${model.levels||4} niveles · ${formatDistanceCm(topCm)}</span></button>`;
-    }).join('');
-    mount.innerHTML = `<div style="position:absolute;left:${Math.max(12,state.x)}px;top:${Math.max(58,state.y)}px;z-index:8;min-width:260px;max-width:320px;background:rgba(7,17,29,.98);border:1px solid rgba(255,255,255,.10);box-shadow:0 18px 40px rgba(0,0,0,.38);border-radius:16px;padding:12px;display:grid;gap:10px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><div style="font-weight:800">Superposición de racks</div><div class="tiny muted">${summary.count} racks en la misma huella</div></div><button type="button" id="stackMenuCloseBtn" class="seg-btn" style="padding:8px 10px">Cerrar</button></div><div style="display:grid;gap:8px">${rows}</div></div>`;
-    const closeBtn = document.getElementById('stackMenuCloseBtn');
-    if(closeBtn) closeBtn.onclick = () => { closeStackMenu(); renderLayoutStackMenu(); };
-    mount.querySelectorAll('[data-stack-rack]').forEach(btn => btn.onclick = () => {
-      const rackId = btn.getAttribute('data-stack-rack');
-      const target = findRackById(rackId);
-      if(!target) return;
-      appState.selectedRackLayoutId = target.id;
-      appState.selectedZoneId = target.zoneId;
-      renderLayoutEditor();
-    });
-  }
-
-
-
-  function findZoneBadgePlacement(zone, badgeW, badgeH){
-    const zb = zoneBoundsOf(zone);
-    const racks = (appState.layout.racks||[]).filter(r => r.zoneId === zone.id);
-    const candidates = [
-      {x:zb.minX+12,y:zb.minY+12},
-      {x:zb.maxX-badgeW-12,y:zb.minY+12},
-      {x:zb.minX+12,y:zb.maxY-badgeH-12},
-      {x:zb.maxX-badgeW-12,y:zb.maxY-badgeH-12}
-    ];
-    const overlap=(c)=>racks.some(r=>{
-      const fp=getRackFootprint(r.modelId, r.rot||0); const w=fp.w||r.w||40, h=fp.h||r.h||28;
-      const cx=(r.x||0)+w/2, cy=(r.y||0)+h/2; const rx=cx-w/2-10, ry=cy-h/2-10, rw=w+20, rh=h+20;
-      return !(c.x+badgeW < rx || c.x > rx+rw || c.y+badgeH < ry || c.y > ry+rh);
-    });
-    return candidates.find(c=>!overlap(c)) || candidates[0];
-  }
-
-
-  function getLayoutContentBounds(){
-    ensureLayoutDecorations();
-    const zones = appState.layout?.zones || [];
-    const racks = appState.layout?.racks || [];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    zones.forEach(zone => {
-      const zb = zoneBounds(zone);
-      minX = Math.min(minX, zb.minX);
-      minY = Math.min(minY, zb.minY);
-      maxX = Math.max(maxX, zb.maxX);
-      maxY = Math.max(maxY, zb.maxY);
-    });
-    racks.forEach(r => {
-      const x = Number(r.x || 0), y = Number(r.y || 0);
-      const w = Math.max(1, Number(r.w || 0)), h = Math.max(1, Number(r.h || 0));
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x + w);
-      maxY = Math.max(maxY, y + h);
-    });
-    (appState.layout?.walls || []).forEach(w => {
-      const t = Math.max(4, Number(w.thickness || 12) || 12);
-      minX = Math.min(minX, Number(w.x1 || 0) - t, Number(w.x2 || 0) - t);
-      minY = Math.min(minY, Number(w.y1 || 0) - t, Number(w.y2 || 0) - t);
-      maxX = Math.max(maxX, Number(w.x1 || 0) + t, Number(w.x2 || 0) + t);
-      maxY = Math.max(maxY, Number(w.y1 || 0) + t, Number(w.y2 || 0) + t);
-    });
-    if(!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return { x:0, y:0, w:900, h:620 };
-    return { x:minX, y:minY, w:Math.max(240, maxX - minX), h:Math.max(180, maxY - minY) };
-  }
-
-  function fitLayoutViewBox(){
-    const bounds = getLayoutContentBounds();
-    const svg = document.getElementById('layoutSvg');
-    const width = Math.max(1, svg?.clientWidth || 0);
-    const height = Math.max(1, svg?.clientHeight || 0);
-    const viewportRatio = width && height ? width / height : 1.65;
-    const padX = Math.max(52, bounds.w * 0.08);
-    const padY = Math.max(46, bounds.h * 0.08);
-    let box = {
-      x: bounds.x - padX,
-      y: bounds.y - padY,
-      w: bounds.w + padX * 2,
-      h: bounds.h + padY * 2
-    };
-    const targetRatio = viewportRatio > 0 ? viewportRatio : (box.w / box.h);
-    const currentRatio = box.w / box.h;
-    if(currentRatio < targetRatio){
-      const targetW = box.h * targetRatio;
-      box.x -= (targetW - box.w) / 2;
-      box.w = targetW;
-    } else if(currentRatio > targetRatio){
-      const targetH = box.w / targetRatio;
-      box.y -= (targetH - box.h) / 2;
-      box.h = targetH;
-    }
-    appState.editor.viewBox = box;
-    appState.editor.viewBoxCustomized = false;
-    return box;
-  }
-
-
-  function cleanupLayoutAutoFit(){
-    const cleanup = appState.editor?.layoutAutoFitCleanup;
-    if(typeof cleanup === 'function'){
-      try{ cleanup(); }catch(_err){}
-    }
-    if(appState.editor) appState.editor.layoutAutoFitCleanup = null;
-  }
-
-  function scheduleLayoutAutoFit(force=false){
-    if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
-    window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
-    const run = () => {
-      if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
-      const svg = document.getElementById('layoutSvg');
-      if(!svg) return;
-      if(force || !appState.editor.viewBoxCustomized) fitLayoutViewBox();
-      renderLayoutSvg(svg);
-      renderLayoutSection();
-    };
-    if(!appState.editor) return run();
-    appState.editor.layoutAutoFitRaf = window.requestAnimationFrame(run);
-  }
-
-  function bindLayoutAutoFit(){
-    cleanupLayoutAutoFit();
-    const shell = document.querySelector('.layout-main-stage');
-    const svg = document.getElementById('layoutSvg');
-    if(!shell || !svg || typeof ResizeObserver === 'undefined') return;
-    let lastW = 0, lastH = 0;
-    const ro = new ResizeObserver(entries => {
-      const rect = entries && entries[0] ? entries[0].contentRect : shell.getBoundingClientRect();
-      const w = Math.round(rect?.width || 0);
-      const h = Math.round(rect?.height || 0);
-      if(!w || !h) return;
-      if(Math.abs(w - lastW) < 6 && Math.abs(h - lastH) < 6) return;
-      lastW = w; lastH = h;
-      scheduleLayoutAutoFit(false);
-    });
-    ro.observe(shell);
-    window.addEventListener('resize', scheduleLayoutAutoFit, { passive:true });
-    appState.editor.layoutAutoFitCleanup = () => {
-      try{ ro.disconnect(); }catch(_err){}
-      window.removeEventListener('resize', scheduleLayoutAutoFit, { passive:true });
-      window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
-      if(appState.editor) appState.editor.layoutAutoFitRaf = null;
-    };
-  }
-
-  function getLayoutRenderViewBox(svg, vb){
-    const width = Math.max(1, svg?.clientWidth || 0);
-    const height = Math.max(1, svg?.clientHeight || 0);
-    if(!width || !height) return vb;
-    const viewportRatio = width / height;
-    const viewRatio = vb.w / vb.h;
-    if(Math.abs(viewportRatio - viewRatio) < 0.01) return vb;
-    if(viewportRatio > viewRatio){
-      const targetW = vb.h * viewportRatio;
-      return { x: vb.x - (targetW - vb.w) / 2, y: vb.y, w: targetW, h: vb.h };
-    }
-    const targetH = vb.w / viewportRatio;
-    return { x: vb.x, y: vb.y - (targetH - vb.h) / 2, w: vb.w, h: targetH };
-  }
-
-  function renderLayoutSvg(svg){
-    svg = svg || document.getElementById('layoutSvg') || document.getElementById('layout-svg');
-    if(!svg) return;
-    appState.editor.view = 'ortho';
-    svg.innerHTML = '';
-    svg.style.setProperty('--layout-dim-font-size', `${getDimFontSize()}px`);
-    const vb = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
-    const renderVb = getLayoutRenderViewBox(svg, vb);
-    svg.setAttribute('viewBox', `${renderVb.x} ${renderVb.y} ${renderVb.w} ${renderVb.h}`);
-    const panSurface = svgEl('rect',{x:vb.x-1400,y:vb.y-1400,width:vb.w+2800,height:vb.h+2800,fill:'transparent',class:'layout-pan-surface',style:'cursor:grab'});
-    svg.appendChild(panSurface);
-    panSurface.addEventListener('pointerdown', evt => {
-      const shouldPan = appState.editor.mode === 'navigate' || evt.shiftKey || evt.button === 1;
-      if(!shouldPan) return;
-      evt.preventDefault();
-      evt.stopPropagation();
-      appState.editor.dragging = { type:'pan-layout', startClient:{ x:evt.clientX, y:evt.clientY }, originalViewBox: clone(appState.editor.viewBox || { x:0, y:0, w:900, h:620 }) };
-      appState.editor.viewBoxCustomized = true;
-      svg.setPointerCapture?.(evt.pointerId);
-    });
-    const contentBounds = getLayoutContentBounds();
-    const gridStep = Math.max(4, getSnapSize() * 2);
-    const gridPad = 2400;
-    const gridMinX = Math.floor(Math.min(renderVb.x, contentBounds.x) - gridPad);
-    const gridMaxX = Math.ceil(Math.max(renderVb.x + renderVb.w, contentBounds.x + contentBounds.w) + gridPad);
-    const gridMinY = Math.floor(Math.min(renderVb.y, contentBounds.y) - gridPad);
-    const gridMaxY = Math.ceil(Math.max(renderVb.y + renderVb.h, contentBounds.y + contentBounds.h) + gridPad);
-    if(appState.editor.showGrid !== false){
-      const grid = svgEl('g',{class:'ortho-grid'});
-      for(let x=Math.floor(gridMinX / gridStep) * gridStep; x<=gridMaxX; x+=gridStep) grid.appendChild(svgEl('line',{x1:x,y1:gridMinY,x2:x,y2:gridMaxY}));
-      for(let y=Math.floor(gridMinY / gridStep) * gridStep; y<=gridMaxY; y+=gridStep) grid.appendChild(svgEl('line',{x1:gridMinX,y1:y,x2:gridMaxX,y2:y}));
-      svg.appendChild(grid);
-    }
-    const bgImage = appState.layout?.meta?.backgroundImage;
-    if(bgImage){
-      const b = getLayoutContentBounds();
-      const bg = svgEl('image',{href:bgImage,x:b.x,y:b.y,width:b.w,height:b.h,preserveAspectRatio:'xMidYMid meet',class:'layout-bg-image'});
-      svg.appendChild(bg);
-    }
-
-    const edgeLayer = svgEl('g');
-    const zoneLayer = svgEl('g');
-    const wallLayer = svgEl('g');
-    const openingLayer = svgEl('g');
-    const guideLayer = svgEl('g');
-    const rackLayer = svgEl('g');
-    const measureLayer = svgEl('g');
-    const vertexLayer = svgEl('g');
-    if(appState.editor.showZones === false){ zoneLayer.setAttribute('style','display:none'); vertexLayer.setAttribute('style','display:none'); edgeLayer.setAttribute('style','display:none'); }
-    if(appState.editor.wallsVisible === false) wallLayer.setAttribute('style','display:none');
-    if(appState.editor.openingsVisible === false) openingLayer.setAttribute('style','display:none');
-    svg.append(edgeLayer, zoneLayer, wallLayer, openingLayer, rackLayer, guideLayer, measureLayer, vertexLayer);
-
-
-    const flipSectionDirection = (axis) => {
-      const cut = getSectionCut(axis);
-      cut.dir = cut.dir === -1 ? 1 : -1;
-      renderLayoutEditor();
-    };
-
-    const drawSectionGuide = (zone, axis) => {
-      const zb = zoneBounds(zone);
-      const isY = axis === 'y';
-      const color = isY ? '#ff5b5b' : '#58c5ff';
-      const cut = clampSectionCut(zone, axis);
-      const linePos = getSectionLinePosition(zone, axis);
-      const extend = 38;
-      const x1 = isY ? zb.minX - extend : linePos;
-      const y1 = isY ? linePos : zb.minY - extend;
-      const x2 = isY ? zb.maxX + extend : linePos;
-      const y2 = isY ? linePos : zb.maxY + extend;
-      const guide = svgEl('line',{ x1,y1,x2,y2, stroke:color, 'stroke-width':'2.5', 'stroke-dasharray':'10 8', opacity:'.98', style:isY ? 'cursor:ns-resize' : 'cursor:ew-resize' });
-      guide.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'line'));
-      guideLayer.appendChild(guide);
-      const rangeLimit = getSectionRangeLimit(zone, axis);
-      if(isY){
-        const bandY1 = Math.min(linePos, rangeLimit), bandY2 = Math.max(linePos, rangeLimit);
-        guideLayer.appendChild(svgEl('rect',{x:zb.minX,y:bandY1,width:Math.max(1,zb.maxX-zb.minX),height:Math.max(1,bandY2-bandY1),class:'section-range-fill'}));
-        const rangeLine = svgEl('line',{x1:zb.minX-8,y1:rangeLimit,x2:zb.maxX+8,y2:rangeLimit,stroke:color,'stroke-width':'2.5','stroke-dasharray':'10 8',opacity:'.98',style:'cursor:ns-resize'});
-        rangeLine.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rangeLine);
-        const rHandleL = svgEl('circle',{cx:zb.minX-8, cy:rangeLimit, r:'6', class:'section-range-handle', fill:color, stroke:color});
-        rHandleL.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandleL);
-        const rHandleR = svgEl('circle',{cx:zb.maxX+8, cy:rangeLimit, r:'6', class:'section-range-handle', fill:color, stroke:color});
-        rHandleR.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandleR);
-        const rHandle = svgEl('circle',{cx:(zb.minX+zb.maxX)/2, cy:rangeLimit, r:'7', class:'section-range-handle', fill:color, stroke:color});
-        rHandle.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandle);
-        const rLabel = svgEl('text',{x:zb.maxX+18,y:rangeLimit-6,class:'section-range-label',fill:color}); rLabel.textContent='Límite Y'; guideLayer.appendChild(rLabel);
-      } else {
-        const bandX1 = Math.min(linePos, rangeLimit), bandX2 = Math.max(linePos, rangeLimit);
-        guideLayer.appendChild(svgEl('rect',{x:bandX1,y:zb.minY,width:Math.max(1,bandX2-bandX1),height:Math.max(1,zb.maxY-zb.minY),class:'section-range-fill'}));
-        const rangeLine = svgEl('line',{x1:rangeLimit,y1:zb.minY-8,x2:rangeLimit,y2:zb.maxY+8,stroke:color,'stroke-width':'2.5','stroke-dasharray':'10 8',opacity:'.98',style:'cursor:ew-resize'});
-        rangeLine.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rangeLine);
-        const rHandleT = svgEl('circle',{cx:rangeLimit, cy:zb.minY-8, r:'6', class:'section-range-handle', fill:color, stroke:color});
-        rHandleT.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandleT);
-        const rHandleB = svgEl('circle',{cx:rangeLimit, cy:zb.maxY+8, r:'6', class:'section-range-handle', fill:color, stroke:color});
-        rHandleB.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandleB);
-        const rHandle = svgEl('circle',{cx:rangeLimit, cy:(zb.minY+zb.maxY)/2, r:'7', class:'section-range-handle', fill:color, stroke:color});
-        rHandle.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'range'));
-        guideLayer.appendChild(rHandle);
-        const rLabel = svgEl('text',{x:rangeLimit+10,y:zb.minY-14,class:'section-range-label',fill:color}); rLabel.textContent='Límite X'; guideLayer.appendChild(rLabel);
-      }
-      const label = svgEl('text',{ x:isY ? (zb.minX + zb.maxX)/2 : linePos + 18, y:isY ? linePos - 10 : (zb.minY + zb.maxY)/2, fill:color, 'font-size':'11', 'font-weight':'800', 'text-anchor':'middle', style:'paint-order:stroke;stroke:#05101c;stroke-width:4px;stroke-linejoin:round;pointer-events:none;' });
-      label.textContent = isY ? 'Línea de corte Y' : 'Línea de corte X';
-      guideLayer.appendChild(label);
-      const dir = cut.dir === -1 ? -1 : 1;
-      const mkArrow = (pts) => {
-        const path = svgEl('path',{ d:`M ${pts.map(pt => `${pt[0]} ${pt[1]}`).join(' L ')} Z`, fill:color, stroke:'rgba(255,255,255,.18)', 'stroke-width':'1', 'stroke-linejoin':'round', opacity:'.98', style:'cursor:pointer' });
-        path.addEventListener('pointerdown', (evt) => startSectionGuideDrag(evt, axis, 'arrow'));
-        return path;
-      };
-      if(isY){
-        const leftX = x1, rightX = x2, ay = linePos;
-        const targetDown = rangeLimit > linePos;
-        const leftArrow = targetDown
-          ? [[leftX, ay+14],[leftX-10, ay-6],[leftX+10, ay-6]]
-          : [[leftX, ay-14],[leftX-10, ay+6],[leftX+10, ay+6]];
-        const rightArrow = targetDown
-          ? [[rightX, ay+14],[rightX-10, ay-6],[rightX+10, ay-6]]
-          : [[rightX, ay-14],[rightX-10, ay+6],[rightX+10, ay+6]];
-        guideLayer.appendChild(mkArrow(leftArrow));
-        guideLayer.appendChild(mkArrow(rightArrow));
-      } else {
-        const ax = linePos, topY = y1, botY = y2;
-        const topArrow = dir === 1
-          ? [[ax+14, topY],[ax-6, topY-10],[ax-6, topY+10]]
-          : [[ax-14, topY],[ax+6, topY-10],[ax+6, topY+10]];
-        const botArrow = dir === 1
-          ? [[ax+14, botY],[ax-6, botY-10],[ax-6, botY+10]]
-          : [[ax-14, botY],[ax+6, botY-10],[ax+6, botY+10]];
-        guideLayer.appendChild(mkArrow(topArrow));
-        guideLayer.appendChild(mkArrow(botArrow));
-      }
-      const handle = svgEl('circle',{ cx:isY ? (zb.minX+zb.maxX)/2 : linePos, cy:isY ? linePos : (zb.minY+zb.maxY)/2, r:'7', fill:color, stroke:'#05101c', 'stroke-width':'2', style:isY ? 'cursor:ns-resize' : 'cursor:ew-resize' });
-      handle.addEventListener('pointerdown', evt => startSectionGuideDrag(evt, axis, 'handle'));
-      guideLayer.appendChild(handle);
-    };
-
-    appState.layout.zones.forEach(zone => {
-      const d = zone.pts.map((p,i)=>`${i===0?'M':'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-      const zoneWallThickness = getZoneWallThickness(zone);
-      const wallInsetOpacity = appState.editor.wallsVisible === false ? (appState.selectedZoneId===zone.id ? .34 : .22) : (appState.selectedZoneId===zone.id ? .20 : .12);
-      const path = svgEl('path',{d,class:'ortho-zone' + (appState.selectedZoneId===zone.id ? ' selected' : ''),fill:hexToRgba(zone.color || '#ffd84d', wallInsetOpacity),stroke:hexToRgba(zone.color || '#ffd84d', appState.editor.wallsVisible === false ? .98 : .46),'stroke-width':'1.4','data-zone-id':zone.id});
-      path.addEventListener('pointerdown', e => {
-        try{ e.currentTarget?.setPointerCapture?.(e.pointerId); }catch(_){}
-        startZoneDrag(e, zone.id);
-      }); if(appState.editor.zonesLocked) path.style.cursor='default';
-      zoneLayer.appendChild(path);
-      const c = centroid(zone.pts);
-      const zb = zoneBoundsOf(zone);
-      const zoneTitle = String(zone.name || zone.id || '').trim() || String(zone.id || '');
-      const zoneSub = String(zone.id || '').trim().toUpperCase();
-      const padX = 12, padY = 10;
-      const badgeW = Math.min(Math.max(88, zoneTitle.length * 8.2 + 24), Math.max(96, zb.maxX - zb.minX - 24));
-      const hasSub = zoneSub && zoneSub !== zoneTitle.toUpperCase();
-      const badgeH = hasSub ? 42 : 28;
-      const badgePos = findZoneBadgePlacement(zone, badgeW, badgeH);
-      const badgeX = badgePos.x;
-      const badgeY = badgePos.y;
-      const badge = svgEl('g',{transform:`translate(${badgeX} ${badgeY})`,style: appState.editor.showLabels === false ? 'display:none;pointer-events:none' : 'pointer-events:none'});
-      badge.appendChild(svgEl('rect',{x:0,y:0,width:badgeW,height:badgeH,rx:'10',fill:'rgba(5,16,28,.86)',stroke:hexToRgba(zone.color || '#B0E4CC', .95),'stroke-width':'1.4'}));
-      const badgeText = svgEl('text',{x:padX,y:hasSub ? 16 : 18,class:'zone-badge-text','text-anchor':'start'});
-      badgeText.textContent = zoneTitle;
-      badge.appendChild(badgeText);
-      if(hasSub){
-        const badgeSub = svgEl('text',{x:padX,y:31,class:'zone-badge-sub','text-anchor':'start'});
-        badgeSub.textContent = zoneSub;
-        badge.appendChild(badgeSub);
-      }
-      zoneLayer.appendChild(badge);
-      if(appState.selectedZoneId===zone.id && appState.editor.showLabels !== false){
-        const centerLabel = svgEl('text',{x:c.x,y:c.y,class:'ortho-label','text-anchor':'middle',style:'opacity:.28;pointer-events:none'});
-        centerLabel.textContent = zoneSub || zoneTitle;
-        zoneLayer.appendChild(centerLabel);
-      }
-      if(appState.editor.showDims) drawZoneEdgeDimensions(edgeLayer, zone);
-
-      if(appState.selectedZoneId===zone.id){
-        if(appState.editor.sectionVisible){
-          drawSectionGuide(zone, 'x');
-          drawSectionGuide(zone, 'y');
-        }
-        const handleOffsetUnits = 15 / Math.max(.01, getScaleCmPerUnit());
-        zone.pts.forEach((p, idx) => {
-          const vn = getZoneOutwardVertexNormal(zone, idx);
-          const hx = p.x + vn.x * handleOffsetUnits;
-          const hy = p.y + vn.y * handleOffsetUnits;
-          const selectedVertex = appState.selectedVertex.zoneId===zone.id && appState.selectedVertex.idx===idx;
-          const hit = svgEl('circle',{cx:hx,cy:hy,r:'14',class:'vertex-hit'});
-          const v = svgEl('circle',{cx:hx,cy:hy,r:selectedVertex?'8':'7',class:'vertex' + (selectedVertex ? ' selected' : '')});
-          [hit, v].forEach(el => { el.addEventListener('pointerdown', e => startVertexDrag(e, zone.id, idx)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
-          vertexLayer.appendChild(hit);
-          vertexLayer.appendChild(v);
-        });
-        zone.pts.forEach((p, idx) => {
-          const q = zone.pts[(idx+1)%zone.pts.length];
-          const en = getZoneOutwardEdgeNormal(zone, p, q);
-          const mx = (p.x + q.x)/2, my = (p.y + q.y)/2;
-          const hx = mx + en.x * handleOffsetUnits;
-          const hy = my + en.y * handleOffsetUnits;
-          const activeEdge = (appState.selectedEdge.zoneId===zone.id && appState.selectedEdge.a===idx);
-          const edgeLineHit = svgEl('line',{x1:p.x + en.x*4,y1:p.y + en.y*4,x2:q.x + en.x*4,y2:q.y + en.y*4,class:'edge-hit','stroke-width':'20'});
-          edgeLineHit.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) edgeLineHit.style.pointerEvents='none';
-          edgeLayer.appendChild(edgeLineHit);
-          if(activeEdge) edgeLayer.appendChild(svgEl('line',{x1:p.x,y1:p.y,x2:q.x,y2:q.y,class:'edge-guide'}));
-          const hitBox = svgEl('rect',{x:hx-12,y:hy-12,width:24,height:24,rx:8,class:'edge-hit',transform:`rotate(45 ${hx} ${hy})`});
-          const handle = svgEl('rect',{x:hx-8,y:hy-8,width:16,height:16,rx:5,class:'edge-handle' + (activeEdge ? ' active' : ''),transform:`rotate(45 ${hx} ${hy})`});
-          [hitBox, handle].forEach(el => { el.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
-          edgeLayer.appendChild(hitBox);
-          edgeLayer.appendChild(handle);
-          const edgeWall = getZoneEdgeWall(zone, idx);
-          const isWallEdge = !!edgeWall?.enabled;
-          const pillW = isWallEdge ? 72 : 86;
-          const pillH = 22;
-          const pillX = hx + en.x * 20 - pillW / 2;
-          const pillY = hy + en.y * 20 - pillH / 2;
-          const pill = svgEl('g',{class:'edge-wall-pill' + (isWallEdge ? ' active' : ''), transform:`translate(${pillX} ${pillY})`, style:'cursor:pointer'});
-          pill.appendChild(svgEl('rect',{x:0,y:0,width:pillW,height:pillH,rx:'11',fill:isWallEdge?'rgba(255,216,77,.96)':'rgba(7,18,30,.94)',stroke:isWallEdge?'#fff2a6':'rgba(255,255,255,.26)','stroke-width':'1.2'}));
-          const pillText = svgEl('text',{x:pillW/2,y:14,'text-anchor':'middle',style:`font-size:10px;font-weight:900;fill:${isWallEdge?'#1c1600':'#d9e9f8'};pointer-events:none`});
-          pillText.textContent = isWallEdge ? 'PARED' : '+ PARED';
-          pill.appendChild(pillText);
-          pill.addEventListener('pointerdown', e => {
-            e.stopPropagation();
-            appState.selectedZoneId = zone.id;
-            appState.selectedEdge = { zoneId:zone.id, a:idx, b:(idx+1)%zone.pts.length };
-            if(isWallEdge){ removeZoneEdgeWall(zone, idx); appState.selectedWallId = ''; }
-            else { setZoneEdgeWall(zone, idx, { thickness:getZoneWallThickness(zone), height:Number(appState.layout?.meta?.defaultWallHeight || 290) || 290 }); appState.selectedWallId = zoneEdgeWallId(zone.id, idx); }
-            syncZonePerimeterWalls();
-            cleanupDetachedOpenings();
-            persistActiveLayout();
-            renderLayoutEditor();
-          });
-          edgeLayer.appendChild(pill);
-        });
-        if(appState.selectedEdge.zoneId===zone.id && appState.selectedEdge.a>=0){
-          const a = zone.pts[appState.selectedEdge.a], b = zone.pts[appState.selectedEdge.b];
-          edgeLayer.appendChild(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'edge-guide'}));
-        }
-      }
-    });
-
-
-    ensureLayoutDecorations();
-    cleanupDetachedOpenings();
-    (appState.layout.walls || []).forEach(wall => {
       const selected = appState.selectedWallId === wall.id;
       const isAutoZoneEdge = !!wall.autoZoneEdge;
       const strokeW = Math.max(isAutoZoneEdge ? 10 : 6, Number(wall.thickness || 12) || 12);
       const cap = isAutoZoneEdge ? 'square' : 'round';
-      const outerStroke = selected ? '#ffe08a' : (isAutoZoneEdge ? 'rgba(231,239,247,.96)' : '#dce8f5');
+      const outerStroke = selected ? '#ffe08a' : (isAutoZoneEdge ? 'rgba(231,239,247,.98)' : '#dce8f5');
       const innerStroke = selected ? 'rgba(255,190,80,.95)' : (isAutoZoneEdge ? 'rgba(43,58,78,.74)' : 'rgba(34,48,66,.55)');
-      const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + (isAutoZoneEdge ? 10 : 16)),'stroke-linecap':cap,style:'cursor:pointer'});
-      const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:outerStroke,'stroke-width':String(strokeW),'stroke-linecap':cap,opacity:selected?'.99':(isAutoZoneEdge ? '.96' : '.9')});
-      const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':String(Math.max(1.25, strokeW * (isAutoZoneEdge ? .48 : .16))),'stroke-linecap':cap,opacity:isAutoZoneEdge ? '.92' : '.8'});
+      const poly = isAutoZoneEdge ? getAutoWallPolygon(wall) : null;
       const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:(appState.editor.showLabels===false || isAutoZoneEdge)?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
       label.textContent = wall.id;
-      [hit, line].forEach(el => el.addEventListener('pointerdown', evt => {
+      const selectWall = evt => {
         evt.stopPropagation();
         appState.selectedWallId = wall.id;
         appState.selectedOpeningId = '';
         appState.selectedRackLayoutId = '';
         renderLayoutEditor();
-      }));
-      wallLayer.append(hit, line, inner, label);
+      };
+      if(poly){
+        const d = wallPolygonPath(poly);
+        const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.5', opacity:selected?'.99':'.98', style:'cursor:pointer' });
+        const accent = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':'1.8','stroke-linecap':'round',opacity:'.92'});
+        const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:'cursor:pointer' });
+        [fill, hit].forEach(el => el.addEventListener('pointerdown', selectWall));
+        wallLayer.append(fill, accent, hit, label);
+      } else {
+        const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + (isAutoZoneEdge ? 10 : 16)),'stroke-linecap':cap,style:'cursor:pointer'});
+        const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:outerStroke,'stroke-width':String(strokeW),'stroke-linecap':cap,opacity:selected?'.99':(isAutoZoneEdge ? '.96' : '.9')});
+        const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':String(Math.max(1.25, strokeW * (isAutoZoneEdge ? .48 : .16))),'stroke-linecap':cap,opacity:isAutoZoneEdge ? '.92' : '.8'});
+        [hit, line].forEach(el => el.addEventListener('pointerdown', selectWall));
+        wallLayer.append(hit, line, inner, label);
+      }
     });
     (appState.layout.openings || []).forEach(opening => {
       const wall = findWallById(opening.wallId);
