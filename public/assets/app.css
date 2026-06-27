@@ -5169,3 +5169,60 @@ body.theme-light .brand-box{
   .nav3d-webgl-mode .nav3d-side{grid-template-rows:minmax(330px,1.08fr) minmax(280px,.92fr)}
   .nav3d-webgl-mode .nav3d-rack-card{grid-template-rows:auto minmax(280px,1fr) auto}
 }
+
+
+/* V63: refinamiento visual del visor 3D enfocado */
+.nav3d-webgl-mode .nav3d-product-card{
+  width:min(300px,calc(100% - 38px));
+  padding:12px 13px;
+  border-radius:20px;
+  background:linear-gradient(180deg,rgba(7,19,31,.90),rgba(4,11,19,.95));
+  box-shadow:0 14px 36px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.nav3d-product-topline{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.nav3d-product-topline .nav3d-product-sku{margin-top:0;white-space:nowrap;flex-shrink:0}
+.nav3d-webgl-mode .nav3d-product-card>b,.nav3d-webgl-mode .nav3d-product-topline b{font-size:14px;line-height:1.16;white-space:normal;overflow:visible;text-overflow:clip;max-width:100%}
+.nav3d-webgl-mode .nav3d-product-grid{margin-top:10px;gap:6px 10px}
+.nav3d-product-focus{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.nav3d-focus-pill{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 11px;border-radius:999px;border:1px solid rgba(130,201,172,.18);background:rgba(255,255,255,.05);font-size:12px;font-weight:900;color:#eafff1}
+.nav3d-focus-pill b{font-size:13px;color:#fff}
+.nav3d-focus-pill-slot{border-color:rgba(255,214,102,.42);background:linear-gradient(180deg,rgba(255,214,102,.24),rgba(255,255,255,.05));color:#ffe8a3;box-shadow:0 0 0 1px rgba(255,214,102,.12),0 0 18px rgba(255,214,102,.18)}
+.nav3d-webgl-mode .nav3d-product-actions{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+.nav3d-webgl-mode .nav3d-product-actions button{min-height:32px;font-size:11.5px}
+
+.nav3d-webgl-mode .nav3d-rack-popover{
+  width:min(280px,calc(100% - 40px));
+  top:132px;
+  padding:12px;
+  background:linear-gradient(180deg,rgba(8,20,32,.92),rgba(5,12,20,.96));
+}
+.nav3d-webgl-mode .nav3d-popover-actions{grid-template-columns:1fr}
+.nav3d-webgl-mode .nav3d-popover-actions button{min-height:34px;font-size:12px}
+
+.nav3d-webgl-mode .nav3d-minimap{width:230px;padding:9px 10px}
+.nav3d-mini-sub{margin:-2px 0 7px;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:rgba(225,244,232,.66)}
+
+.nav3d-webgl-mode .nav3d-side{padding:18px;gap:14px;grid-template-rows:minmax(360px,1.12fr) minmax(280px,.88fr)}
+.nav3d-webgl-mode .nav3d-rack-card{grid-template-rows:auto minmax(280px,1fr) auto}
+.nav3d-webgl-mode .nav3d-rack-head{padding:12px 14px}
+.nav3d-webgl-mode .nav3d-rack-stage{padding:14px;min-height:280px}
+.nav3d-webgl-mode .nav3d-rack-stage svg{
+  background:
+    radial-gradient(circle at 50% 44%,rgba(126,255,184,.12),transparent 28%),
+    radial-gradient(circle at 50% 20%,rgba(104,152,196,.16),transparent 42%),
+    linear-gradient(180deg,rgba(7,14,24,.97),rgba(4,9,16,.99));
+}
+.nav3d-webgl-mode .nav3d-rack-card.target-active .nav3d-rack-stage svg{
+  box-shadow:inset 0 0 0 1px rgba(126,255,184,.26), inset 0 0 44px rgba(74,255,150,.10), 0 18px 32px rgba(0,0,0,.18);
+}
+.nav3d-webgl-mode .nav3d-rack-meta{justify-content:center;gap:7px;padding:0 12px 14px}
+.nav3d-webgl-mode .nav3d-rack-badge{font-size:10.5px;padding:0 10px;min-height:28px}
+.nav3d-webgl-mode .nav3d-rack-badge.is-active{font-size:11px}
+
+@media(max-width:1180px){
+  .nav3d-webgl-mode .nav3d-product-card{width:min(280px,calc(100% - 36px))}
+  .nav3d-webgl-mode .nav3d-product-actions{grid-template-columns:1fr 1fr}
+}
+@media(max-width:820px){
+  .nav3d-webgl-mode .nav3d-rack-popover{top:116px;width:min(250px,calc(100% - 34px))}
+}

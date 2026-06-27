@@ -6771,7 +6771,9 @@ function getSheetBranchOpenMap(){
       const model = rackModel(rack?.modelId) || baseRackModel();
       const levelCount = Math.max(1, Number(model.levels || 1) || 1);
       const slotCount = Math.max(1, Number(model.slots || model.capacity || 1) || 1);
-      return `<span class="nav3d-rack-badge">WebGL</span><span class="nav3d-rack-badge">Niveles ${levelCount}</span><span class="nav3d-rack-badge">Slots ${slotCount}</span><span class="nav3d-rack-badge is-active">Nivel ${Math.max(1, Number(nivel || 1) || 1)}</span><span class="nav3d-rack-badge is-active">Slot ${Math.max(1, Number(slot || 1) || 1)}</span>${extraActive ? `<span class="nav3d-rack-badge is-accent">${escapeHtml(extraActive)}</span>` : ''}`;
+      const activeLevel = Math.max(1, Number(nivel || 1) || 1);
+      const activeSlot = Math.max(1, Number(slot || 1) || 1);
+      return `<span class="nav3d-rack-badge is-active">Activo N${activeLevel} · S${activeSlot}</span><span class="nav3d-rack-badge">Niveles ${levelCount}</span><span class="nav3d-rack-badge">Slots ${slotCount}</span><span class="nav3d-rack-badge">WebGL</span>${extraActive ? `<span class="nav3d-rack-badge is-accent">${escapeHtml(extraActive)}</span>` : ''}`;
     };
     const renderSideRacks = () => {
       const liveCtx = getViewerProductLocationContext(prod);
@@ -6858,9 +6860,13 @@ function getSheetBranchOpenMap(){
       const level = ui.target === 'store' ? (prod?.nivelStore || '—') : (prod?.nivel || '—');
       const slot = ui.target === 'store' ? (prod?.slotStore || '—') : (prod?.slot || '—');
       productCard.innerHTML = `
-        <div class="nav3d-product-kicker">Producto activo · ${isBoth ? 'Ambas ubicaciones' : ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
-        <b>${escapeHtml(prod?.nombre || 'Producto sin nombre')}</b>
-        <div class="nav3d-product-sku">${escapeHtml(prod?.sku || 'SKU —')}</div>
+        <div class="nav3d-product-topline">
+          <div>
+            <div class="nav3d-product-kicker">Producto activo · ${isBoth ? 'Ambas ubicaciones' : ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
+            <b>${escapeHtml(prod?.nombre || 'Producto sin nombre')}</b>
+          </div>
+          <div class="nav3d-product-sku">${escapeHtml(prod?.sku || 'SKU —')}</div>
+        </div>
         ${isBoth ? `
           <div class="nav3d-product-grid nav3d-product-grid-both">
             <span>Ubicación</span><strong>${escapeHtml(liveCtx.primaryLoc || '—')}</strong>
@@ -6869,12 +6875,15 @@ function getSheetBranchOpenMap(){
           <div class="nav3d-product-grid">
             <span>Destino</span><strong>${escapeHtml(targetLoc)}</strong>
             <span>Rack</span><strong>${escapeHtml(targetRackId || '—')}</strong>
-            <span>Nivel / Slot</span><strong>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</strong>
+          </div>
+          <div class="nav3d-product-focus">
+            <span class="nav3d-focus-pill">Nivel <b>${escapeHtml(String(level))}</b></span>
+            <span class="nav3d-focus-pill nav3d-focus-pill-slot">Slot <b>${escapeHtml(String(slot))}</b></span>
           </div>`}
         <div class="nav3d-product-actions nav3d-product-actions-focused">
-          <button type="button" data-nav3d-product-action="variants">Variantes</button>
           <button type="button" data-nav3d-product-action="center">Centrar</button>
           <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
+          <button type="button" data-nav3d-product-action="variants">Variantes</button>
         </div>`;
     };
     const renderMiniMap = () => {
@@ -6895,7 +6904,8 @@ function getSheetBranchOpenMap(){
         const active = focusRackIds.has(r.id);
         return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${active?4.4:2.4}" class="${active?'active':''}"><title>${escapeHtml(r.id)}</title></circle>`;
       }).join('');
-      miniMap.innerHTML = `<div class="nav3d-mini-head"><b>Mini mapa</b><span>${escapeHtml(getTargetRackId() || '—')}</span></div><svg viewBox="0 0 ${w} ${h}" aria-label="Mini mapa de layout">${zonePaths}${rackDots}</svg>`;
+      const targetLabel = ui.target === 'store' ? 'Almacén activo' : ui.target === 'both' ? 'Ubicaciones activas' : 'Rack activo';
+      miniMap.innerHTML = `<div class="nav3d-mini-head"><b>Mini mapa</b><span>${escapeHtml(getTargetRackId() || '—')}</span></div><div class="nav3d-mini-sub">${targetLabel}</div><svg viewBox="0 0 ${w} ${h}" aria-label="Mini mapa de layout">${zonePaths}${rackDots}</svg>`;
     };
 
     loadThreeRuntime().then(THREE => {
@@ -6966,9 +6976,9 @@ function getSheetBranchOpenMap(){
       const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.34, visual.grid*.48); world.add(grid);
 
       const makeZoneMaterials = (active=false) => ({
-        floor: new THREE.MeshStandardMaterial({ color:active ? 0x183d52 : visual.floor, roughness:.52, metalness:.18, transparent:true, opacity:active ? .92 : .16, side:THREE.DoubleSide, depthWrite:active }),
-        overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .12 : .18) : .035, side:THREE.DoubleSide, depthWrite:false }),
-        line: new THREE.LineBasicMaterial({ color:active ? 0x86ffd0 : 0x91bad3, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .46 : .68) : .20 })
+        floor: new THREE.MeshStandardMaterial({ color:active ? 0x18394b : visual.floor, roughness:.56, metalness:.15, transparent:true, opacity:active ? .54 : .07, side:THREE.DoubleSide, depthWrite:active }),
+        overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .08 : .12) : .014, side:THREE.DoubleSide, depthWrite:false }),
+        line: new THREE.LineBasicMaterial({ color:active ? 0x86ffd0 : 0x91bad3, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .52 : .70) : .12 })
       });
       layoutZones.forEach(z => {
         const pts = (z.pts || []).map(layoutToShapePoint);
@@ -6984,16 +6994,48 @@ function getSheetBranchOpenMap(){
         }
       });
 
-      const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:visual.ghost, roughness:.82, metalness:.10, depthWrite:false });
-      const matGhostWire = new THREE.LineBasicMaterial({ color:0xd0ecff, transparent:true, opacity:visual.wire });
+      const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:Math.min(visual.ghost, .10), roughness:.86, metalness:.08, depthWrite:false });
+      const matGhostWire = new THREE.LineBasicMaterial({ color:0xd0ecff, transparent:true, opacity:Math.min(visual.wire, .24) });
       const matFrame = new THREE.MeshStandardMaterial({ color:0x0b4f82, roughness:.31, metalness:.72 });
       const matBeam = new THREE.MeshStandardMaterial({ color:0xe88a2f, roughness:.42, metalness:.48 });
       const matBox = new THREE.MeshStandardMaterial({ color:0xca9a5a, roughness:.86, metalness:.025 });
       const matBox2 = new THREE.MeshStandardMaterial({ color:0xd8d1bd, roughness:.74, metalness:.02 });
       const matWrap = new THREE.MeshStandardMaterial({ color:0xeff3e9, roughness:.62, metalness:.03 });
-      const matActive = new THREE.MeshStandardMaterial({ color:0xc7ff4d, emissive:0x75ff5e, emissiveIntensity:1.95, transparent:true, opacity:.72, roughness:.22, metalness:.06 });
-      const matRoute = new THREE.MeshStandardMaterial({ color:0x47ff91, emissive:0x38ff86, emissiveIntensity:1.6, roughness:.2, metalness:.05 });
-      const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:ui.visual === 'oscuro' ? .22 : .32, depthWrite:false });
+      const matActive = new THREE.MeshStandardMaterial({ color:0xd7ff64, emissive:0x92ff76, emissiveIntensity:1.55, transparent:true, opacity:.68, roughness:.22, metalness:.06 });
+      const matRoute = new THREE.MeshStandardMaterial({ color:0x47ff91, emissive:0x38ff86, emissiveIntensity:1.12, roughness:.24, metalness:.04 });
+      const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:ui.visual === 'oscuro' ? .12 : .18, depthWrite:false });
+      const createSlotLabelSprite = (textLabel) => {
+        const tag = document.createElement('canvas');
+        tag.width = 256; tag.height = 96;
+        const g = tag.getContext('2d');
+        g.clearRect(0,0,tag.width,tag.height);
+        g.fillStyle = 'rgba(6,18,28,.92)';
+        g.strokeStyle = 'rgba(126,255,184,.92)';
+        g.lineWidth = 4;
+        const radius = 20;
+        g.beginPath();
+        g.moveTo(radius, 6);
+        g.lineTo(tag.width - radius, 6);
+        g.quadraticCurveTo(tag.width - 6, 6, tag.width - 6, radius);
+        g.lineTo(tag.width - 6, tag.height - radius);
+        g.quadraticCurveTo(tag.width - 6, tag.height - 6, tag.width - radius, tag.height - 6);
+        g.lineTo(radius, tag.height - 6);
+        g.quadraticCurveTo(6, tag.height - 6, 6, tag.height - radius);
+        g.lineTo(6, radius);
+        g.quadraticCurveTo(6, 6, radius, 6);
+        g.closePath();
+        g.fill(); g.stroke();
+        g.font = '900 34px Inter, Arial, sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillStyle = '#ecfff5';
+        g.fillText(textLabel, tag.width/2, tag.height/2 + 2);
+        const texture = new THREE.CanvasTexture(tag);
+        if('colorSpace' in texture) texture.colorSpace = THREE.SRGBColorSpace;
+        const material = new THREE.SpriteMaterial({ map:texture, transparent:true, depthWrite:false });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(1.55, .58, 1);
+        return sprite;
+      };
 
       const addBox = (group, w,h,d, x,y,z, mat, cast=true) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.position.set(x,y,z); m.castShadow=cast; m.receiveShadow=true; group.add(m); return m; };
       const addCylinderBetween = (group, start, end, radius, mat, cast=false) => {
@@ -7042,14 +7084,21 @@ function getSheetBranchOpenMap(){
             const isTarget = active && li === target.level && si === target.slot;
             const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, ((li+si)%4===0) ? matWrap : ((li+si)%2 ? matBox : matBox2));
             if(isTarget){
-              addBox(group, bw*.94, boxH*1.18, boxD*1.18, bx, baseY + boxH/2, d*.05, matActive, false);
+              addBox(group, bw*.96, boxH*1.18, boxD*1.18, bx, baseY + boxH/2, d*.05, matActive, false);
               const markerY = baseY + boxH + .34;
-              const pin = new THREE.Mesh(new THREE.SphereGeometry(.16, 28, 16), matRoute);
+              const pin = new THREE.Mesh(new THREE.SphereGeometry(.19, 32, 18), matRoute);
               pin.position.set(bx, markerY, d*.05); group.add(pin);
-              const ring = new THREE.Mesh(new THREE.TorusGeometry(.33, .022, 12, 64), matRoute);
+              const ring = new THREE.Mesh(new THREE.TorusGeometry(.38, .03, 16, 72), matRoute);
               ring.position.set(bx, markerY-.13, d*.05); ring.rotation.x = Math.PI/2; group.add(ring);
-              const stem = new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,.50,12), matRoute);
-              stem.position.set(bx, markerY-.33, d*.05); group.add(stem);
+              const ringHalo = new THREE.Mesh(new THREE.TorusGeometry(.48, .028, 14, 72), matRouteHalo);
+              ringHalo.position.set(bx, markerY-.13, d*.05); ringHalo.rotation.x = Math.PI/2; group.add(ringHalo);
+              const stem = new THREE.Mesh(new THREE.CylinderGeometry(.024,.024,.56,14), matRoute);
+              stem.position.set(bx, markerY-.35, d*.05); group.add(stem);
+              const beam = new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,Math.max(.65, rackH - baseY - boxH),10), matRouteHalo);
+              beam.position.set(bx, markerY + ((rackH - baseY - boxH) * .5) - .20, d*.05); group.add(beam);
+              const slotLabel = createSlotLabelSprite(`N${li} · S${si}`);
+              slotLabel.position.set(bx, markerY + .58, d*.05);
+              group.add(slotLabel);
             }
           }
         }
@@ -7105,13 +7154,13 @@ function getSheetBranchOpenMap(){
           const mid = new THREE.Vector3((start.x+end.x)/2, .055, start.z);
           const points = [new THREE.Vector3(start.x,.065,start.z), mid, new THREE.Vector3(end.x,.065,end.z)];
           for(let i=0;i<points.length-1;i++){
-            addCylinderBetween(routeGroup, points[i], points[i+1], .035, matRoute, false);
-            addCylinderBetween(routeGroup, points[i].clone().setY(.055), points[i+1].clone().setY(.055), .115, matRouteHalo, false);
+            addCylinderBetween(routeGroup, points[i], points[i+1], .026, matRoute, false);
+            addCylinderBetween(routeGroup, points[i].clone().setY(.055), points[i+1].clone().setY(.055), .074, matRouteHalo, false);
           }
           [start,end].forEach((p,idx)=>{
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(idx ? .16 : .11, 24, 12), matRoute);
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(idx ? .18 : .10, 24, 12), matRoute);
             sphere.position.set(p.x,.14,p.z); sphere.castShadow=false; routeGroup.add(sphere);
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(idx ? .42 : .24, .018, 12, 64), matRoute);
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(idx ? .30 : .18, .018, 12, 64), idx ? matRoute : matRouteHalo);
             ring.position.set(p.x,.075,p.z); ring.rotation.x = Math.PI/2; routeGroup.add(ring);
           });
           world.add(routeGroup);
