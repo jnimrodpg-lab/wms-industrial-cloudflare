@@ -1,81 +1,19 @@
-# WMS Industrial Cloudflare
+# WMS Industrial – v70
 
-App WMS preparada para desplegar en GitHub + Cloudflare Pages/Functions.
+Se aplicaron mejoras enfocadas en la visualización del espacio del local y se limpiaron archivos innecesarios del paquete.
 
-## Qué incluye esta versión
+## Mejoras aplicadas
+- Muros 3D levantados automáticamente desde las aristas de las zonas del layout.
+- Lectura espacial más clara en el visor WebGL: ahora el local se percibe como un recinto y no solo como una base con racks.
+- Muros activos más visibles; muros no activos quedan más suaves para mantener contexto sin saturar.
+- Ajuste del texto del modal 3D para reflejar que el visor muestra el espacio del local.
 
-- Frontend en `public/index.html`.
-- CSS principal en `public/assets/app.css`.
-- JS principal activo en `public/assets/app-main.runtimefix.js`.
-- Functions/API en `functions/api`.
-- Migración D1 en `migrations/0001_init.sql`.
-- Ejemplo de Sheet en `public/ejemplo-sheet.csv`.
-
-## Cambios V16
-
-- Se mantiene el canvas de edición limpio, con grilla visible y sin overlay oscuro.
-- Se agregó panel derecho de propiedades para zonas y racks.
-- Se agregaron capas visibles/ocultas: grilla, zonas, racks, etiquetas, cotas y mini mapa.
-- Se agregaron plantillas rápidas para crear zona + rack, almacén, fila de racks y distribuir racks.
-- Se agregó soporte para imagen de fondo del plano.
-- Se agregó mini mapa del layout.
-- Se eliminaron archivos auxiliares no usados para evitar conflictos en Cloudflare Functions.
-- Se actualizó el cache/build a `cloudflare-v58-layout-tools`.
-
-## Despliegue
-
-1. Sube este contenido a tu repositorio de GitHub.
-2. En Cloudflare Pages, conecta el repositorio.
-3. Usa la carpeta raíz del proyecto.
-4. Si Cloudflare solicita comando de build y no usas build, déjalo vacío o usa el flujo de Pages Functions según tu configuración.
-5. Aplica la migración D1 incluida en `migrations/0001_init.sql` si tu proyecto usa D1.
-
-## Nota
-
-El archivo `public/assets/app-main.js` legacy fue eliminado porque `public/index.html` usa `app-main.runtimefix.js`.
-
-## V17 - Card sin diseñador y carrusel por imágenes
-
-- Se eliminó la pantalla **Diseño de Card** del menú administrador.
-- El card del producto ya no usa video como media principal.
-- El carrusel del card toma imágenes desde los headers del Sheet: `Imagen`, `Imagen 1`, `Imagen 2`, `Imagen 3`, etc.
-- En **Vincular Sheet** ahora se pueden mapear `Imagen 1` a `Imagen 6`.
-- Los mapeos antiguos de video se ignoran para evitar que aparezcan videos dentro del card.
-
-
-
-## V52 - Salud del almacén
-
-Se agregó un diagnóstico avanzado para validar datos importados del Sheet, ubicaciones, duplicados, racks y zonas antes de operar picking, reposición o integraciones como Bsale. El reporte permite exportar observaciones en CSV para corregir los datos de origen.
-
-
-## v53 - Sucursales y almacenes
-
-Esta versión separa operación por sucursal: selector global, filtro de almacén, layout independiente y salud por sede.
-
-
-## V55 - Reposición / Restock operativo
-
-Esta versión agrega un módulo operativo para productos con `Cant. Restock` mayor a 0. Permite generar una ruta de reposición ordenada por zona, rack, nivel y slot, filtrar pendientes, marcar ítems revisados y exportar CSV para trabajo en almacén.
-
-
-## V56 - Enfoque visual de ubicación
-
-Esta versión reencamina la app para que el flujo principal sea buscar un producto y visualizar dónde está: ubicación principal, almacén, zona, rack, nivel y slot, con acceso directo a plano 2D y 3D. Los módulos de picking/reposición quedan fuera del flujo principal.
-
-
-## V58
-- Panel de propiedades de producto restaurado al diseño anterior.
-- Mantiene el resto del flujo actual y sin botón Copiar ubicación en el panel principal.
-
-
-## V60 - Plano 2D enfocado al producto
-- El modal de ubicación ahora abre directamente en modo Rack para enfocarse en el producto.
-- Se agregó resumen visual: producto, ubicación principal y ubicación en almacén.
-- Selector de enfoque: Ubicación / Almacén / Ambas.
-- Zoom automático al rack/zona activa usando el mismo sistema de coordenadas del layout.
-- Se mantiene eliminado el botón Copiar ubicación del panel principal.
-
-## V61 - 3D enfocado al producto
-
-Esta versión ajusta el visor 3D para que abra directamente enfocado en la ubicación visual del producto: zona, rack, nivel y slot. Se simplifica la interfaz del modal 3D y se refuerza el marcador del slot activo.
+## Limpieza del paquete
+- Se eliminaron archivos de cambios históricos, duplicados de `public/index.html`, assets duplicados bajo `public/assets`, ejemplo CSV y scripts auxiliares.
+- Se conservó solo lo necesario para ejecutar/desplegar el proyecto:
+  - `index.html`
+  - `assets/`
+  - `functions/`
+  - `migrations/`
+  - `_redirects`
+  - `package.json`, `package-lock.json`, `wrangler.toml`
