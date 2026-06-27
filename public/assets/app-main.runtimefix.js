@@ -6842,17 +6842,13 @@ function getSheetBranchOpenMap(){
       const zone = rack.zoneId || (isStore ? 'Almacén' : 'Zona');
       rackPopover.hidden = false;
       rackPopover.innerHTML = `
-        <div class="nav3d-popover-head"><span>${isPrimary ? 'Rack de ubicación' : isStore ? 'Rack de almacén' : 'Rack seleccionado'}</span><b>${escapeHtml(rackId)}</b></div>
-        <div class="nav3d-popover-grid">
+        <div class="nav3d-popover-head"><span>${isPrimary ? 'Ubicación' : isStore ? 'Almacén' : 'Rack'}</span><b>${escapeHtml(rackId)}</b></div>
+        <div class="nav3d-popover-grid compact">
           <span>Zona</span><b>${escapeHtml(zone)}</b>
-          <span>Niveles</span><b>${levelCount}</b>
-          <span>Slots</span><b>${slotCount}</b>
           <span>Activo</span><b>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</b>
         </div>
         <div class="nav3d-popover-actions">
-          <button type="button" data-popover-action="detail">Ver detalle</button>
-          <button type="button" data-popover-action="isolate">Aislar rack</button>
-          <button type="button" data-popover-action="center">Centrar</button>
+          <button type="button" data-popover-action="center">Enfocar slot</button>
         </div>`;
     };
 
@@ -6884,7 +6880,7 @@ function getSheetBranchOpenMap(){
             <span class="nav3d-focus-pill nav3d-focus-pill-slot">Slot <b>${escapeHtml(String(slot))}</b></span>
           </div>`}
         <div class="nav3d-product-actions nav3d-product-actions-focused compact">
-          <button type="button" data-nav3d-product-action="center">Centrar</button>
+          <button type="button" data-nav3d-product-action="center">Enfocar slot</button>
           <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
         </div>`;
     };
@@ -7054,6 +7050,29 @@ function getSheetBranchOpenMap(){
         const isStore = r.id === liveCtx.storeRackId || r.id === prod?.rackStore;
         return { level: Math.max(1, Number(isStore ? prod?.nivelStore : prod?.nivel) || 1), slot: Math.max(1, Number(isStore ? prod?.slotStore : prod?.slot) || 1) };
       };
+      const targetFocusForRack = (r, mode='slot') => {
+        if(!r) return new THREE.Vector3(0,0,0);
+        const model = rackModel(r.modelId) || baseRackModel();
+        const w = Math.max(.8, (Number(r.w || model.width || 120))*scale);
+        const d = Math.max(.45, (Number(r.h || model.depth || 56))*scale);
+        const rackH = Math.max(1.2, (Number(r.rackHeight || model.height || 240))*hScale);
+        const levels = Math.max(1, Math.min(8, Number(model.levels || 4) || 4));
+        const slots = Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2));
+        const target = activeInfoForRack(r);
+        const level = Math.max(1, Math.min(levels, Number(target.level || 1)));
+        const slot = Math.max(1, Math.min(slots, Number(target.slot || 1)));
+        const rackCenter = toWorld(Number(r.x||0) + Number(r.w||model.width||120)/2, Number(r.y||0) + Number(r.h||model.depth||56)/2, 0);
+        if(mode !== 'slot') return new THREE.Vector3(rackCenter.x, Math.min(rackH*.55, 3.8), rackCenter.z);
+        const bw = (w*.78)/slots;
+        const localX = -w*.39 + bw*(slot-.5);
+        const localZ = d*.05;
+        const yaw = rackYaw(r);
+        const cos = Math.cos(yaw), sin = Math.sin(yaw);
+        const worldX = rackCenter.x + localX * cos + localZ * sin;
+        const worldZ = rackCenter.z - localX * sin + localZ * cos;
+        const y = Math.max(.55, Math.min(rackH*.92, ((level-.5)/levels)*rackH + .35));
+        return new THREE.Vector3(worldX, y, worldZ);
+      };
       const buildDetailedRack = (r, active=false) => {
         const group = new THREE.Group();
         const model = rackModel(r.modelId) || baseRackModel();
@@ -7163,12 +7182,12 @@ function getSheetBranchOpenMap(){
 
       const cameraFocusRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
       const initialPan = cameraFocusRack
-        ? toWorld(Number(cameraFocusRack.x||0)+Number(cameraFocusRack.w||120)/2, Number(cameraFocusRack.y||0)+Number(cameraFocusRack.h||56)/2, 18)
+        ? targetFocusForRack(cameraFocusRack, 'slot')
         : new THREE.Vector3(0,0,0);
-      const initialDistance = Math.max(5.2, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .34 : .58));
+      const initialDistance = Math.max(4.6, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .29 : .54));
       const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
       const selectedInitial = getTargetRackId() || ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
-      if(selectedInitial) { ui.selectedRackId = selectedInitial; appState.ui.nav3DSelectedRackId = selectedInitial; renderRackPopover(selectedInitial); }
+      if(selectedInitial) { ui.selectedRackId = selectedInitial; appState.ui.nav3DSelectedRackId = selectedInitial; if(rackPopover) rackPopover.hidden = true; }
       const updateCamera = () => {
         controls.yaw += (controls.targetYaw-controls.yaw)*.16;
         controls.pitch += (controls.targetPitch-controls.pitch)*.16;
@@ -7196,9 +7215,9 @@ function getSheetBranchOpenMap(){
       const focusRackCamera = (rackId, closeDistance = false) => {
         const rack = findNav3DRackById(rackId);
         if(!rack) return;
-        const target = toWorld(Number(rack.x||0)+Number(rack.w||120)/2, Number(rack.y||0)+Number(rack.h||56)/2, 18);
+        const target = targetFocusForRack(rack, closeDistance ? 'slot' : 'rack');
         controls.targetPan.copy(target);
-        controls.targetDistance = closeDistance ? Math.max(4.2, initialDistance * .34) : Math.max(5.2, initialDistance * .54);
+        controls.targetDistance = closeDistance ? Math.max(3.8, initialDistance * .30) : Math.max(4.8, initialDistance * .48);
       };
       const selectRackFromScene = (rackId, center = false) => {
         if(!rackId) return;
