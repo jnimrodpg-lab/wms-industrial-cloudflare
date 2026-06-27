@@ -77,13 +77,17 @@
     selectedEdge: { zoneId:'', a:-1, b:-1 },
     selectedRackLayoutId: '',
     selectedRackLayoutIds: [],
+    selectedWallId: '',
+    selectedOpeningId: '',
     highlightedRackIds: [],
     primaryHighlightedRackId: '',
     selectedModelId: 'std_4',
     sheetConfig: { url:'', sheetName:'Productos', lastMode:'demo' },
     layout: {
       zones: [],
-      racks: []
+      racks: [],
+      walls: [],
+      openings: []
     },
     branchLayouts: loadBranchLayouts(),
     activeLayoutBranchIndex: 0,
@@ -201,12 +205,17 @@
     if(!Array.isArray(appState.admin.users)) appState.admin.users = [];
     if(!appState.admin.company || typeof appState.admin.company !== 'object') appState.admin.company = {};
     appState.admin.branches.forEach(ensureBranchRuntimeShape);
+    if(!appState.layout || typeof appState.layout !== 'object') appState.layout = { zones:[], racks:[], walls:[], openings:[] };
+    if(!Array.isArray(appState.layout.zones)) appState.layout.zones = [];
+    if(!Array.isArray(appState.layout.racks)) appState.layout.racks = [];
+    if(!Array.isArray(appState.layout.walls)) appState.layout.walls = [];
+    if(!Array.isArray(appState.layout.openings)) appState.layout.openings = [];
     if(!appState.editor || typeof appState.editor !== 'object'){
       appState.editor = {
         mode:'select', dragging:null, offset:{x:0,y:0}, viewBox:{x:0,y:0,w:900,h:620}, sectionVisible:true,
-        racksVisible:true, rackPropsOpen:true, sectionCuts:{ x:{pos:.5,dir:1}, y:{pos:.5,dir:1} }, view:'ortho',
+        racksVisible:true, wallsVisible:true, openingsVisible:true, rackPropsOpen:true, sectionCuts:{ x:{pos:.5,dir:1}, y:{pos:.5,dir:1} }, view:'ortho',
         zonesLocked:false, showDims:true, snapEnabled:true, snapSize:2, dimFontSize:32, stackMenu:{ open:false, rackId:'', x:0, y:0 }, inspectorStackOpen:false,
-        dragSelect:{ active:false, additive:false, start:null, end:null }, snapPreview:null, viewBoxCustomized:false
+        dragSelect:{ active:false, additive:false, start:null, end:null }, snapPreview:null, viewBoxCustomized:false, pendingWallPoint:null
       };
     }
     if(typeof appState.editor.mode !== 'string' || !appState.editor.mode) appState.editor.mode = 'select';
@@ -2985,6 +2994,7 @@
       syncRackFootprint(r, false);
     });
   }
+
 
   async function loadSheetFromConfig(){
     const url = appState.sheetConfig.url;
@@ -9150,13 +9160,17 @@ function getSheetBranchOpenMap(){
 
   function ensureLayoutEditorState(){
     if(!appState.editor || typeof appState.editor !== 'object') appState.editor = {};
+    ensureLayoutDecorations();
     if(appState.editor.showGrid === undefined) appState.editor.showGrid = true;
     if(appState.editor.showZones === undefined) appState.editor.showZones = true;
     if(appState.editor.showLabels === undefined) appState.editor.showLabels = true;
     if(appState.editor.racksVisible === undefined) appState.editor.racksVisible = true;
+    if(appState.editor.wallsVisible === undefined) appState.editor.wallsVisible = true;
+    if(appState.editor.openingsVisible === undefined) appState.editor.openingsVisible = true;
     if(appState.editor.showDims === undefined) appState.editor.showDims = true;
     if(appState.editor.showMiniMap === undefined) appState.editor.showMiniMap = true;
     if(appState.editor.snapEnabled === undefined) appState.editor.snapEnabled = true;
+    if(appState.editor.pendingWallPoint === undefined) appState.editor.pendingWallPoint = null;
     // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
     if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
       appState.editor.snapSize = DEFAULT_GRID_SIZE;
@@ -9171,12 +9185,110 @@ function getSheetBranchOpenMap(){
     if(appState.editor.rightPanelOpen === undefined) appState.editor.rightPanelOpen = true;
   }
 
+
+  function ensureLayoutDecorations(layout = appState.layout){
+    if(!layout || typeof layout !== 'object') return { walls:[], openings:[] };
+    if(!Array.isArray(layout.walls)) layout.walls = [];
+    if(!Array.isArray(layout.openings)) layout.openings = [];
+    return layout;
+  }
+
+  function nextWallId(){
+    ensureLayoutDecorations();
+    const vals = (appState.layout.walls || []).map(w => parseInt(String(w.id || '').replace(/\D+/g,''), 10)).filter(Number.isFinite);
+    return `W${(Math.max(0, ...vals) + 1)}`;
+  }
+  function nextOpeningId(){
+    ensureLayoutDecorations();
+    const vals = (appState.layout.openings || []).map(o => parseInt(String(o.id || '').replace(/\D+/g,''), 10)).filter(Number.isFinite);
+    return `O${(Math.max(0, ...vals) + 1)}`;
+  }
+  function findWallById(id){ ensureLayoutDecorations(); return (appState.layout.walls || []).find(w => w.id === id); }
+  function findOpeningById(id){ ensureLayoutDecorations(); return (appState.layout.openings || []).find(o => o.id === id); }
+  function wallLength(wall){ return wall ? Math.sqrt(((Number(wall.x2||0)-Number(wall.x1||0))**2)+((Number(wall.y2||0)-Number(wall.y1||0))**2)) : 0; }
+  function wallDirection(wall){
+    const len = Math.max(1, wallLength(wall));
+    return wall ? { x:(Number(wall.x2||0)-Number(wall.x1||0))/len, y:(Number(wall.y2||0)-Number(wall.y1||0))/len } : {x:1,y:0};
+  }
+  function wallNormal(wall){ const d = wallDirection(wall); return { x:-d.y, y:d.x }; }
+  function openingClampT(wall, width, t){
+    const len = Math.max(1, wallLength(wall));
+    const half = Math.max(6, Number(width || 90) / 2) / len;
+    return Math.max(half, Math.min(1 - half, Number(t || .5)));
+  }
+  function getOpeningSegment(opening, wall=findWallById(opening?.wallId)){
+    if(!opening || !wall) return null;
+    const len = Math.max(1, wallLength(wall));
+    const width = Math.max(40, Number(opening.width || 90) || 90);
+    const halfT = Math.min(.48, (width / 2) / len);
+    const t = openingClampT(wall, width, opening.t);
+    const a = { x:Number(wall.x1||0), y:Number(wall.y1||0) };
+    const b = { x:Number(wall.x2||0), y:Number(wall.y2||0) };
+    const vx = b.x - a.x, vy = b.y - a.y;
+    return {
+      a: { x:a.x + vx * Math.max(0, t - halfT), y:a.y + vy * Math.max(0, t - halfT) },
+      b: { x:a.x + vx * Math.min(1, t + halfT), y:a.y + vy * Math.min(1, t + halfT) },
+      center: { x:a.x + vx * t, y:a.y + vy * t },
+      width,
+      t
+    };
+  }
+  function findNearestWallProjection(point, threshold = 22){
+    ensureLayoutDecorations();
+    let best = null;
+    (appState.layout.walls || []).forEach(wall => {
+      const proj = projectPointToSegment(point, {x:Number(wall.x1||0), y:Number(wall.y1||0)}, {x:Number(wall.x2||0), y:Number(wall.y2||0)});
+      const d = Math.sqrt(dist2(point, proj));
+      if(d <= threshold && (!best || d < best.d)) best = { wall, proj, d };
+    });
+    return best;
+  }
+  function createWallSegment(a, b){
+    ensureLayoutDecorations();
+    const dx = Number(b.x||0) - Number(a.x||0), dy = Number(b.y||0) - Number(a.y||0);
+    if(Math.sqrt(dx*dx + dy*dy) < 24) return null;
+    const wall = { id:nextWallId(), name:'Pared', x1:snapGrid(a.x), y1:snapGrid(a.y), x2:snapGrid(b.x), y2:snapGrid(b.y), thickness:12, kind:'wall' };
+    appState.layout.walls.push(wall);
+    appState.selectedWallId = wall.id;
+    appState.selectedOpeningId = '';
+    appState.selectedRackLayoutId = '';
+    return wall;
+  }
+  function createOpeningAtPoint(point, type='door'){
+    ensureLayoutDecorations();
+    const nearest = findNearestWallProjection(point, 28);
+    if(!nearest || !nearest.wall) return null;
+    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:type==='window' ? 110 : 90, type };
+    opening.t = openingClampT(nearest.wall, opening.width, opening.t);
+    appState.layout.openings.push(opening);
+    appState.selectedOpeningId = opening.id;
+    appState.selectedWallId = nearest.wall.id;
+    appState.selectedRackLayoutId = '';
+    return opening;
+  }
+  function cleanupDetachedOpenings(){
+    ensureLayoutDecorations();
+    const ids = new Set((appState.layout.walls || []).map(w => w.id));
+    appState.layout.openings = (appState.layout.openings || []).filter(o => ids.has(o.wallId));
+    if(appState.selectedOpeningId && !findOpeningById(appState.selectedOpeningId)) appState.selectedOpeningId = '';
+    if(appState.selectedWallId && !findWallById(appState.selectedWallId)) appState.selectedWallId = '';
+  }
+
   function layoutSelectedSummary(){
+    const opening = findOpeningById(appState.selectedOpeningId);
+    const wall = findWallById(appState.selectedWallId);
     const zone = findZoneById(appState.selectedZoneId);
     const rack = findRackById(appState.selectedRackLayoutId);
+    if(opening){
+      const host = findWallById(opening.wallId);
+      return { type:'opening', title:opening.type === 'window' ? 'Ventana' : 'Puerta / vano', subtitle:`${opening.id} · ${host?.id || 'sin pared'} · ${Math.round(Number(opening.width||90))} u` };
+    }
+    if(wall){
+      return { type:'wall', title:wall.name || wall.id, subtitle:`${wall.id} · ${Math.round(wallLength(wall))} u · espesor ${Math.round(Number(wall.thickness||12))}` };
+    }
     if(rack) return { type:'rack', title:rack.id, subtitle:`${rack.zoneId} · ${escapeHtml((rackModel(rack.modelId)||{}).name || rack.modelId || 'Rack')}` };
     if(zone) return { type:'zone', title:zone.name || zone.id, subtitle:`${zone.id} · ${(appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).length} racks` };
-    return { type:'none', title:'Sin selección', subtitle:'Selecciona una zona o rack' };
+    return { type:'none', title:'Sin selección', subtitle:'Selecciona una zona, rack, pared o vano' };
   }
 
   function formatUnitNumber(value){
@@ -9289,8 +9401,10 @@ function getSheetBranchOpenMap(){
       const active = zone.id === appState.selectedZoneId;
       return `<path d="${escapeHtml(d)}" class="mini-zone ${active?'active':''}" fill="${escapeHtml(hexToRgba(zone.color||'#6ff0a8', active ? .32 : .16))}" stroke="${escapeHtml(zone.color||'#6ff0a8')}"/>`;
     }).join('');
+    const walls = (appState.layout.walls||[]).map(w => `<line x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke="${w.id===appState.selectedWallId?'#ffd66f':'#d7e5f5'}" stroke-width="${Math.max(2, Number(w.thickness||12)/4)}" stroke-linecap="round" opacity=".9"/>`).join('');
+    const openings = (appState.layout.openings||[]).map(o => { const wall=(appState.layout.walls||[]).find(w=>w.id===o.wallId); if(!wall) return ''; const seg=getOpeningSegment(o, wall); if(!seg) return ''; return `<line x1="${seg.a.x}" y1="${seg.a.y}" x2="${seg.b.x}" y2="${seg.b.y}" stroke="${o.id===appState.selectedOpeningId?'#7dffaf':'#5bf3d0'}" stroke-width="3" stroke-linecap="round"/>`; }).join('');
     const racks = (appState.layout.racks||[]).map(r => `<rect x="${r.x}" y="${r.y}" width="${Math.max(2,r.w)}" height="${Math.max(2,r.h)}" rx="4" class="mini-rack ${r.id===appState.selectedRackLayoutId?'active':''}"/>`).join('');
-    return `<svg class="layout-mini-svg" viewBox="${vb}">${zones}${racks}</svg>`;
+    return `<svg class="layout-mini-svg" viewBox="${vb}">${zones}${walls}${openings}${racks}</svg>`;
   }
 
   function renderLayerToggle(id, label, checked){
@@ -9309,7 +9423,7 @@ function getSheetBranchOpenMap(){
     return `
       <div class="layout-right-head">
         <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
-        <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : 'Plano'}</span>
+        <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Pared' : summary.type === 'opening' ? 'Vano' : 'Plano'}</span>
       </div>
       <div class="layout-right-scroll">
         <section class="layout-prop-card selected-summary">
@@ -9322,6 +9436,8 @@ function getSheetBranchOpenMap(){
           <div class="layout-layer-grid">
             ${renderLayerToggle('lyGrid','Grilla', appState.editor.showGrid !== false)}
             ${renderLayerToggle('lyZones','Zonas', appState.editor.showZones !== false)}
+            ${renderLayerToggle('lyWalls','Paredes', appState.editor.wallsVisible !== false)}
+            ${renderLayerToggle('lyOpenings','Aberturas', appState.editor.openingsVisible !== false)}
             ${renderLayerToggle('lyRacks','Racks', appState.editor.racksVisible !== false)}
             ${renderLayerToggle('lyLabels','Etiquetas', appState.editor.showLabels !== false)}
             ${renderLayerToggle('lyDims','Cotas', !!appState.editor.showDims)}
@@ -9386,6 +9502,26 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpDuplicateRack">Duplicar rack</button><button class="seg-btn" id="rpRack45">Girar 45°</button><button class="seg-btn" id="rpRack90">Girar 90°</button><button class="seg-btn" id="rpAddAbove">Agregar encima</button></div>
         </section>` : ''}
+        ${findWallById(appState.selectedWallId) ? `<section class="layout-prop-card">
+          <div class="layout-prop-title">Pared</div>
+          <div class="layout-prop-grid two">
+            <label>ID<input value="${escapeHtml(findWallById(appState.selectedWallId).id)}" disabled></label>
+            <label>Nombre<input id="rpWallName" value="${escapeHtml(findWallById(appState.selectedWallId).name||'Pared')}"></label>
+            <label>Espesor<input id="rpWallThickness" type="number" min="4" max="80" step="1" value="${formatUnitNumber(findWallById(appState.selectedWallId).thickness||12)}"></label>
+            <label>Largo<input value="${formatUnitNumber(wallLength(findWallById(appState.selectedWallId)))}" disabled></label>
+          </div>
+          <div class="tiny muted" style="margin-top:8px">Tip: usa “Agregar pared” y haz dos clics para definir el tramo.</div>
+        </section>` : ''}
+        ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card">
+          <div class="layout-prop-title">Abertura</div>
+          <div class="layout-prop-grid two">
+            <label>ID<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).id)}" disabled></label>
+            <label>Tipo<select id="rpOpeningType"><option value="door" ${findOpeningById(appState.selectedOpeningId).type!=='window'?'selected':''}>Puerta / vano</option><option value="window" ${findOpeningById(appState.selectedOpeningId).type==='window'?'selected':''}>Ventana</option></select></label>
+            <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="260" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).width||90)}"></label>
+            <label>Pared<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).wallId||'') }" disabled></label>
+          </div>
+          <div class="tiny muted" style="margin-top:8px">Tip: selecciona “Agregar vano” y haz clic sobre una pared.</div>
+        </section>` : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
   }
@@ -9398,6 +9534,8 @@ function getSheetBranchOpenMap(){
     };
     bindCheck('lyGrid','showGrid');
     bindCheck('lyZones','showZones');
+    bindCheck('lyWalls','wallsVisible');
+    bindCheck('lyOpenings','openingsVisible');
     bindCheck('lyRacks','racksVisible');
     bindCheck('lyLabels','showLabels');
     bindCheck('lyDims','showDims');
@@ -9448,6 +9586,13 @@ function getSheetBranchOpenMap(){
     if($('#rpRack90')) $('#rpRack90').onclick = () => { if(!rack) return; applyRackRotation(rack, Number(rack.rot||0)+90); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpAddAbove')) $('#rpAddAbove').onclick = () => { if(!rack) return; duplicateRackLayout(rack.id); };
 
+    const selectedWall = findWallById(appState.selectedWallId);
+    const selectedOpening = findOpeningById(appState.selectedOpeningId);
+    if($('#rpWallName')) $('#rpWallName').onchange = e => { if(!selectedWall) return; selectedWall.name = e.target.value || 'Pared'; persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpWallThickness')) $('#rpWallThickness').onchange = e => { if(!selectedWall) return; selectedWall.thickness = Math.max(4, Math.min(80, Number(e.target.value || 12) || 12)); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window' && Number(selectedOpening.width || 0) < 100) selectedOpening.width = 110; persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
+
     if($('#tplZoneRack')) $('#tplZoneRack').onclick = addZoneWithRackTemplate;
     if($('#tplWarehouse')) $('#tplWarehouse').onclick = addWarehouseTemplate;
     if($('#tplRackRow')) $('#tplRackRow').onclick = () => addRackRowTemplate(5);
@@ -9473,7 +9618,7 @@ function getSheetBranchOpenMap(){
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = 'Vista ortogonal editable: zonas, vértices y racks.';
+    contentSubtitle.textContent = 'Vista ortogonal editable: zonas, paredes, vanos, vértices y racks.';
     detailTitle.textContent = 'Edición de layout';
     detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
     setTags([
@@ -9485,6 +9630,8 @@ function getSheetBranchOpenMap(){
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
+      { label:'Paredes', active: appState.editor.wallsVisible !== false, action:'toggle-walls' },
+      { label:'Vanos', active: appState.editor.openingsVisible !== false, action:'toggle-openings' },
       { label:'Racks', active: appState.editor.racksVisible !== false, action:'toggle-racks' },
       { label:'Capas', active: true, action:'noop-layers' },
       { label:'Propiedades', active: appState.editor.rightPanelOpen !== false, action:'toggle-right-props' }
@@ -9503,6 +9650,8 @@ function getSheetBranchOpenMap(){
               <div class="layout-tool-group">
                 <div class="layout-tool-group-title">Edición de layout</div>
                 <button class="seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlus">Agregar zona</button>
+                <button class="seg-btn ${appState.editor.mode==='wall'?'active':''}" id="btnWallPlus">Agregar pared</button>
+                <button class="seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus">Agregar vano</button>
                 <button class="seg-btn" id="btnDuplicateZone">Duplicar zona</button>
                 <button class="seg-btn" id="btnVertexPlus">Agregar vértice</button>
                 <button class="seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack">Agregar rack</button>
@@ -9641,6 +9790,13 @@ function getSheetBranchOpenMap(){
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x + w);
       maxY = Math.max(maxY, y + h);
+    });
+    (appState.layout?.walls || []).forEach(w => {
+      const t = Math.max(4, Number(w.thickness || 12) || 12);
+      minX = Math.min(minX, Number(w.x1 || 0) - t, Number(w.x2 || 0) - t);
+      minY = Math.min(minY, Number(w.y1 || 0) - t, Number(w.y2 || 0) - t);
+      maxX = Math.max(maxX, Number(w.x1 || 0) + t, Number(w.x2 || 0) + t);
+      maxY = Math.max(maxY, Number(w.y1 || 0) + t, Number(w.y2 || 0) + t);
     });
     if(!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return { x:0, y:0, w:900, h:620 };
     return { x:minX, y:minY, w:Math.max(240, maxX - minX), h:Math.max(180, maxY - minY) };
@@ -9782,12 +9938,16 @@ function getSheetBranchOpenMap(){
 
     const edgeLayer = svgEl('g');
     const zoneLayer = svgEl('g');
+    const wallLayer = svgEl('g');
+    const openingLayer = svgEl('g');
     const guideLayer = svgEl('g');
     const rackLayer = svgEl('g');
     const measureLayer = svgEl('g');
     const vertexLayer = svgEl('g');
     if(appState.editor.showZones === false){ zoneLayer.setAttribute('style','display:none'); vertexLayer.setAttribute('style','display:none'); edgeLayer.setAttribute('style','display:none'); }
-    svg.append(edgeLayer, zoneLayer, rackLayer, guideLayer, measureLayer, vertexLayer);
+    if(appState.editor.wallsVisible === false) wallLayer.setAttribute('style','display:none');
+    if(appState.editor.openingsVisible === false) openingLayer.setAttribute('style','display:none');
+    svg.append(edgeLayer, zoneLayer, wallLayer, openingLayer, rackLayer, guideLayer, measureLayer, vertexLayer);
 
 
     const flipSectionDirection = (axis) => {
@@ -9957,6 +10117,65 @@ function getSheetBranchOpenMap(){
         }
       }
     });
+
+
+    ensureLayoutDecorations();
+    cleanupDetachedOpenings();
+    (appState.layout.walls || []).forEach(wall => {
+      const selected = appState.selectedWallId === wall.id;
+      const strokeW = Math.max(6, Number(wall.thickness || 12) || 12);
+      const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + 16),'stroke-linecap':'round',style:'cursor:pointer'});
+      const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:selected?'#ffe08a':'#dce8f5','stroke-width':String(strokeW),'stroke-linecap':'round',opacity:selected?'.98':'.9'});
+      const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:selected?'rgba(255,190,80,.95)':'rgba(34,48,66,.55)','stroke-width':String(Math.max(1, strokeW * .16)),'stroke-linecap':'round',opacity:'.8'});
+      const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:appState.editor.showLabels===false?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
+      label.textContent = wall.id;
+      [hit, line].forEach(el => el.addEventListener('pointerdown', evt => {
+        evt.stopPropagation();
+        appState.selectedWallId = wall.id;
+        appState.selectedOpeningId = '';
+        appState.selectedRackLayoutId = '';
+        renderLayoutEditor();
+      }));
+      wallLayer.append(hit, line, inner, label);
+    });
+    (appState.layout.openings || []).forEach(opening => {
+      const wall = findWallById(opening.wallId);
+      const seg = getOpeningSegment(opening, wall);
+      if(!wall || !seg) return;
+      const selected = appState.selectedOpeningId === opening.id;
+      const thickness = Math.max(5, Number(wall.thickness || 12) - 2);
+      const erase = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:'rgba(7,19,31,.98)','stroke-width':String(Math.max(6, thickness + 4)),'stroke-linecap':'round'});
+      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':String(Math.max(4, thickness * .34)),'stroke-linecap':'round',opacity:'.98'});
+      const normal = wallNormal(wall);
+      if(opening.type === 'window'){
+        const off = Math.max(6, thickness * .55);
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2',opacity:'.85'}));
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2',opacity:'.85'}));
+      } else {
+        const dir = wallDirection(wall);
+        const doorLen = Math.max(16, Math.min(seg.width, 48));
+        const leafEnd = { x:seg.a.x + normal.x * doorLen, y:seg.a.y + normal.y * doorLen };
+        const arcMid = { x:seg.a.x + dir.x * (doorLen*.78) + normal.x * (doorLen*.78), y:seg.a.y + dir.y * (doorLen*.78) + normal.y * (doorLen*.78) };
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:leafEnd.x,y2:leafEnd.y,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2.2',opacity:'.9'}));
+        openingLayer.appendChild(svgEl('path',{d:`M ${seg.a.x} ${seg.a.y} Q ${arcMid.x} ${arcMid.y} ${seg.b.x} ${seg.b.y}`,fill:'none',stroke:selected?'rgba(125,255,175,.9)':'rgba(83,231,255,.82)','stroke-width':'1.8','stroke-dasharray':'4 4'}));
+      }
+      const hit = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:'transparent','stroke-width':'18','stroke-linecap':'round',style:'cursor:pointer'});
+      hit.addEventListener('pointerdown', evt => {
+        evt.stopPropagation();
+        appState.selectedOpeningId = opening.id;
+        appState.selectedWallId = opening.wallId;
+        appState.selectedRackLayoutId = '';
+        renderLayoutEditor();
+      });
+      openingLayer.append(erase, accent, hit);
+    });
+    if(appState.editor.pendingWallPoint){
+      const pending = appState.editor.pendingWallPoint;
+      guideLayer.appendChild(svgEl('circle',{cx:pending.x, cy:pending.y, r:'7', fill:'#ffd84d', stroke:'#fff', 'stroke-width':'1.5'}));
+      const hint = svgEl('text',{x:pending.x + 12, y:pending.y - 10, class:'ortho-dim-text', style:'font-size:11px;fill:#ffd84d'});
+      hint.textContent = 'Punto inicial';
+      guideLayer.appendChild(hint);
+    }
 
     if(appState.editor.racksVisible !== false) appState.layout.racks.forEach(r => {
       r.rot = normalizeAngle(r.rot || 0);
@@ -10271,6 +10490,8 @@ function zoomLayout(factor, center){
       else if(action === 'toggle-dims') appState.editor.showDims = !appState.editor.showDims;
       else if(action === 'toggle-snap') { appState.editor.snapEnabled = !isSnapEnabled(); clearRackSnapPreview(); }
       else if(action === 'toggle-section') appState.editor.sectionVisible = !appState.editor.sectionVisible;
+      else if(action === 'toggle-walls') appState.editor.wallsVisible = appState.editor.wallsVisible === false ? true : false;
+      else if(action === 'toggle-openings') appState.editor.openingsVisible = appState.editor.openingsVisible === false ? true : false;
       else if(action === 'toggle-racks') appState.editor.racksVisible = appState.editor.racksVisible === false ? true : false;
       else if(action === 'toggle-zone-props') appState.editor.inspectorZoneOpen = !appState.editor.inspectorZoneOpen;
       else if(action === 'toggle-rack-props') appState.editor.rackPropsOpen = !appState.editor.rackPropsOpen;
@@ -10283,19 +10504,25 @@ function zoomLayout(factor, center){
       renderLayoutEditor();
     });
     if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
-    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { appState.editor.mode = 'zone'; renderLayoutEditor(); };
+    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnWallPlus')) $('#btnWallPlus').onclick = () => { appState.editor.mode = 'wall'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
     if($('#btnVertexPlus')) $('#btnVertexPlus').onclick = () => insertVertexOnSelectedEdge();
     if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => duplicateSelectedRack();
     if($('#btnDuplicateZone')) $('#btnDuplicateZone').onclick = () => duplicateSelectedZone();
     if($('#btnDeleteSelected')) $('#btnDeleteSelected').onclick = () => {
       const selectedIds = getSelectedRackIds();
       const rid = appState.selectedRackLayoutId; const zid = appState.selectedZoneId;
+      const oid = appState.selectedOpeningId; const wid = appState.selectedWallId;
       if(selectedIds.length){
         appState.layout.racks = appState.layout.racks.filter(r => !selectedIds.includes(r.id));
         clearRackSelection();
       }
+      else if(oid){ appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== oid); appState.selectedOpeningId = ''; }
+      else if(wid){ appState.layout.walls = (appState.layout.walls || []).filter(w => w.id !== wid); appState.layout.openings = (appState.layout.openings || []).filter(o => o.wallId !== wid); appState.selectedWallId = ''; appState.selectedOpeningId = ''; }
       else if(rid){ appState.layout.racks = appState.layout.racks.filter(r => r.id !== rid); clearRackSelection(); }
       else if(zid && appState.layout.zones.length > 1){ appState.layout.zones = appState.layout.zones.filter(z => z.id !== zid); appState.layout.racks = appState.layout.racks.filter(r => r.zoneId !== zid); appState.selectedZoneId = appState.layout.zones[0]?.id || ''; normalizeZoneAndRackIds(); }
+      cleanupDetachedOpenings();
       persistActiveLayout(); renderLayoutEditor();
     };
     const runSaveLayout = async () => { persistActiveLayout(); if(await saveRemoteAppState('layout')) alert('Layout guardado.'); };
@@ -10375,8 +10602,34 @@ function zoomLayout(factor, center){
     }
     if(appState.editor.mode === 'select' && isPanSurface){
       closeStackMenu();
+      appState.selectedWallId = '';
+      appState.selectedOpeningId = '';
       renderLayoutInspector();
       renderLayoutSection();
+      return;
+    }
+    if(appState.editor.mode === 'wall'){
+      if(!appState.editor.pendingWallPoint){
+        appState.editor.pendingWallPoint = { x:p.x, y:p.y };
+        appState.selectedWallId = '';
+        appState.selectedOpeningId = '';
+        renderLayoutEditor();
+        return;
+      }
+      createWallSegment(appState.editor.pendingWallPoint, p);
+      appState.editor.pendingWallPoint = null;
+      appState.editor.mode = 'select';
+      persistActiveLayout();
+      renderLayoutEditor();
+      return;
+    }
+    if(appState.editor.mode === 'opening'){
+      const created = createOpeningAtPoint(p, 'door');
+      if(created){
+        appState.editor.mode = 'select';
+        persistActiveLayout();
+        renderLayoutEditor();
+      }
       return;
     }
     if(appState.editor.mode === 'zone'){
@@ -10439,7 +10692,7 @@ function zoomLayout(factor, center){
     if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
     e.stopPropagation();
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
-    appState.selectedZoneId = zoneId; appState.selectedRackLayoutId = '';
+    appState.selectedZoneId = zoneId; appState.selectedRackLayoutId = ''; appState.selectedWallId = ''; appState.selectedOpeningId = '';
     closeStackMenu();
     const zone = findZoneById(zoneId);
     if(!zone) return;
@@ -10454,7 +10707,7 @@ function zoomLayout(factor, center){
     const zone = findZoneById(zoneId);
     if(!zone) return;
     const zoneIndex = (appState.layout?.zones || []).findIndex(z => z === zone);
-    appState.selectedZoneId = zoneId; appState.selectedVertex = { zoneId, idx }; appState.selectedRackLayoutId = '';
+    appState.selectedZoneId = zoneId; appState.selectedVertex = { zoneId, idx }; appState.selectedRackLayoutId = ''; appState.selectedWallId = ''; appState.selectedOpeningId = '';
     closeStackMenu();
     appState.editor.dragging = { type:'vertex', zoneId, zoneIndex, idx, start:p, original: clone(zone.pts[idx]) };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
@@ -10469,6 +10722,8 @@ function zoomLayout(factor, center){
     appState.selectedZoneId = zoneId;
     appState.selectedEdge = { zoneId, a, b };
     appState.selectedRackLayoutId = '';
+    appState.selectedWallId = '';
+    appState.selectedOpeningId = '';
     closeStackMenu();
     appState.editor.dragging = { type:'edge', zoneId, zoneIndex, a, b, start:p, originalA: clone(zone.pts[a]), originalB: clone(zone.pts[b]) };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
@@ -10499,6 +10754,8 @@ function zoomLayout(factor, center){
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
     const cx = rack.x + rack.w/2, cy = rack.y + rack.h/2;
     appState.selectedZoneId = rack.zoneId;
+    appState.selectedWallId = '';
+    appState.selectedOpeningId = '';
     appState.editor.dragging = { type:'rack', rackId, start:p, original: { x:rack.x, y:rack.y, cx, cy, zoneId:rack.zoneId } };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
