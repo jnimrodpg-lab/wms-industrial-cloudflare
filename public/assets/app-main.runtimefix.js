@@ -5838,6 +5838,8 @@ function getSheetBranchOpenMap(){
     const existing = document.getElementById('navigable3DModal');
     if(existing) existing.remove();
     const ctx = getViewerProductLocationContext(prod);
+    ensureAppRuntimeState();
+    const currentVisualMode = appState.ui?.nav3DVisualMode || 'operativo';
     const modal = document.createElement('div');
     modal.id = 'navigable3DModal';
     modal.className = 'nav3d-backdrop show';
@@ -5859,6 +5861,9 @@ function getSheetBranchOpenMap(){
             <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
             <button class="iso-tool" data-nav3d-action="slot">Slot</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
+            <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
+            <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
@@ -6350,6 +6355,8 @@ function getSheetBranchOpenMap(){
     const existing = document.getElementById('navigable3DModal');
     if(existing) existing.remove();
     const ctx = getViewerProductLocationContext(prod);
+    ensureAppRuntimeState();
+    const currentVisualMode = appState.ui?.nav3DVisualMode || 'operativo';
     const modal = document.createElement('div');
     modal.id = 'navigable3DModal';
     modal.className = 'nav3d-backdrop show nav3d-webgl-mode';
@@ -6359,7 +6366,7 @@ function getSheetBranchOpenMap(){
           <div>
             <div class="search-card-kicker">Visor libre · WebGL</div>
             <h2>Entorno 3D navegable</h2>
-            <p>Three.js activo: materiales, sombras suaves, ruta 3D y racks activos con glow.</p>
+            <p>Three.js activo: modo operativo con mejor iluminación, contraste y ruta 3D.</p>
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
@@ -6371,6 +6378,9 @@ function getSheetBranchOpenMap(){
             <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
             <button class="iso-tool" data-nav3d-action="slot">Slot</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
+            <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
+            <button class="iso-tool visual-mode" data-nav3d-action="visual-claro">Claro</button>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
@@ -6497,7 +6507,7 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
-    const ui = { isolation:'all', ghost:true, labels:true, route:true };
+    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -6510,28 +6520,35 @@ function getSheetBranchOpenMap(){
       modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', ui.ghost);
       modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', ui.labels);
       modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', ui.route);
+      modal.querySelectorAll('[data-nav3d-action^="visual-"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === `visual-${ui.visual}`));
     };
 
     loadThreeRuntime().then(THREE => {
       loading?.remove();
       renderSideRacks();
+      const visualProfiles = {
+        oscuro: { bg:0x061018, fog:.022, exposure:1.10, ambient:.52, hemi:.95, key:2.8, fill:.78, rim:1.15, active:2.0, floor:0x0b1722, floorA:'#102235', floorB:'#091827', floorC:'#07121d', grid:.36, ghost:.12, wire:.22 },
+        operativo: { bg:0x081722, fog:.014, exposure:1.48, ambient:.82, hemi:1.42, key:3.75, fill:1.15, rim:1.55, active:2.9, floor:0x132638, floorA:'#183149', floorB:'#102338', floorC:'#0c1b2c', grid:.58, ghost:.20, wire:.40 },
+        claro: { bg:0x0d2232, fog:.010, exposure:1.72, ambient:1.05, hemi:1.70, key:4.25, fill:1.38, rim:1.75, active:3.2, floor:0x1a3347, floorA:'#234159', floorB:'#173047', floorC:'#102538', grid:.68, ghost:.26, wire:.52 }
+      };
+      const visual = visualProfiles[ui.visual] || visualProfiles.operativo;
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x061018);
-      scene.fog = new THREE.FogExp2(0x061018, 0.025);
+      scene.background = new THREE.Color(visual.bg);
+      scene.fog = new THREE.FogExp2(visual.bg, visual.fog);
       renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       if('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = visual.exposure;
       camera = new THREE.PerspectiveCamera(42, 1, .1, 500);
-      const ambient = new THREE.AmbientLight(0x8fc6ff, .42); scene.add(ambient);
-      const hemi = new THREE.HemisphereLight(0xdaf8ff, 0x071018, .82); scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, 2.65); key.position.set(18,34,18); key.castShadow = true; key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
-      const fill = new THREE.DirectionalLight(0x6da8ff, .72); fill.position.set(-22,14,18); scene.add(fill);
-      const rim = new THREE.DirectionalLight(0x52ff9d, 1.15); rim.position.set(-20,20,-14); scene.add(rim);
-      const activeLight = new THREE.PointLight(0x57ff98, 1.9, 22, 1.8); activeLight.position.set(0, 5.2, 0); scene.add(activeLight);
+      const ambient = new THREE.AmbientLight(0xc7e7ff, visual.ambient); scene.add(ambient);
+      const hemi = new THREE.HemisphereLight(0xf2fbff, 0x153047, visual.hemi); scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, visual.key); key.position.set(16,38,22); key.castShadow = true; key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
+      const fill = new THREE.DirectionalLight(0x8fc5ff, visual.fill); fill.position.set(-26,18,24); scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x70ffb1, visual.rim); rim.position.set(-22,24,-18); scene.add(rim);
+      const activeLight = new THREE.PointLight(0x57ff98, visual.active, 26, 1.7); activeLight.position.set(0, 5.2, 0); scene.add(activeLight);
 
       const bounds = getBounds();
       const scale = 0.035;
@@ -6542,29 +6559,29 @@ function getSheetBranchOpenMap(){
         const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
         const g = c.getContext('2d');
         const grad = g.createLinearGradient(0,0,1024,1024);
-        grad.addColorStop(0,'#0e1d2b'); grad.addColorStop(.55,'#091522'); grad.addColorStop(1,'#07111b');
+        grad.addColorStop(0, visual.floorA); grad.addColorStop(.55, visual.floorB); grad.addColorStop(1, visual.floorC);
         g.fillStyle = grad; g.fillRect(0,0,1024,1024);
-        g.strokeStyle = 'rgba(100,180,155,.10)'; g.lineWidth = 1;
+        g.strokeStyle = ui.visual === 'oscuro' ? 'rgba(125,210,185,.13)' : 'rgba(145,225,205,.18)'; g.lineWidth = 1;
         for(let i=0;i<=1024;i+=64){ g.beginPath(); g.moveTo(i,0); g.lineTo(i,1024); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(1024,i); g.stroke(); }
-        g.strokeStyle = 'rgba(255,190,72,.18)'; g.lineWidth = 3;
+        g.strokeStyle = ui.visual === 'oscuro' ? 'rgba(255,190,72,.20)' : 'rgba(255,205,82,.30)'; g.lineWidth = 3;
         for(let i=128;i<1024;i+=256){ g.beginPath(); g.moveTo(0,i); g.lineTo(1024,i); g.stroke(); }
         g.fillStyle = 'rgba(255,255,255,.025)';
         for(let i=0;i<180;i++){ const x=Math.random()*1024,y=Math.random()*1024; g.fillRect(x,y,1.2,1.2); }
         const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2,2); return tex;
       };
       const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
-      const floorMat = new THREE.MeshStandardMaterial({ color:0x0b1722, map:makeFloorTexture(), roughness:.58, metalness:.18, envMapIntensity:.25 });
+      const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 28, 0x2f7d65, 0x183746); grid.position.y=.018; grid.material.transparent = true; grid.material.opacity = .32; world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 30, 0x6ff0b4, 0x2f6680); grid.position.y=.022; grid.material.transparent = true; grid.material.opacity = visual.grid; world.add(grid);
 
-      const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:.075, side:THREE.DoubleSide, depthWrite:false });
+      const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:ui.visual === 'oscuro' ? .085 : .13, side:THREE.DoubleSide, depthWrite:false });
       (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => {
         const pts = (z.pts || []).map(p => new THREE.Vector2((Number(p.x||0)-bounds.cx)*scale, (Number(p.y||0)-bounds.cy)*scale));
         if(pts.length >= 3){ const shape = new THREE.Shape(pts); const geo = new THREE.ShapeGeometry(shape); const mesh = new THREE.Mesh(geo, zoneMat.clone()); mesh.rotation.x = -Math.PI/2; mesh.position.y=.025; world.add(mesh); }
       });
 
-      const matGhost = new THREE.MeshStandardMaterial({ color:0x7f97b2, transparent:true, opacity:.105, roughness:.88, metalness:.08, depthWrite:false });
-      const matGhostWire = new THREE.LineBasicMaterial({ color:0xaac8df, transparent:true, opacity:.18 });
+      const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:visual.ghost, roughness:.82, metalness:.10, depthWrite:false });
+      const matGhostWire = new THREE.LineBasicMaterial({ color:0xd0ecff, transparent:true, opacity:visual.wire });
       const matFrame = new THREE.MeshStandardMaterial({ color:0x0b4f82, roughness:.31, metalness:.72 });
       const matBeam = new THREE.MeshStandardMaterial({ color:0xe88a2f, roughness:.42, metalness:.48 });
       const matBox = new THREE.MeshStandardMaterial({ color:0xca9a5a, roughness:.86, metalness:.025 });
@@ -6572,7 +6589,7 @@ function getSheetBranchOpenMap(){
       const matWrap = new THREE.MeshStandardMaterial({ color:0xeff3e9, roughness:.62, metalness:.03 });
       const matActive = new THREE.MeshStandardMaterial({ color:0x9eff6e, emissive:0x39f06e, emissiveIntensity:1.25, transparent:true, opacity:.56, roughness:.28, metalness:.08 });
       const matRoute = new THREE.MeshStandardMaterial({ color:0x47ff91, emissive:0x38ff86, emissiveIntensity:1.6, roughness:.2, metalness:.05 });
-      const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:.18, depthWrite:false });
+      const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:ui.visual === 'oscuro' ? .22 : .32, depthWrite:false });
 
       const addBox = (group, w,h,d, x,y,z, mat, cast=true) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.position.set(x,y,z); m.castShadow=cast; m.receiveShadow=true; group.add(m); return m; };
       const addCylinderBetween = (group, start, end, radius, mat, cast=false) => {
@@ -6675,7 +6692,12 @@ function getSheetBranchOpenMap(){
         }
       }
 
-      const controls = { yaw:-Math.PI/4, pitch:.74, distance:Math.max(12, Math.max(floorW,floorD)*1.12), pan:new THREE.Vector3(0,0,0), targetYaw:-Math.PI/4, targetPitch:.74, targetDistance:Math.max(12, Math.max(floorW,floorD)*1.12), targetPan:new THREE.Vector3(0,0,0), dragging:false, lastX:0, lastY:0 };
+      const cameraFocusRack = visibleRacks.find(r => focusRackIds.has(r.id));
+      const initialPan = cameraFocusRack
+        ? toWorld(Number(cameraFocusRack.x||0)+Number(cameraFocusRack.w||120)/2, Number(cameraFocusRack.y||0)+Number(cameraFocusRack.h||56)/2, 18)
+        : new THREE.Vector3(0,0,0);
+      const initialDistance = Math.max(8, Math.max(floorW,floorD) * .82);
+      const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
       const updateCamera = () => {
         controls.yaw += (controls.targetYaw-controls.yaw)*.16;
         controls.pitch += (controls.targetPitch-controls.pitch)*.16;
@@ -6704,7 +6726,17 @@ function getSheetBranchOpenMap(){
       canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); }, { passive:false });
       modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
         const action = btn.dataset.nav3dAction;
-        if(action === 'focus' || action === 'slot'){ controls.targetYaw = -Math.PI/4; controls.targetPitch = .74; controls.targetDistance = action === 'slot' ? Math.max(7,floorW*.75) : Math.max(12, Math.max(floorW,floorD)*1.12); controls.targetPan.set(0,0,0); }
+        if(action === 'focus' || action === 'slot'){
+          controls.targetYaw = -Math.PI/4;
+          controls.targetPitch = .68;
+          controls.targetDistance = action === 'slot' ? Math.max(6, floorW*.58) : initialDistance;
+          controls.targetPan.copy(initialPan);
+        }
+        if(action && action.startsWith('visual-')){
+          const mode = action.replace('visual-','');
+          appState.ui.nav3DVisualMode = mode;
+          ui.visual = mode;
+        }
         if(action === 'all' || action === 'zone' || action === 'rack') ui.isolation = action;
         if(action === 'ghost') ui.ghost = !ui.ghost;
         if(action === 'labels') ui.labels = !ui.labels;
