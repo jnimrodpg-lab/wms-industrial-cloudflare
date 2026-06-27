@@ -12691,6 +12691,116 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   setTimeout(applyV56VisualLocationFocus, 1600);
 
 
+  // V57 - Limpieza del visor: sin información redundante ni botón copiar ubicación
+  function renderCompactVariantLocationRowsV57(product){
+    const items = getProductFamilyVariants(product);
+    if(!items.length) return '<div class="muted tiny">No se detectaron variantes relacionadas.</div>';
+    return items.slice(0, 10).map((p, idx) => {
+      const color = getProductColorValue(p) || p.color || '—';
+      const size = getProductSizeValue(p) || p.talla || '—';
+      const active = getProductIdentityKey(p) === getProductIdentityKey(product);
+      const loc = p.ubicacion || p.almacen || '—';
+      return `<button class="variant-location-row ${active ? 'active' : ''}" type="button" data-v57-variant-index="${idx}">
+        <span class="variant-location-main"><b>${escapeHtml(p.variante || color || p.sku || 'Variante')}</b><small>Talla ${escapeHtml(size)} · ${escapeHtml(color)}</small></span>
+        <span class="variant-location-loc">${escapeHtml(loc)}</span>
+      </button>`;
+    }).join('') + (items.length > 10 ? `<div class="muted tiny visual-more-note">+ ${items.length - 10} variantes adicionales.</div>` : '');
+  }
+
+  renderViewerProductInfoPanel = function(){
+    clearViewerImageRotationTimer();
+    removeOperationalStockUi();
+    const prod = appState.selectedProduct || null;
+    detailTitle.textContent = 'Ubicación del producto';
+    detailSubtitle.textContent = '';
+    detailStatus.textContent = prod ? '' : 'Sin selección';
+    detailChip.textContent = '';
+    if(!prod){
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Busca un producto para ver su zona, rack, nivel y slot.</div></div></div>`;
+      return;
+    }
+    const images = getProductImageUrls(prod).filter(Boolean);
+    const img = images[0] || '';
+    const thumbs = images.slice(0, 5).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
+    const primary = getLocationPartsForVisual(prod, 'primary');
+    const store = getLocationPartsForVisual(prod, 'store');
+    const showStore = String(store.full || '').trim() && String(store.full || '').trim() !== String(primary.full || '').trim();
+    detailWrap.innerHTML = `
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel visual-location-panel v57-clean-location-panel">
+        <div class="visual-location-hero v57-location-hero">
+          <div class="viewer-media-col visual-media-col">
+            <div class="viewer-product-media ${img ? '' : 'empty'}">
+              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+            </div>
+            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
+          </div>
+          <div class="visual-location-main-panel">
+            <div class="viewer-product-copy tight v57-product-title-block">
+              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+              ${prod.sku ? `<div class="viewer-sku-pill">${escapeHtml(prod.sku)}</div>` : ''}
+            </div>
+            <div class="visual-location-cards v57-location-cards">
+              ${renderVisualLocationCard(primary, true)}
+              ${showStore ? renderVisualLocationCard(store, false) : ''}
+            </div>
+          </div>
+        </div>
+        <div class="visual-location-quick-actions v57-location-actions">
+          <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver en plano 2D</button>
+          <button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Ver en 3D</button>
+          <button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button>
+        </div>
+        <div class="viewer-variant-panel visual-location-variants-card v57-variants-card">
+          <div class="viewer-variant-head"><span class="viewer-info-icon">▦</span><div><b>Variantes con ubicación</b><small>Solo muestra variantes relacionadas y su ubicación.</small></div></div>
+          <div class="variant-location-list">${renderCompactVariantLocationRowsV57(prod)}</div>
+        </div>
+      </div>`;
+    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
+    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
+    detailWrap.querySelectorAll('[data-v57-variant-index]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.v57VariantIndex || 0);
+        const item = getProductFamilyVariants(prod)[idx];
+        if(item){ selectProduct(item); showToast('Variante enfocada en el visor.', 'success'); }
+      });
+    });
+    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
+  };
+
+  openProductLocationModal = function(product = appState.selectedProduct){
+    const previousIso = appState.ui.isoIsolation;
+    appState.ui.isoIsolation = 'rack';
+    __v56OriginalOpenProductLocationModal(product);
+    const modal = document.getElementById('productLocationModal');
+    if(modal){
+      modal.classList.add('v56-visual-location-modal','v57-clean-location-modal');
+      const title = modal.querySelector('.location-modal-head b');
+      if(title) title.textContent = 'Plano de ubicación del producto';
+      const desc = modal.querySelector('.modal-iso-head .muted');
+      if(desc) desc.textContent = 'Vista enfocada en zona, rack, nivel y slot.';
+      modal.querySelector('#btnV56CopyLocationModal')?.remove();
+    }
+    setTimeout(() => { appState.ui.isoIsolation = previousIso || appState.ui.isoIsolation; }, 0);
+  };
+
+  function applyV57CleanLocationFocus(){
+    applyV56VisualLocationFocus();
+    document.getElementById('btnCopyLocation')?.remove();
+    document.getElementById('btnV56CopyLocationModal')?.remove();
+    document.querySelectorAll('[data-nav3d-product-action="copy"]').forEach(el => el.remove());
+    const activeBtn = document.getElementById('btnFocusProductMap');
+    if(activeBtn) activeBtn.textContent = 'Ver ubicación';
+    const viewerBtn = document.getElementById('btnOpenViewerFromProduct');
+    if(viewerBtn) viewerBtn.textContent = 'Abrir visor';
+  }
+  setTimeout(applyV57CleanLocationFocus, 0);
+  setTimeout(applyV57CleanLocationFocus, 700);
+  setTimeout(applyV57CleanLocationFocus, 1800);
+
+
+
   bootstrapApp();
 
 })();

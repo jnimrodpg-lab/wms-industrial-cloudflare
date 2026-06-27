@@ -4976,3 +4976,31 @@ body.theme-light .brand-box{
 .visual-location-support-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.visual-location-variants-card,.visual-location-summary-card{min-height:0}.variant-location-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto;padding-right:2px}.variant-location-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;text-align:left;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:15px;padding:10px 11px;color:inherit;cursor:pointer}.variant-location-row:hover{border-color:rgba(82,255,150,.34);background:rgba(82,255,150,.08)}.variant-location-row.active{border-color:rgba(82,255,150,.58);background:rgba(82,255,150,.12)}.variant-location-main b{display:block;font-size:12px;color:#fff}.variant-location-main small{display:block;font-size:11px;color:rgba(220,231,255,.62);margin-top:2px}.variant-location-loc{font-size:11px;color:#86ffb5;font-weight:800;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.visual-mini-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(220,231,255,.56);margin-right:7px}.viewer-variant-chip-wrap.compact{align-items:center;margin-top:10px}.visual-more-note{padding:4px 2px}.v56-visual-location-modal .location-modal-card{box-shadow:0 30px 90px rgba(0,0,0,.55),0 0 0 1px rgba(82,255,150,.10)}
 @media(max-width:1180px){.visual-location-hero,.visual-location-support-grid{grid-template-columns:1fr}.visual-location-quick-actions{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.visual-loc-breakdown{grid-template-columns:1fr 1fr}.visual-location-quick-actions{grid-template-columns:1fr}.variant-location-row{grid-template-columns:1fr}.variant-location-loc{max-width:none}}
+
+/* V57 - Visor de ubicación limpio */
+.v57-clean-location-panel .search-card-kicker,
+.v57-clean-location-panel .visual-location-summary-card,
+.v57-clean-location-panel #btnCopyLocation{
+  display:none !important;
+}
+.v57-clean-location-panel .visual-location-support-grid{
+  display:block;
+}
+.v57-clean-location-panel .v57-product-title-block h2{
+  margin-top:0;
+}
+.v57-clean-location-panel .v57-location-actions{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.v57-clean-location-panel .v57-variants-card{
+  margin-top:14px;
+}
+.v57-clean-location-panel .visual-location-hero{
+  gap:18px;
+}
+.v57-clean-location-modal #btnV56CopyLocationModal{
+  display:none !important;
+}
+@media (max-width: 980px){
+  .v57-clean-location-panel .v57-location-actions{ grid-template-columns:1fr; }
+}
