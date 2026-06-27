@@ -1,19 +1,11 @@
-# WMS Industrial – v70
+# WMS Industrial – v72
 
-Se aplicaron mejoras enfocadas en la visualización del espacio del local y se limpiaron archivos innecesarios del paquete.
+Mejoras aplicadas:
 
-## Mejoras aplicadas
-- Muros 3D levantados automáticamente desde las aristas de las zonas del layout.
-- Lectura espacial más clara en el visor WebGL: ahora el local se percibe como un recinto y no solo como una base con racks.
-- Muros activos más visibles; muros no activos quedan más suaves para mantener contexto sin saturar.
-- Ajuste del texto del modal 3D para reflejar que el visor muestra el espacio del local.
-
-## Limpieza del paquete
-- Se eliminaron archivos de cambios históricos, duplicados de `public/index.html`, assets duplicados bajo `public/assets`, ejemplo CSV y scripts auxiliares.
-- Se conservó solo lo necesario para ejecutar/desplegar el proyecto:
-  - `index.html`
-  - `assets/`
-  - `functions/`
-  - `migrations/`
-  - `_redirects`
-  - `package.json`, `package-lock.json`, `wrangler.toml`
+- Flujo de paredes simplificado: ahora se seleccionan aristas de zona y se convierten en pared.
+- Se quitó el botón manual de “Agregar pared” del panel principal para evitar trabajo innecesario.
+- Cada arista de la zona muestra un botón rápido “+ PARED” / “PARED”.
+- Acciones rápidas por zona: convertir todas las aristas en pared o quitar paredes de la zona.
+- Muros 3D más visibles en el visor WebGL.
+- Nuevo botón “Vista corte” en el 3D para bajar la altura visual de muros y ver los racks.
+- Se mantiene “Agregar vano” para colocar puerta/ventana sobre paredes ya convertidas.

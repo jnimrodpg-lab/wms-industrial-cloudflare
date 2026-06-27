@@ -3270,7 +3270,7 @@
   }
   function makeRectZone(id,name,color,x,y,w,h){
     const safeName = name || (String(id).toUpperCase() === 'ALM' ? 'Almacén' : `Zona ${id}`);
-    return { id, name:safeName, color: color || DEFAULT_ZONE_COLOR, pts:[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}], sectionCuts:{ x:{pos:.5,dir:1,depth:100}, y:{pos:.5,dir:1,depth:100} } };
+    return { id, name:safeName, color: color || DEFAULT_ZONE_COLOR, wallThickness:14, pts:[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}], sectionCuts:{ x:{pos:.5,dir:1,depth:100}, y:{pos:.5,dir:1,depth:100} } };
   }
   function buildDefaultLayoutForBranch(branchIndex){
     const branch = (appState.admin?.branches||[])[branchIndex] || {};
@@ -6138,6 +6138,7 @@ function getSheetBranchOpenMap(){
             </div>
             <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="iso-tool ${appState.ui?.nav3DWallCut ? 'active' : ''}" data-nav3d-action="wall-cut">Vista corte</button>
             <div class="nav3d-visual-switch">
               <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
               <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
@@ -6271,7 +6272,7 @@ function getSheetBranchOpenMap(){
       getNav3DRacks().forEach(r => {
         if(!zoneIds.has(r.zoneId)){
           const x=Number(r.x)||0, y=Number(r.y)||0, w=Math.max(140,Number(r.w)||120), h=Math.max(90,Number(r.h)||56);
-          zones.push({ id:r.zoneId || 'Z1', name:r.zoneId || 'Zona', pts:[{x:x-60,y:y-40},{x:x+w+60,y:y-40},{x:x+w+60,y:y+h+60},{x:x-60,y:y+h+60}], _virtual:true });
+          zones.push({ id:r.zoneId || 'Z1', name:r.zoneId || 'Zona', wallThickness:14, pts:[{x:x-60,y:y-40},{x:x+w+60,y:y-40},{x:x+w+60,y:y+h+60},{x:x-60,y:y+h+60}], _virtual:true });
           zoneIds.add(r.zoneId);
         }
       });
@@ -6645,7 +6646,7 @@ function getSheetBranchOpenMap(){
           <div>
             <div class="search-card-kicker">Ubicación visual · WebGL</div>
             <h2>3D enfocado al producto</h2>
-            <p>Visualización limpia del rack y slot activo.</p>
+            <p>Visualización 3D limpia del rack activo dentro del espacio del local.</p>
           </div>
           <div class="nav3d-actions">
             <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
@@ -6983,6 +6984,60 @@ function getSheetBranchOpenMap(){
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
       const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.34, visual.grid*.48); world.add(grid);
 
+      const DEFAULT_WALL_HEIGHT = 290;
+      const DEFAULT_WALL_THICKNESS = 14;
+      const buildWallSegmentsFromLayout = () => {
+        try { syncZonePerimeterWalls(); ensureLayoutDecorations(); } catch(_err) {}
+        return (appState.layout?.walls || []).map(w => ({
+          a:{ x:Number(w.x1||0), y:Number(w.y1||0) },
+          b:{ x:Number(w.x2||0), y:Number(w.y2||0) },
+          zoneIds:new Set([w.zoneId].filter(Boolean)),
+          thickness:Number(w.thickness || DEFAULT_WALL_THICKNESS),
+          height:Number(w.height || DEFAULT_WALL_HEIGHT),
+          id:w.id,
+          type:w.kind || 'wall'
+        }));
+      };
+      const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
+        const group = new THREE.Group();
+        if(!segments.length) return group;
+        segments.forEach(seg => {
+          const dx = Number(seg.b?.x||0) - Number(seg.a?.x||0);
+          const dy = Number(seg.b?.y||0) - Number(seg.a?.y||0);
+          const length = Math.hypot(dx, dy) * scale;
+          if(length <= .08) return;
+          const isActive = [...(seg.zoneIds || [])].some(id => activeZoneIds.has(id));
+          const wallCut = !!appState.ui?.nav3DWallCut;
+          const baseHeight = Math.max(2.8, (Number(seg.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
+          const height = wallCut ? Math.min(1.25, baseHeight) : baseHeight;
+          const thickness = Math.max(.24, (Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS) * scale);
+          const mid = toWorld((Number(seg.a?.x||0) + Number(seg.b?.x||0))/2, (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2, 0);
+          const angle = Math.atan2(dy, dx);
+          const wallMat = new THREE.MeshStandardMaterial({
+            color:isActive ? 0xf2f7fb : 0xb8c8d8,
+            transparent:true,
+            opacity:wallCut ? (isActive ? .52 : .30) : (isActive ? .92 : .58),
+            roughness:.78,
+            metalness:.03
+          });
+          const wall = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), wallMat);
+          wall.position.set(mid.x, height/2, mid.z);
+          wall.rotation.y = angle;
+          wall.castShadow = isActive;
+          wall.receiveShadow = true;
+          group.add(wall);
+          const edgeOpacity = isActive ? (ui.visual === 'oscuro' ? .48 : .60) : .20;
+          const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(wall.geometry),
+            new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:edgeOpacity })
+          );
+          edges.position.copy(wall.position);
+          edges.rotation.copy(wall.rotation);
+          group.add(edges);
+        });
+        return group;
+      };
+
       const makeZoneMaterials = (active=false) => ({
         floor: new THREE.MeshStandardMaterial({ color:active ? 0x18394b : visual.floor, roughness:.56, metalness:.15, transparent:true, opacity:active ? .54 : .07, side:THREE.DoubleSide, depthWrite:active }),
         overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .08 : .12) : .014, side:THREE.DoubleSide, depthWrite:false }),
@@ -7001,6 +7056,10 @@ function getSheetBranchOpenMap(){
           const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), mats.line); world.add(line);
         }
       });
+      const zoneWallSegments = buildWallSegmentsFromLayout();
+      const zoneWallsGroup = buildWallGroup(zoneWallSegments, focusZoneIds);
+      zoneWallsGroup.position.y = .01;
+      world.add(zoneWallsGroup);
 
       const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:Math.min(visual.ghost, .10), roughness:.86, metalness:.08, depthWrite:false });
       const matGhostWire = new THREE.LineBasicMaterial({ color:0xd0ecff, transparent:true, opacity:Math.min(visual.wire, .24) });
@@ -7306,6 +7365,9 @@ function getSheetBranchOpenMap(){
           const mode = action.replace('visual-','');
           appState.ui.nav3DVisualMode = mode;
           ui.visual = mode;
+        }
+        if(action === 'wall-cut'){
+          appState.ui.nav3DWallCut = !appState.ui.nav3DWallCut;
         }
         if(action === 'all' || action === 'zone' || action === 'rack' || action === 'solo') ui.isolation = action;
         if(action === 'ghost') ui.ghost = !ui.ghost;
@@ -9186,16 +9248,116 @@ function getSheetBranchOpenMap(){
   }
 
 
+  function ensureZoneEdgeWalls(zone){
+    if(!zone || typeof zone !== 'object') return {};
+    if(!zone.edgeWalls || typeof zone.edgeWalls !== 'object' || Array.isArray(zone.edgeWalls)) zone.edgeWalls = {};
+    return zone.edgeWalls;
+  }
+  function getZoneEdgeWall(zone, edgeIndex){
+    const walls = ensureZoneEdgeWalls(zone);
+    const key = String(edgeIndex);
+    return walls[key] || null;
+  }
+  function isZoneEdgeWallEnabled(zone, edgeIndex){
+    return !!getZoneEdgeWall(zone, edgeIndex)?.enabled;
+  }
+  function setZoneEdgeWall(zone, edgeIndex, updates={}){
+    if(!zone || edgeIndex < 0) return null;
+    const walls = ensureZoneEdgeWalls(zone);
+    const key = String(edgeIndex);
+    const prev = walls[key] || {};
+    walls[key] = {
+      enabled:true,
+      thickness:Number(prev.thickness || getZoneWallThickness(zone) || 14),
+      height:Number(prev.height || appState.layout?.meta?.defaultWallHeight || 290),
+      ...prev,
+      ...updates,
+      enabled: updates.enabled === false ? false : true
+    };
+    return walls[key];
+  }
+  function removeZoneEdgeWall(zone, edgeIndex){
+    if(!zone || !zone.edgeWalls) return;
+    delete zone.edgeWalls[String(edgeIndex)];
+  }
+  function getSelectedEdgeWallContext(){
+    const sel = appState.selectedEdge || { zoneId:'', a:-1, b:-1 };
+    const zone = findZoneById(sel.zoneId);
+    if(!zone || sel.a < 0 || !zone.pts?.[sel.a] || !zone.pts?.[sel.b]) return null;
+    const edgeIndex = sel.a;
+    const wall = getZoneEdgeWall(zone, edgeIndex);
+    const a = zone.pts[sel.a], b = zone.pts[sel.b];
+    return { zone, edgeIndex, a, b, wall, isWall:!!wall?.enabled, length:Math.sqrt(dist2(a,b)) };
+  }
+  function convertSelectedEdgeToWall(updates={}){
+    const ctx = getSelectedEdgeWallContext();
+    if(!ctx) return null;
+    const wall = setZoneEdgeWall(ctx.zone, ctx.edgeIndex, updates);
+    syncZonePerimeterWalls();
+    appState.selectedWallId = zoneEdgeWallId(ctx.zone.id, ctx.edgeIndex);
+    return wall;
+  }
+
+  function getZoneWallThickness(zone){
+    const raw = Number(zone?.wallThickness);
+    if(Number.isFinite(raw) && raw > 0) return Math.max(8, raw);
+    const metaRaw = Number(appState.layout?.meta?.defaultWallThickness);
+    if(Number.isFinite(metaRaw) && metaRaw > 0) return Math.max(8, metaRaw);
+    return 14;
+  }
+  function zoneEdgeWallId(zoneId, edgeIndex){ return `ZW-${String(zoneId || 'Z')}-${edgeIndex}`; }
+  function syncZonePerimeterWalls(layout = appState.layout){
+    if(!layout || typeof layout !== 'object') return { walls:[], openings:[] };
+    if(!Array.isArray(layout.walls)) layout.walls = [];
+    if(!Array.isArray(layout.openings)) layout.openings = [];
+    const existingById = new Map((layout.walls || []).map(w => [String(w.id || ''), w]));
+    const autoWalls = [];
+    (layout.zones || []).forEach(zone => {
+      if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 2) return;
+      for(let idx = 0; idx < zone.pts.length; idx += 1){
+        const edgeWall = getZoneEdgeWall(zone, idx);
+        if(!edgeWall?.enabled) continue;
+        const a = zone.pts[idx];
+        const b = zone.pts[(idx + 1) % zone.pts.length];
+        if(!a || !b) continue;
+        const id = zoneEdgeWallId(zone.id, idx);
+        const prev = existingById.get(id) || {};
+        autoWalls.push({
+          ...prev,
+          id,
+          name:`Pared ${zone.id}-${idx + 1}`,
+          x1:Number(a.x || 0),
+          y1:Number(a.y || 0),
+          x2:Number(b.x || 0),
+          y2:Number(b.y || 0),
+          thickness:Math.max(8, Number(edgeWall.thickness || getZoneWallThickness(zone) || 14)),
+          height:Math.max(120, Number(edgeWall.height || appState.layout?.meta?.defaultWallHeight || 290)),
+          kind:'zone-wall',
+          autoZoneEdge:true,
+          zoneId:zone.id,
+          edgeIndex:idx,
+          locked:true
+        });
+      }
+    });
+    const manualWalls = (layout.walls || []).filter(w => !w?.autoZoneEdge);
+    layout.walls = [...autoWalls, ...manualWalls];
+    return layout;
+  }
   function ensureLayoutDecorations(layout = appState.layout){
     if(!layout || typeof layout !== 'object') return { walls:[], openings:[] };
     if(!Array.isArray(layout.walls)) layout.walls = [];
     if(!Array.isArray(layout.openings)) layout.openings = [];
+    syncZonePerimeterWalls(layout);
     return layout;
   }
 
   function nextWallId(){
     ensureLayoutDecorations();
-    const vals = (appState.layout.walls || []).map(w => parseInt(String(w.id || '').replace(/\D+/g,''), 10)).filter(Number.isFinite);
+    const vals = (appState.layout.walls || []).map(w => {
+      const m = String(w.id || '').match(/^W(\d+)$/i);
+      return m ? parseInt(m[1], 10) : NaN;
+    }).filter(Number.isFinite);
     return `W${(Math.max(0, ...vals) + 1)}`;
   }
   function nextOpeningId(){
@@ -9327,7 +9489,7 @@ function getSheetBranchOpenMap(){
     const x = snapGrid(bounds.x + bounds.w + 100);
     const y = snapGrid(bounds.y + 60);
     const id = nextZoneId();
-    const zone = { id, name:'Almacén', color:'#62d7a0', pts:[{x,y},{x:x+520,y},{x:x+520,y:y+360},{x,y:y+360}] };
+    const zone = { id, name:'Almacén', color:'#62d7a0', wallThickness:14, pts:[{x,y},{x:x+520,y},{x:x+520,y:y+360},{x,y:y+360}] };
     appState.layout.zones.push(zone);
     appState.selectedZoneId = zone.id;
     appState.selectedRackLayoutId = '';
@@ -9341,7 +9503,7 @@ function getSheetBranchOpenMap(){
     const x = snapGrid(bounds.x + bounds.w + 90);
     const y = snapGrid(bounds.y + 80);
     const id = nextZoneId();
-    const zone = { id, name:`Zona ${id}`, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), pts:[{x,y},{x:x+420,y},{x:x+420,y:y+280},{x,y:y+280}] };
+    const zone = { id, name:`Zona ${id}`, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x,y},{x:x+420,y},{x:x+420,y:y+280},{x,y:y+280}] };
     appState.layout.zones.push(zone);
     const fp = getRackFootprint(appState.selectedModelId, 0);
     const rack = { id:`${id}-E1`, zoneId:id, x:x+40, y:y+40, w:fp.w, h:fp.h, rot:0, modelId:appState.selectedModelId, front:'auto', baseHeight:0, rackHeight:(rackModel(appState.selectedModelId)?.height || 238) };
@@ -9486,7 +9648,7 @@ function getSheetBranchOpenMap(){
             <label>Rotación zona<input id="rpZoneRot" type="number" step="1" value="${Math.round(getZoneRotationDegrees(zone))}"></label>
             <label>Contenido<input value="${(appState.layout.racks||[]).filter(r => r.zoneId === zone.id).length} racks vinculados" disabled></label>
           </div>
-          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px"><button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button></div>
+          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px"><button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → pared</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar paredes zona</button></div>
         </section>` : ''}
         ${rack ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Rack</div>
@@ -9510,7 +9672,7 @@ function getSheetBranchOpenMap(){
             <label>Espesor<input id="rpWallThickness" type="number" min="4" max="80" step="1" value="${formatUnitNumber(findWallById(appState.selectedWallId).thickness||12)}"></label>
             <label>Largo<input value="${formatUnitNumber(wallLength(findWallById(appState.selectedWallId)))}" disabled></label>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Tip: usa “Agregar pared” y haz dos clics para definir el tramo.</div>
+          <div class="tiny muted" style="margin-top:8px">Esta pared viene de una arista convertida de la zona. Para editarla, selecciona la arista y ajusta espesor/altura.</div>
         </section>` : ''}
         ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Abertura</div>
@@ -9567,6 +9729,15 @@ function getSheetBranchOpenMap(){
     if($('#rpZone90')) $('#rpZone90').onclick = () => { if(zone) rotateZoneWithContents(zone.id, 90); };
     if($('#rpDuplicateZone')) $('#rpDuplicateZone').onclick = () => duplicateSelectedZone();
     if($('#rpLockZones')) $('#rpLockZones').onclick = () => { appState.editor.zonesLocked = !appState.editor.zonesLocked; persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpAllEdgesWalls')) $('#rpAllEdgesWalls').onclick = () => {
+      if(!zone) return;
+      (zone.pts || []).forEach((_, idx) => setZoneEdgeWall(zone, idx, { thickness:getZoneWallThickness(zone), height:Number(appState.layout?.meta?.defaultWallHeight || 290) || 290 }));
+      syncZonePerimeterWalls(); persistActiveLayout(); renderLayoutEditor();
+    };
+    if($('#rpClearEdgesWalls')) $('#rpClearEdgesWalls').onclick = () => {
+      if(!zone) return;
+      zone.edgeWalls = {}; syncZonePerimeterWalls(); cleanupDetachedOpenings(); persistActiveLayout(); renderLayoutEditor();
+    };
 
     const applyRackPosition = () => {
       if(!rack) return;
@@ -9589,7 +9760,18 @@ function getSheetBranchOpenMap(){
     const selectedWall = findWallById(appState.selectedWallId);
     const selectedOpening = findOpeningById(appState.selectedOpeningId);
     if($('#rpWallName')) $('#rpWallName').onchange = e => { if(!selectedWall) return; selectedWall.name = e.target.value || 'Pared'; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpWallThickness')) $('#rpWallThickness').onchange = e => { if(!selectedWall) return; selectedWall.thickness = Math.max(4, Math.min(80, Number(e.target.value || 12) || 12)); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpWallThickness')) $('#rpWallThickness').onchange = e => {
+      if(!selectedWall) return;
+      const nextThickness = Math.max(8, Math.min(80, Number(e.target.value || 14) || 14));
+      selectedWall.thickness = nextThickness;
+      if(selectedWall.autoZoneEdge){
+        const zone = findZoneById(selectedWall.zoneId);
+        if(zone) setZoneEdgeWall(zone, Number(selectedWall.edgeIndex || 0) || 0, { thickness:nextThickness });
+      }
+      syncZonePerimeterWalls();
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
     if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window' && Number(selectedOpening.width || 0) < 100) selectedOpening.width = 110; persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
 
@@ -9618,7 +9800,7 @@ function getSheetBranchOpenMap(){
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = 'Vista ortogonal editable: zonas, paredes, vanos, vértices y racks.';
+    contentSubtitle.textContent = 'Vista ortogonal editable: selecciona aristas de zona y conviértelas en paredes.';
     detailTitle.textContent = 'Edición de layout';
     detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
     setTags([
@@ -9630,7 +9812,7 @@ function getSheetBranchOpenMap(){
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
-      { label:'Paredes', active: appState.editor.wallsVisible !== false, action:'toggle-walls' },
+      { label:'Paredes 3D', active: appState.editor.wallsVisible !== false, action:'toggle-walls' },
       { label:'Vanos', active: appState.editor.openingsVisible !== false, action:'toggle-openings' },
       { label:'Racks', active: appState.editor.racksVisible !== false, action:'toggle-racks' },
       { label:'Capas', active: true, action:'noop-layers' },
@@ -9650,8 +9832,7 @@ function getSheetBranchOpenMap(){
               <div class="layout-tool-group">
                 <div class="layout-tool-group-title">Edición de layout</div>
                 <button class="seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlus">Agregar zona</button>
-                <button class="seg-btn ${appState.editor.mode==='wall'?'active':''}" id="btnWallPlus">Agregar pared</button>
-                <button class="seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus">Agregar vano</button>
+                <button class="seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus">Agregar puerta / ventana</button>
                 <button class="seg-btn" id="btnDuplicateZone">Duplicar zona</button>
                 <button class="seg-btn" id="btnVertexPlus">Agregar vértice</button>
                 <button class="seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack">Agregar rack</button>
@@ -9773,6 +9954,7 @@ function getSheetBranchOpenMap(){
 
 
   function getLayoutContentBounds(){
+    ensureLayoutDecorations();
     const zones = appState.layout?.zones || [];
     const racks = appState.layout?.racks || [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -10042,7 +10224,9 @@ function getSheetBranchOpenMap(){
 
     appState.layout.zones.forEach(zone => {
       const d = zone.pts.map((p,i)=>`${i===0?'M':'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
-      const path = svgEl('path',{d,class:'ortho-zone' + (appState.selectedZoneId===zone.id ? ' selected' : ''),fill:hexToRgba(zone.color || '#ffd84d', appState.selectedZoneId===zone.id ? .34 : .22),stroke:hexToRgba(zone.color || '#ffd84d', .98),'stroke-width':'2','data-zone-id':zone.id});
+      const zoneWallThickness = getZoneWallThickness(zone);
+      const wallInsetOpacity = appState.editor.wallsVisible === false ? (appState.selectedZoneId===zone.id ? .34 : .22) : (appState.selectedZoneId===zone.id ? .20 : .12);
+      const path = svgEl('path',{d,class:'ortho-zone' + (appState.selectedZoneId===zone.id ? ' selected' : ''),fill:hexToRgba(zone.color || '#ffd84d', wallInsetOpacity),stroke:hexToRgba(zone.color || '#ffd84d', appState.editor.wallsVisible === false ? .98 : .46),'stroke-width':'1.4','data-zone-id':zone.id});
       path.addEventListener('pointerdown', e => {
         try{ e.currentTarget?.setPointerCapture?.(e.pointerId); }catch(_){}
         startZoneDrag(e, zone.id);
@@ -10110,6 +10294,29 @@ function getSheetBranchOpenMap(){
           [hitBox, handle].forEach(el => { el.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
           edgeLayer.appendChild(hitBox);
           edgeLayer.appendChild(handle);
+          const edgeWall = getZoneEdgeWall(zone, idx);
+          const isWallEdge = !!edgeWall?.enabled;
+          const pillW = isWallEdge ? 72 : 86;
+          const pillH = 22;
+          const pillX = hx + en.x * 20 - pillW / 2;
+          const pillY = hy + en.y * 20 - pillH / 2;
+          const pill = svgEl('g',{class:'edge-wall-pill' + (isWallEdge ? ' active' : ''), transform:`translate(${pillX} ${pillY})`, style:'cursor:pointer'});
+          pill.appendChild(svgEl('rect',{x:0,y:0,width:pillW,height:pillH,rx:'11',fill:isWallEdge?'rgba(255,216,77,.96)':'rgba(7,18,30,.94)',stroke:isWallEdge?'#fff2a6':'rgba(255,255,255,.26)','stroke-width':'1.2'}));
+          const pillText = svgEl('text',{x:pillW/2,y:14,'text-anchor':'middle',style:`font-size:10px;font-weight:900;fill:${isWallEdge?'#1c1600':'#d9e9f8'};pointer-events:none`});
+          pillText.textContent = isWallEdge ? 'PARED' : '+ PARED';
+          pill.appendChild(pillText);
+          pill.addEventListener('pointerdown', e => {
+            e.stopPropagation();
+            appState.selectedZoneId = zone.id;
+            appState.selectedEdge = { zoneId:zone.id, a:idx, b:(idx+1)%zone.pts.length };
+            if(isWallEdge){ removeZoneEdgeWall(zone, idx); appState.selectedWallId = ''; }
+            else { setZoneEdgeWall(zone, idx, { thickness:getZoneWallThickness(zone), height:Number(appState.layout?.meta?.defaultWallHeight || 290) || 290 }); appState.selectedWallId = zoneEdgeWallId(zone.id, idx); }
+            syncZonePerimeterWalls();
+            cleanupDetachedOpenings();
+            persistActiveLayout();
+            renderLayoutEditor();
+          });
+          edgeLayer.appendChild(pill);
         });
         if(appState.selectedEdge.zoneId===zone.id && appState.selectedEdge.a>=0){
           const a = zone.pts[appState.selectedEdge.a], b = zone.pts[appState.selectedEdge.b];
@@ -10123,11 +10330,15 @@ function getSheetBranchOpenMap(){
     cleanupDetachedOpenings();
     (appState.layout.walls || []).forEach(wall => {
       const selected = appState.selectedWallId === wall.id;
-      const strokeW = Math.max(6, Number(wall.thickness || 12) || 12);
-      const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + 16),'stroke-linecap':'round',style:'cursor:pointer'});
-      const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:selected?'#ffe08a':'#dce8f5','stroke-width':String(strokeW),'stroke-linecap':'round',opacity:selected?'.98':'.9'});
-      const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:selected?'rgba(255,190,80,.95)':'rgba(34,48,66,.55)','stroke-width':String(Math.max(1, strokeW * .16)),'stroke-linecap':'round',opacity:'.8'});
-      const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:appState.editor.showLabels===false?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
+      const isAutoZoneEdge = !!wall.autoZoneEdge;
+      const strokeW = Math.max(isAutoZoneEdge ? 10 : 6, Number(wall.thickness || 12) || 12);
+      const cap = isAutoZoneEdge ? 'square' : 'round';
+      const outerStroke = selected ? '#ffe08a' : (isAutoZoneEdge ? 'rgba(231,239,247,.96)' : '#dce8f5');
+      const innerStroke = selected ? 'rgba(255,190,80,.95)' : (isAutoZoneEdge ? 'rgba(43,58,78,.74)' : 'rgba(34,48,66,.55)');
+      const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + (isAutoZoneEdge ? 10 : 16)),'stroke-linecap':cap,style:'cursor:pointer'});
+      const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:outerStroke,'stroke-width':String(strokeW),'stroke-linecap':cap,opacity:selected?'.99':(isAutoZoneEdge ? '.96' : '.9')});
+      const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':String(Math.max(1.25, strokeW * (isAutoZoneEdge ? .48 : .16))),'stroke-linecap':cap,opacity:isAutoZoneEdge ? '.92' : '.8'});
+      const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:(appState.editor.showLabels===false || isAutoZoneEdge)?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
       label.textContent = wall.id;
       [hit, line].forEach(el => el.addEventListener('pointerdown', evt => {
         evt.stopPropagation();
@@ -10505,7 +10716,6 @@ function zoomLayout(factor, center){
     });
     if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
     if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
-    if($('#btnWallPlus')) $('#btnWallPlus').onclick = () => { appState.editor.mode = 'wall'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
     if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
     if($('#btnVertexPlus')) $('#btnVertexPlus').onclick = () => insertVertexOnSelectedEdge();
     if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => duplicateSelectedRack();
@@ -10634,7 +10844,7 @@ function zoomLayout(factor, center){
     }
     if(appState.editor.mode === 'zone'){
       const id = nextZoneId();
-      appState.layout.zones.push({ id, name:'Zona ' + id, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), pts:[{x:p.x-60,y:p.y-40},{x:p.x+60,y:p.y-40},{x:p.x+60,y:p.y+40},{x:p.x-60,y:p.y+40}] });
+      appState.layout.zones.push({ id, name:'Zona ' + id, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x:p.x-60,y:p.y-40},{x:p.x+60,y:p.y-40},{x:p.x+60,y:p.y+40},{x:p.x-60,y:p.y+40}] });
       normalizeZoneAndRackIds(); persistActiveLayout();
       appState.selectedZoneId = id; appState.editor.mode = 'select'; renderLayoutEditor(); return;
     }
@@ -10899,6 +11109,7 @@ function zoomLayout(factor, center){
     const stack = rack ? rackStackSummary(rack) : { count:0, isStacked:false, members:[] };
     const selectedRackModel = rack ? rackModel(rack.modelId) : null;
     const selectedRackFootprint = rack ? getRackFootprint(rack.modelId, rack.rot || 0) : null;
+    const edgeWallCtx = getSelectedEdgeWallContext();
 
     if(headerMount){
       headerMount.innerHTML = `
@@ -11001,6 +11212,25 @@ function zoomLayout(factor, center){
     }
 
     mount.innerHTML = `
+      ${edgeWallCtx ? `
+      <div class="layout-tool-group" style="margin-top:2px">
+        <div class="layout-tool-group-title">Arista seleccionada</div>
+        <div class="grid">
+          <div class="kv-row"><b>Zona</b><span>${escapeHtml(edgeWallCtx.zone.id)}</span></div>
+          <div class="kv-row"><b>Arista</b><span>${edgeWallCtx.edgeIndex + 1}</span></div>
+          <div class="kv-row"><b>Largo</b><span>${formatDistanceShort(edgeWallCtx.length)}</span></div>
+          <div class="kv-row"><b>Estado</b><span>${edgeWallCtx.isWall ? 'Pared activa' : 'Solo arista'}</span></div>
+          <div class="two">
+            <button class="seg-btn ${edgeWallCtx.isWall ? 'active' : ''}" id="btnEdgeMakeWall">${edgeWallCtx.isWall ? 'Actualizar pared' : 'Convertir en pared'}</button>
+            <button class="seg-btn" id="btnEdgeRemoveWall" ${edgeWallCtx.isWall ? '' : 'disabled'}>Quitar pared</button>
+          </div>
+          <div class="two">
+            <label class="layout-mini-field">Espesor<input id="edgeWallThickness" type="number" min="8" max="80" step="1" value="${Math.round(Number(edgeWallCtx.wall?.thickness || getZoneWallThickness(edgeWallCtx.zone) || 14))}"></label>
+            <label class="layout-mini-field">Altura 3D<input id="edgeWallHeight" type="number" min="120" max="600" step="10" value="${Math.round(Number(edgeWallCtx.wall?.height || appState.layout?.meta?.defaultWallHeight || 290))}"></label>
+          </div>
+          <div class="tiny muted">Haz clic en una arista de la zona para elegir qué tramo será pared. Esa pared se verá también en 3D.</div>
+        </div>
+      </div>` : ''}
       ${stackOpen ? `
       <div class="layout-tool-group" style="margin-top:2px">
         <div class="layout-tool-group-title">Superposición / pila</div>
@@ -11037,6 +11267,40 @@ function zoomLayout(factor, center){
           <div class="kv-row"><b>Comportamiento</b><span>Solo se abre manualmente desde el icono de desplegar</span></div>
         </div>
       </div>` : ''}`;
+
+    if($('#btnEdgeMakeWall')) $('#btnEdgeMakeWall').onclick = () => {
+      const thickness = Math.max(8, Math.min(80, Number($('#edgeWallThickness')?.value || 14) || 14));
+      const height = Math.max(120, Math.min(600, Number($('#edgeWallHeight')?.value || 290) || 290));
+      convertSelectedEdgeToWall({ thickness, height });
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
+    if($('#btnEdgeRemoveWall')) $('#btnEdgeRemoveWall').onclick = () => {
+      const ctx = getSelectedEdgeWallContext();
+      if(!ctx) return;
+      removeZoneEdgeWall(ctx.zone, ctx.edgeIndex);
+      appState.selectedWallId = '';
+      syncZonePerimeterWalls();
+      cleanupDetachedOpenings();
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
+    if($('#edgeWallThickness')) $('#edgeWallThickness').onchange = e => {
+      const ctx = getSelectedEdgeWallContext();
+      if(!ctx?.isWall) return;
+      setZoneEdgeWall(ctx.zone, ctx.edgeIndex, { thickness:Math.max(8, Math.min(80, Number(e.target.value || 14) || 14)) });
+      syncZonePerimeterWalls();
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
+    if($('#edgeWallHeight')) $('#edgeWallHeight').onchange = e => {
+      const ctx = getSelectedEdgeWallContext();
+      if(!ctx?.isWall) return;
+      setZoneEdgeWall(ctx.zone, ctx.edgeIndex, { height:Math.max(120, Math.min(600, Number(e.target.value || 290) || 290)) });
+      syncZonePerimeterWalls();
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
 
     if($('#insZoneName')) {
       $('#insZoneName').oninput = e => { zone.name = e.target.value; };
