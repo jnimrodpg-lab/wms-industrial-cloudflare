@@ -6331,7 +6331,7 @@ function getSheetBranchOpenMap(){
   }
 
 
-  // V44: visor 3D real con Three.js/WebGL. Reemplaza el visor canvas 2D anterior.
+  // V45: Three.js/WebGL paso 2: materiales, luces, sombras y ruta 3D con glow.
   function loadThreeRuntime(){
     if(window.THREE) return Promise.resolve(window.THREE);
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
@@ -6359,7 +6359,7 @@ function getSheetBranchOpenMap(){
           <div>
             <div class="search-card-kicker">Visor libre · WebGL</div>
             <h2>Entorno 3D navegable</h2>
-            <p>Three.js activo: orbita suave, zoom controlado y racks 3D reales para la ubicación activa.</p>
+            <p>Three.js activo: materiales, sombras suaves, ruta 3D y racks activos con glow.</p>
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
@@ -6517,25 +6517,45 @@ function getSheetBranchOpenMap(){
       renderSideRacks();
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x061018);
-      scene.fog = new THREE.Fog(0x061018, 26, 130);
-      renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+      scene.fog = new THREE.FogExp2(0x061018, 0.025);
+      renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      if('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
       camera = new THREE.PerspectiveCamera(42, 1, .1, 500);
-      const hemi = new THREE.HemisphereLight(0xcaf7ff, 0x0a0e14, 1.4); scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, 2.1); key.position.set(18,28,14); key.castShadow = true; key.shadow.mapSize.set(1024,1024); scene.add(key);
-      const rim = new THREE.DirectionalLight(0x52ff9d, .85); rim.position.set(-20,16,-10); scene.add(rim);
+      const ambient = new THREE.AmbientLight(0x8fc6ff, .42); scene.add(ambient);
+      const hemi = new THREE.HemisphereLight(0xdaf8ff, 0x071018, .82); scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, 2.65); key.position.set(18,34,18); key.castShadow = true; key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
+      const fill = new THREE.DirectionalLight(0x6da8ff, .72); fill.position.set(-22,14,18); scene.add(fill);
+      const rim = new THREE.DirectionalLight(0x52ff9d, 1.15); rim.position.set(-20,20,-14); scene.add(rim);
+      const activeLight = new THREE.PointLight(0x57ff98, 1.9, 22, 1.8); activeLight.position.set(0, 5.2, 0); scene.add(activeLight);
 
       const bounds = getBounds();
       const scale = 0.035;
       const hScale = 0.020;
       const world = new THREE.Group(); scene.add(world);
       const toWorld = (x,y,z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, (Number(y||0)-bounds.cy)*scale);
+      const makeFloorTexture = () => {
+        const c = document.createElement('canvas'); c.width = 1024; c.height = 1024;
+        const g = c.getContext('2d');
+        const grad = g.createLinearGradient(0,0,1024,1024);
+        grad.addColorStop(0,'#0e1d2b'); grad.addColorStop(.55,'#091522'); grad.addColorStop(1,'#07111b');
+        g.fillStyle = grad; g.fillRect(0,0,1024,1024);
+        g.strokeStyle = 'rgba(100,180,155,.10)'; g.lineWidth = 1;
+        for(let i=0;i<=1024;i+=64){ g.beginPath(); g.moveTo(i,0); g.lineTo(i,1024); g.stroke(); g.beginPath(); g.moveTo(0,i); g.lineTo(1024,i); g.stroke(); }
+        g.strokeStyle = 'rgba(255,190,72,.18)'; g.lineWidth = 3;
+        for(let i=128;i<1024;i+=256){ g.beginPath(); g.moveTo(0,i); g.lineTo(1024,i); g.stroke(); }
+        g.fillStyle = 'rgba(255,255,255,.025)';
+        for(let i=0;i<180;i++){ const x=Math.random()*1024,y=Math.random()*1024; g.fillRect(x,y,1.2,1.2); }
+        const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2,2); return tex;
+      };
       const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
-      const floorMat = new THREE.MeshStandardMaterial({ color:0x0b1722, roughness:.72, metalness:.1 });
+      const floorMat = new THREE.MeshStandardMaterial({ color:0x0b1722, map:makeFloorTexture(), roughness:.58, metalness:.18, envMapIntensity:.25 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 28, 0x245444, 0x14303a); grid.position.y=.01; world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 28, 0x2f7d65, 0x183746); grid.position.y=.018; grid.material.transparent = true; grid.material.opacity = .32; world.add(grid);
 
       const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:.075, side:THREE.DoubleSide, depthWrite:false });
       (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => {
@@ -6543,15 +6563,27 @@ function getSheetBranchOpenMap(){
         if(pts.length >= 3){ const shape = new THREE.Shape(pts); const geo = new THREE.ShapeGeometry(shape); const mesh = new THREE.Mesh(geo, zoneMat.clone()); mesh.rotation.x = -Math.PI/2; mesh.position.y=.025; world.add(mesh); }
       });
 
-      const matGhost = new THREE.MeshStandardMaterial({ color:0x879cb4, transparent:true, opacity:.15, roughness:.8, metalness:.05 });
-      const matGhostWire = new THREE.LineBasicMaterial({ color:0x9fb8cf, transparent:true, opacity:.22 });
-      const matFrame = new THREE.MeshStandardMaterial({ color:0x0d4f83, roughness:.38, metalness:.55 });
-      const matBeam = new THREE.MeshStandardMaterial({ color:0xe4872e, roughness:.42, metalness:.35 });
-      const matBox = new THREE.MeshStandardMaterial({ color:0xc99a5c, roughness:.84, metalness:.04 });
-      const matBox2 = new THREE.MeshStandardMaterial({ color:0xd6d0bd, roughness:.7, metalness:.02 });
-      const matActive = new THREE.MeshStandardMaterial({ color:0x6cff9c, emissive:0x27d86e, emissiveIntensity:.48, transparent:true, opacity:.42 });
+      const matGhost = new THREE.MeshStandardMaterial({ color:0x7f97b2, transparent:true, opacity:.105, roughness:.88, metalness:.08, depthWrite:false });
+      const matGhostWire = new THREE.LineBasicMaterial({ color:0xaac8df, transparent:true, opacity:.18 });
+      const matFrame = new THREE.MeshStandardMaterial({ color:0x0b4f82, roughness:.31, metalness:.72 });
+      const matBeam = new THREE.MeshStandardMaterial({ color:0xe88a2f, roughness:.42, metalness:.48 });
+      const matBox = new THREE.MeshStandardMaterial({ color:0xca9a5a, roughness:.86, metalness:.025 });
+      const matBox2 = new THREE.MeshStandardMaterial({ color:0xd8d1bd, roughness:.74, metalness:.02 });
+      const matWrap = new THREE.MeshStandardMaterial({ color:0xeff3e9, roughness:.62, metalness:.03 });
+      const matActive = new THREE.MeshStandardMaterial({ color:0x9eff6e, emissive:0x39f06e, emissiveIntensity:1.25, transparent:true, opacity:.56, roughness:.28, metalness:.08 });
+      const matRoute = new THREE.MeshStandardMaterial({ color:0x47ff91, emissive:0x38ff86, emissiveIntensity:1.6, roughness:.2, metalness:.05 });
+      const matRouteHalo = new THREE.MeshBasicMaterial({ color:0x38ff86, transparent:true, opacity:.18, depthWrite:false });
 
       const addBox = (group, w,h,d, x,y,z, mat, cast=true) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.position.set(x,y,z); m.castShadow=cast; m.receiveShadow=true; group.add(m); return m; };
+      const addCylinderBetween = (group, start, end, radius, mat, cast=false) => {
+        const dir = new THREE.Vector3().subVectors(end,start);
+        const len = dir.length(); if(len <= .001) return null;
+        const geo = new THREE.CylinderGeometry(radius, radius, len, 16, 1, false);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(start).addScaledVector(dir,.5);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+        mesh.castShadow = cast; mesh.receiveShadow = true; group.add(mesh); return mesh;
+      };
       const activeInfoForRack = (r) => {
         const liveCtx = getViewerProductLocationContext(prod);
         const isStore = r.id === liveCtx.storeRackId || r.id === prod?.rackStore;
@@ -6586,14 +6618,17 @@ function getSheetBranchOpenMap(){
             const bw = (w*.78)/slots;
             const bx = -w*.39 + bw*(si-.5);
             const isTarget = active && li === target.level && si === target.slot;
-            const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, (li+si)%2 ? matBox : matBox2);
+            const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, ((li+si)%4===0) ? matWrap : ((li+si)%2 ? matBox : matBox2));
             if(isTarget){ addBox(group, bw*.86, boxH*1.08, boxD*1.08, bx, baseY + boxH/2, d*.05, matActive, false); }
           }
         }
         if(active){
           const haloGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(w+.18, rackH+.18, d+.18));
-          const halo = new THREE.LineSegments(haloGeo, new THREE.LineBasicMaterial({ color:0x55ff99, transparent:true, opacity:.95 }));
+          const halo = new THREE.LineSegments(haloGeo, new THREE.LineBasicMaterial({ color:0x7dffab, transparent:true, opacity:.98 }));
           halo.position.y = rackH/2; group.add(halo);
+          const glow = new THREE.PointLight(0x55ff99, 1.1, 8, 1.7);
+          glow.position.set(0, rackH*.72, 0); group.add(glow);
+          activeLight.position.copy(group.position).add(new THREE.Vector3(0, rackH*.65, 0));
         }
         return group;
       };
@@ -6621,13 +6656,22 @@ function getSheetBranchOpenMap(){
       if(ui.route && prod){
         const activeRack = visibleRacks.find(r => focusRackIds.has(r.id));
         if(activeRack){
+          const routeGroup = new THREE.Group();
           const start = toWorld(bounds.minX + bounds.w*.12, bounds.minY + bounds.h*.82, 0);
           const end = toWorld(Number(activeRack.x||0)+Number(activeRack.w||120)/2, Number(activeRack.y||0)+Number(activeRack.h||56)/2, 0);
-          const mid = new THREE.Vector3((start.x+end.x)/2, .05, start.z);
-          const pts = [new THREE.Vector3(start.x,.06,start.z), mid, new THREE.Vector3(end.x,.06,end.z)];
-          const geo = new THREE.BufferGeometry().setFromPoints(pts);
-          const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0x55ff99, linewidth:3 }));
-          world.add(line);
+          const mid = new THREE.Vector3((start.x+end.x)/2, .055, start.z);
+          const points = [new THREE.Vector3(start.x,.065,start.z), mid, new THREE.Vector3(end.x,.065,end.z)];
+          for(let i=0;i<points.length-1;i++){
+            addCylinderBetween(routeGroup, points[i], points[i+1], .035, matRoute, false);
+            addCylinderBetween(routeGroup, points[i].clone().setY(.055), points[i+1].clone().setY(.055), .115, matRouteHalo, false);
+          }
+          [start,end].forEach((p,idx)=>{
+            const sphere = new THREE.Mesh(new THREE.SphereGeometry(idx ? .16 : .11, 24, 12), matRoute);
+            sphere.position.set(p.x,.14,p.z); sphere.castShadow=false; routeGroup.add(sphere);
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(idx ? .42 : .24, .018, 12, 64), matRoute);
+            ring.position.set(p.x,.075,p.z); ring.rotation.x = Math.PI/2; routeGroup.add(ring);
+          });
+          world.add(routeGroup);
         }
       }
 
