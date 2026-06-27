@@ -8705,17 +8705,25 @@ function getSheetBranchOpenMap(){
     const root = svgEl('g',{transform:`translate(0 118)`}); holder.appendChild(root);
     const floorY = clearance;
     const contextView = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    const trackIsoPrismBounds = (x0, y0, z0, w, d, h) => {
+    const computeIsoPrismBounds = (x0, y0, z0, w, d, h) => {
       const pts = [
         toIso(x0, y0, z0), toIso(x0 + w, y0, z0), toIso(x0 + w, y0 + d, z0), toIso(x0, y0 + d, z0),
         toIso(x0, y0, z0 + h), toIso(x0 + w, y0, z0 + h), toIso(x0 + w, y0 + d, z0 + h), toIso(x0, y0 + d, z0 + h)
       ];
-      pts.forEach(p => {
-        if(p.x < contextView.minX) contextView.minX = p.x;
-        if(p.x > contextView.maxX) contextView.maxX = p.x;
-        if(p.y < contextView.minY) contextView.minY = p.y;
-        if(p.y > contextView.maxY) contextView.maxY = p.y;
-      });
+      return pts.reduce((acc, p) => {
+        if(p.x < acc.minX) acc.minX = p.x;
+        if(p.x > acc.maxX) acc.maxX = p.x;
+        if(p.y < acc.minY) acc.minY = p.y;
+        if(p.y > acc.maxY) acc.maxY = p.y;
+        return acc;
+      }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+    };
+    const trackIsoPrismBounds = (x0, y0, z0, w, d, h) => {
+      const bounds = computeIsoPrismBounds(x0, y0, z0, w, d, h);
+      if(bounds.minX < contextView.minX) contextView.minX = bounds.minX;
+      if(bounds.maxX > contextView.maxX) contextView.maxX = bounds.maxX;
+      if(bounds.minY < contextView.minY) contextView.minY = bounds.minY;
+      if(bounds.maxY > contextView.maxY) contextView.maxY = bounds.maxY;
     };
     const drawContextRack = (x0, y0, z0, w, d, h, isStacked = false) => {
       const topFill = isStacked ? 'rgba(110,191,255,.42)' : 'rgba(161,187,219,.28)';
@@ -8744,6 +8752,22 @@ function getSheetBranchOpenMap(){
     };
     root.appendChild(face([toIso(rackDims.x-28,rackDims.y-20,floorY),toIso(rackDims.x+rackDims.w+28,rackDims.y-20,floorY),toIso(rackDims.x+rackDims.w+28,rackDims.y+rackDims.d+20,floorY),toIso(rackDims.x-28,rackDims.y+rackDims.d+20,floorY)],{fill:'rgba(255,255,255,.04)',stroke:'rgba(146,170,198,.22)','stroke-width':'1.2'}));
     trackIsoPrismBounds(rackDims.x - 28, rackDims.y - 20, floorY - 2, rackDims.w + 56, rackDims.d + 40, 2);
+    const isRackCardView = ['rackViewPrimary','rackViewStore','nav3dRackPrimary','nav3dRackStore'].includes(holder.id);
+    if(isRackCardView){
+      const focusPad = 10;
+      const focusLabelPadRight = 24;
+      const focusBounds = computeIsoPrismBounds(
+        rackDims.x - focusPad,
+        rackDims.y - focusPad,
+        floorY - focusPad,
+        rackDims.w + (focusPad * 2) + focusLabelPadRight,
+        rackDims.d + (focusPad * 2),
+        rackDims.h + (focusPad * 2)
+      );
+      holder.__rackCardFocusBounds = focusBounds;
+    } else if(holder.__rackCardFocusBounds){
+      delete holder.__rackCardFocusBounds;
+    }
     if(renderContextMode && selectedLayoutRack){
       const contextPaddingUnits = 10;
       const sideContextUnits = contextPaddingUnits;
@@ -9063,10 +9087,12 @@ function getSheetBranchOpenMap(){
     try {
       if(!holder || !root) return;
       const holderId = holder.id || '';
-      const cardFillRatio = /^(rackViewPrimary|rackViewStore|nav3dRackPrimary|nav3dRackStore)$/.test(holderId)
-        ? 0.76
-        : fillRatio;
-      const bbox = root.getBBox();
+      const isRackCardView = /^(rackViewPrimary|rackViewStore|nav3dRackPrimary|nav3dRackStore)$/.test(holderId);
+      const cardFillRatio = isRackCardView ? 0.8 : fillRatio;
+      const focusBounds = isRackCardView && holder.__rackCardFocusBounds ? holder.__rackCardFocusBounds : null;
+      const bbox = focusBounds
+        ? { x: focusBounds.minX, y: focusBounds.minY, width: focusBounds.maxX - focusBounds.minX, height: focusBounds.maxY - focusBounds.minY }
+        : root.getBBox();
       if(!bbox || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height) || bbox.width <= 0 || bbox.height <= 0) return;
       const vb = holder.viewBox && holder.viewBox.baseVal ? holder.viewBox.baseVal : null;
       const targetW = Math.max(220, Number(vb?.width || 470) || 470);
@@ -9083,9 +9109,7 @@ function getSheetBranchOpenMap(){
       }
       const cx = bbox.x + bbox.width / 2;
       const cy = bbox.y + bbox.height / 2;
-      const cardOffsetY = /^(rackViewPrimary|rackViewStore|nav3dRackPrimary|nav3dRackStore)$/.test(holderId)
-        ? Math.max(0, viewH * 0.04)
-        : 0;
+      const cardOffsetY = 0;
       holder.setAttribute('viewBox', `${cx - viewW / 2} ${(cy - viewH / 2) - cardOffsetY} ${viewW} ${viewH}`);
     } catch(err) {}
   }
