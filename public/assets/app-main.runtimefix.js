@@ -5853,6 +5853,10 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <div class="nav3d-target-switch" id="nav3dTargetSwitch">
+              <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
+              <button type="button" data-nav3d-target="store">Almacén</button>
+            </div>
             <button class="iso-tool active" data-nav3d-action="all">Todo</button>
             <button class="iso-tool" data-nav3d-action="zone">Zona</button>
             <button class="iso-tool" data-nav3d-action="rack">Rack</button>
@@ -6371,6 +6375,10 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="nav3d-actions">
             <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <div class="nav3d-target-switch" id="nav3dTargetSwitch">
+              <button type="button" class="active" data-nav3d-target="primary">Ubicación</button>
+              <button type="button" data-nav3d-target="store">Almacén</button>
+            </div>
             <button class="iso-tool active" data-nav3d-action="all">Todo</button>
             <button class="iso-tool" data-nav3d-action="zone">Zona</button>
             <button class="iso-tool" data-nav3d-action="rack">Rack</button>
@@ -6397,6 +6405,8 @@ function getSheetBranchOpenMap(){
             </div>
             <div class="nav3d-compass" id="nav3dCompass">N</div>
             <div class="nav3d-loading" id="nav3dLoading">Cargando motor 3D…</div>
+            <div class="nav3d-product-card" id="nav3dProductCard"></div>
+            <div class="nav3d-minimap" id="nav3dMiniMap"></div>
             <div class="nav3d-rack-popover" id="nav3dRackPopover" hidden></div>
             <div class="nav3d-hover-label" id="nav3dHoverLabel" hidden></div>
           </div>
@@ -6437,6 +6447,8 @@ function getSheetBranchOpenMap(){
     const compass = modal.querySelector('#nav3dCompass');
     const rackPopover = modal.querySelector('#nav3dRackPopover');
     const hoverLabel = modal.querySelector('#nav3dHoverLabel');
+    const productCard = modal.querySelector('#nav3dProductCard');
+    const miniMap = modal.querySelector('#nav3dMiniMap');
     const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
     const rackStoreSvg = modal.querySelector('#nav3dRackStore');
     const rackZoom = modal.querySelector('#nav3dRackZoom');
@@ -6469,10 +6481,22 @@ function getSheetBranchOpenMap(){
       return real;
     };
     const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
+    const getTargetRackId = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      return ui.target === 'store' ? (liveCtx.storeRackId || prod?.rackStore || '') : (liveCtx.primaryRackId || prod?.rack || '');
+    };
+    const getTargetLoc = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      return ui.target === 'store' ? (liveCtx.storeLoc || 'Sin ubicación de almacén') : (liveCtx.primaryLoc || 'Sin ubicación principal');
+    };
     const getFocusSets = () => {
       const liveCtx = getViewerProductLocationContext(prod);
-      const focusRackIds = new Set([prod?.rack, prod?.rackStore, liveCtx.primaryRackId, liveCtx.storeRackId, appState.ui?.nav3DSelectedRackId].filter(Boolean));
-      const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
+      const targetRackId = getTargetRackId();
+      const focusRackIds = new Set([targetRackId, ui.selectedRackId, appState.ui?.nav3DSelectedRackId].filter(Boolean));
+      if(ui.isolation === 'solo') [liveCtx.primaryRackId, liveCtx.storeRackId].filter(Boolean).forEach(id => focusRackIds.add(id));
+      const focusZoneIds = new Set([]);
+      if(ui.target === 'store' && prod?.zonaStore) focusZoneIds.add(prod.zonaStore);
+      if(ui.target !== 'store' && prod?.zona) focusZoneIds.add(prod.zona);
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
       return { focusRackIds, focusZoneIds };
     };
@@ -6497,6 +6521,10 @@ function getSheetBranchOpenMap(){
       renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel:liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg, null, findNav3DRackById(liveCtx.storeRackId));
       modal.querySelector('#nav3dRackPrimaryMeta').innerHTML = buildRackMetaHtml(liveCtx.primaryRackId, prod?.nivel, prod?.slot);
       modal.querySelector('#nav3dRackStoreMeta').innerHTML = buildRackMetaHtml(liveCtx.storeRackId, prod?.nivelStore, prod?.slotStore);
+      modal.querySelector('.nav3d-rack-card.is-primary')?.classList.toggle('target-active', ui.target === 'primary');
+      modal.querySelector('.nav3d-rack-card.is-store')?.classList.toggle('target-active', ui.target === 'store');
+      renderProductOperationalCard();
+      renderMiniMap();
     };
     const openRackZoom = (type) => {
       const liveCtx = getViewerProductLocationContext(prod);
@@ -6513,7 +6541,7 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
-    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode, selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
+    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -6527,6 +6555,7 @@ function getSheetBranchOpenMap(){
       modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', ui.labels);
       modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', ui.route);
       modal.querySelectorAll('[data-nav3d-action^="visual-"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === `visual-${ui.visual}`));
+      modal.querySelectorAll('[data-nav3d-target]').forEach(b => b.classList.toggle('active', b.dataset.nav3dTarget === ui.target));
     };
 
     const rackStatsForPopover = (rackId) => {
@@ -6560,6 +6589,50 @@ function getSheetBranchOpenMap(){
           <button type="button" data-popover-action="isolate">Aislar rack</button>
           <button type="button" data-popover-action="center">Centrar</button>
         </div>`;
+    };
+
+    const renderProductOperationalCard = () => {
+      if(!productCard) return;
+      const liveCtx = getViewerProductLocationContext(prod);
+      const targetRackId = getTargetRackId();
+      const targetLoc = getTargetLoc();
+      const level = ui.target === 'store' ? (prod?.nivelStore || '—') : (prod?.nivel || '—');
+      const slot = ui.target === 'store' ? (prod?.slotStore || '—') : (prod?.slot || '—');
+      productCard.innerHTML = `
+        <div class="nav3d-product-kicker">Producto activo · ${ui.target === 'store' ? 'Almacén' : 'Ubicación'}</div>
+        <b>${escapeHtml(prod?.nombre || 'Producto sin nombre')}</b>
+        <div class="nav3d-product-sku">${escapeHtml(prod?.sku || 'SKU —')}</div>
+        <div class="nav3d-product-grid">
+          <span>Destino</span><strong>${escapeHtml(targetLoc)}</strong>
+          <span>Rack</span><strong>${escapeHtml(targetRackId || '—')}</strong>
+          <span>Nivel / Slot</span><strong>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</strong>
+        </div>
+        <div class="nav3d-product-actions">
+          <button type="button" data-nav3d-product-action="copy">Copiar ubicación</button>
+          <button type="button" data-nav3d-product-action="variants">Variantes</button>
+          <button type="button" data-nav3d-product-action="center">Centrar</button>
+          <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
+        </div>`;
+    };
+    const renderMiniMap = () => {
+      if(!miniMap) return;
+      const b = getBounds();
+      const w = 210, h = 140, pad = 14;
+      const sx = (x) => pad + ((Number(x||0) - b.minX) / Math.max(1,b.w)) * (w - pad*2);
+      const sy = (y) => pad + ((Number(y||0) - b.minY) / Math.max(1,b.h)) * (h - pad*2);
+      const { focusRackIds, focusZoneIds } = getFocusSets();
+      const zones = Array.isArray(appState.layout?.zones) ? appState.layout.zones : [];
+      const zonePaths = zones.map(z => {
+        const pts = (z.pts || []).map((pt,i) => `${i?'L':'M'} ${sx(pt.x).toFixed(1)} ${sy(pt.y).toFixed(1)}`).join(' ');
+        const active = focusZoneIds.has(z.id);
+        return `<path d="${pts} Z" class="${active?'active':''}"/>`;
+      }).join('');
+      const rackDots = getNav3DRacks().map(r => {
+        const cx = sx(Number(r.x||0)+Number(r.w||80)/2), cy = sy(Number(r.y||0)+Number(r.h||40)/2);
+        const active = focusRackIds.has(r.id);
+        return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${active?4.4:2.4}" class="${active?'active':''}"><title>${escapeHtml(r.id)}</title></circle>`;
+      }).join('');
+      miniMap.innerHTML = `<div class="nav3d-mini-head"><b>Mini mapa</b><span>${escapeHtml(getTargetRackId() || '—')}</span></div><svg viewBox="0 0 ${w} ${h}" aria-label="Mini mapa de layout">${zonePaths}${rackDots}</svg>`;
     };
 
     loadThreeRuntime().then(THREE => {
@@ -6744,7 +6817,7 @@ function getSheetBranchOpenMap(){
         world.add(rackObject);
       });
       if(ui.route && prod){
-        const activeRack = visibleRacks.find(r => focusRackIds.has(r.id));
+        const activeRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
         if(activeRack){
           const routeGroup = new THREE.Group();
           const relatedZone = (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).find(z => z.id === activeRack.zoneId || focusZoneIds.has(z.id));
@@ -6767,7 +6840,7 @@ function getSheetBranchOpenMap(){
         }
       }
 
-      const cameraFocusRack = visibleRacks.find(r => focusRackIds.has(r.id));
+      const cameraFocusRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
       const initialPan = cameraFocusRack
         ? toWorld(Number(cameraFocusRack.x||0)+Number(cameraFocusRack.w||120)/2, Number(cameraFocusRack.y||0)+Number(cameraFocusRack.h||56)/2, 18)
         : new THREE.Vector3(0,0,0);
@@ -6810,6 +6883,9 @@ function getSheetBranchOpenMap(){
         if(!rackId) return;
         appState.ui.nav3DSelectedRackId = rackId;
         ui.selectedRackId = rackId;
+        const liveCtxSel = getViewerProductLocationContext(prod);
+        if(rackId === liveCtxSel.primaryRackId) { ui.target = 'primary'; appState.ui.nav3DTarget = 'primary'; }
+        if(rackId === liveCtxSel.storeRackId) { ui.target = 'store'; appState.ui.nav3DTarget = 'store'; }
         renderRackPopover(rackId);
         if(center) focusRackCamera(rackId, true);
         else focusRackCamera(rackId, false);
@@ -6854,6 +6930,21 @@ function getSheetBranchOpenMap(){
       canvas.addEventListener('dblclick', e => { const rid = pickRackId(e); if(rid) selectRackFromScene(rid, true); });
       canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; });
       canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); }, { passive:false });
+      modal.querySelectorAll('[data-nav3d-target]').forEach(btn => btn.addEventListener('click', () => {
+        ui.target = btn.dataset.nav3dTarget || 'primary';
+        appState.ui.nav3DTarget = ui.target;
+        syncToolbar();
+        close();
+        openNavigable3DModal(prod);
+      }));
+      productCard?.addEventListener('click', e => {
+        const action = e.target?.dataset?.nav3dProductAction;
+        if(!action) return;
+        if(action === 'copy') copySelectedProductLocation(prod);
+        if(action === 'variants') openProductVariantsModal(prod);
+        if(action === 'center') focusRackCamera(getTargetRackId(), true);
+        if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); close(); openNavigable3DModal(prod); }
+      });
       modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
         const action = btn.dataset.nav3dAction;
         if(action === 'focus' || action === 'slot'){
@@ -6880,7 +6971,7 @@ function getSheetBranchOpenMap(){
         if(!action) return;
         const rid = ui.selectedRackId || appState.ui?.nav3DSelectedRackId;
         if(action === 'center') focusRackCamera(rid, true);
-        if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); }
+        if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); close(); openNavigable3DModal(prod); }
         if(action === 'detail') openRackZoom(rid === getViewerProductLocationContext(prod).storeRackId ? 'store' : 'primary');
       });
       syncToolbar();
