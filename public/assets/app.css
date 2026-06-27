@@ -4897,3 +4897,13 @@ body.theme-light .brand-box{
 .dq-severity.baja{background:rgba(125,180,255,.14);border-color:rgba(125,180,255,.30);color:#d7e9ff}
 @media(max-width:1180px){.dq-health-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:680px){.dq-health-tabs{overflow:auto;padding:10px 14px 0}.dq-health-grid{grid-template-columns:1fr}.dq-health-shell .data-quality-table{min-width:980px}}
+
+
+/* v53 sucursales + almacenes */
+.search-branch-host.active{display:block;margin-bottom:14px}
+.branch-switch-card.v53{display:grid;grid-template-columns:1fr minmax(260px,420px) auto;gap:10px;align-items:center;padding:12px;border:1px solid rgba(255,255,255,.10);border-radius:18px;background:linear-gradient(135deg,rgba(111,240,168,.11),rgba(255,255,255,.035));box-shadow:0 14px 36px rgba(0,0,0,.18)}
+.branch-switch-main{display:flex;align-items:center;gap:10px;min-width:0}.branch-switch-dot{width:14px;height:14px;border-radius:999px;box-shadow:0 0 18px rgba(var(--accent-rgb),.55)}
+.branch-switch-copy{display:grid;gap:1px;min-width:0}.branch-switch-copy span{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:rgba(234,247,239,.58);font-weight:900}.branch-switch-copy b{font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.branch-switch-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.branch-switch-controls select{width:100%;min-width:0;border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(5,14,25,.74);color:#eefbf3;padding:9px 10px;font-weight:800;outline:none}.branch-switch-actions{display:flex;gap:8px;justify-content:flex-end}.branch-switch-actions .tiny-btn{white-space:nowrap}
+.branch-layout-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.company-mini-action{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#eaffef;border-radius:12px;padding:10px 8px;font-weight:900;cursor:pointer}.company-mini-action:hover{border-color:rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.10)}
+@media(max-width:1180px){.branch-switch-card.v53{grid-template-columns:1fr}.branch-switch-controls{grid-template-columns:1fr}.branch-switch-actions{justify-content:flex-start}.branch-layout-actions{grid-template-columns:1fr}}

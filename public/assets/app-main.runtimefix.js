@@ -1464,7 +1464,7 @@
     }
     contentWrap.innerHTML = '';
     detailWrap.innerHTML = '';
-    renderViewerBranchHost(-1);
+    renderViewerBranchHost(screen === 'viewer' ? getActiveBranchContextIndex() : -1);
     contentStatus.textContent = 'Cargando vista…';
     detailStatus.textContent = '—';
     detailChip.textContent = '—';
@@ -3973,6 +3973,12 @@
           ${renderCompanySectionHeader('B', `Almacenes adicionales (${warehouses.length})`, 'Administra los almacenes vinculados a esta sucursal.')}
           <div class="company-warehouse-list">${rows}</div>
           <button class="company-add-inline" type="button" data-action="add-warehouse" data-index="${index}">＋ Agregar almacén adicional</button>
+          ${renderCompanySectionHeader('C', 'Layout y operación', 'Cada sucursal mantiene su propio plano, racks, productos y diagnóstico.')}
+          <div class="branch-layout-actions">
+            <button class="company-mini-action" type="button" data-action="edit-branch-layout" data-index="${index}">Editar layout</button>
+            <button class="company-mini-action" type="button" data-action="view-branch-products" data-index="${index}">Ver productos</button>
+            <button class="company-mini-action" type="button" data-action="health-branch" data-index="${index}">Salud</button>
+          </div>
         </div>
       </article>`;
   }
@@ -4082,6 +4088,9 @@
       if(a==='add-warehouse'){ const name = 'Nuevo almacén '+((appState.admin.branches[i].warehouses?.length||0)+1); appState.admin.branches[i].warehouses.push(name); if(!appState.admin.branches[i].mainWarehouse) appState.admin.branches[i].mainWarehouse=name; appState.admin.branches[i].expanded = true; saveAdminState(); renderAdminScreen(); return; }
       if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; const branch = appState.admin.branches[bi]; const removed = branch.warehouses.splice(wi,1)[0]; if(!branch.warehouses.length) branch.warehouses=['Almacén principal']; if(norm(branch.mainWarehouse)===norm(removed)) branch.mainWarehouse=branch.warehouses[0]; saveAdminState(); renderAdminScreen(); return; }
       if(a==='set-main-warehouse'){ const branch = appState.admin.branches[bi]; branch.mainWarehouse = branch.warehouses[wi] || branch.mainWarehouse; saveAdminState(); renderAdminScreen(); return; }
+      if(a==='edit-branch-layout'){ setLayoutBranch(i); appState.admin.activeBranch=i; saveAdminState(); setScreen('layout'); return; }
+      if(a==='view-branch-products'){ setGlobalBranch(i, { screen:'viewer' }); return; }
+      if(a==='health-branch'){ setGlobalBranch(i).then(()=>openDataQualityModal()); return; }
     });
     applyBrand();
   }
@@ -4389,6 +4398,8 @@
   async function activateBranchSelection(branchIndex){
     ensureBranchSheetFields();
     appState.activeBranchIndex = branchIndex;
+    appState.admin.activeBranch = branchIndex;
+    if(Number.isFinite(Number(branchIndex))) appState.activeLayoutBranchIndex = Number(branchIndex);
     const branch = (appState.admin?.branches || [])[branchIndex];
     if(!branch) return false;
     if(loadBranchProducts(branchIndex)) {
@@ -4606,12 +4617,91 @@
   function getActiveSheetBranchIndex(){
     return getActiveBranchIndex();
   }
+  function getActiveBranchContextIndex(fallback = 0){
+    const branches = appState.admin?.branches || [];
+    const candidates = [
+      Number(appState.viewerBranchIndex),
+      Number(appState.activeBranchIndex),
+      Number(appState.activeLayoutBranchIndex),
+      Number(appState.admin?.activeBranch),
+      Number(fallback)
+    ];
+    const found = candidates.find(i => Number.isFinite(i) && i >= 0 && i < branches.length);
+    return Number.isFinite(found) ? found : 0;
+  }
+
+  function getBranchWarehouseList(branchIndex = null){
+    const idx = Number.isFinite(Number(branchIndex)) ? Number(branchIndex) : getActiveBranchContextIndex();
+    const branch = (appState.admin?.branches || [])[idx] || {};
+    const fromConfig = Array.isArray(branch.warehouses) ? branch.warehouses : [];
+    const fromProducts = Array.from(new Set((appState.products || []).map(p => String(p?.almacen || p?.warehouse || '').trim()).filter(Boolean)));
+    const merged = Array.from(new Set(fromConfig.concat(fromProducts).map(x => String(x || '').trim()).filter(Boolean)));
+    return merged.length ? merged : ['Almacén principal'];
+  }
+
+  async function setGlobalBranch(branchIndex, { screen = null } = {}){
+    const idx = Number(branchIndex);
+    const branches = appState.admin?.branches || [];
+    if(!Number.isFinite(idx) || !branches[idx]) return;
+    appState.admin.activeBranch = idx;
+    appState.activeBranchIndex = idx;
+    appState.viewerBranchIndex = idx;
+    appState.productFilters = { ...(appState.productFilters || {}), warehouse:'' };
+    saveAdminState();
+    loadLayoutForBranch(idx);
+    await activateBranchSelection(idx);
+    if(screen || appState.screen === 'viewer') setScreen(screen || 'viewer');
+    else {
+      renderViewerBranchHost(idx);
+      if(appState.screen === 'layout') renderLayoutEditor();
+      if(appState.screen === 'dashboard') renderDashboard();
+    }
+  }
+
   function renderViewerBranchHost(activeBranchIndex){
-    appState.viewerBranchIndex = Number(activeBranchIndex);
+    ensureAppRuntimeState();
+    const branches = Array.isArray(appState.admin?.branches) ? appState.admin.branches : [];
+    const index = branches.length ? getActiveBranchContextIndex(activeBranchIndex) : -1;
+    appState.viewerBranchIndex = index;
     renderViewerMenu();
     if(!searchBranchHost) return;
-    searchBranchHost.classList.remove('active');
-    searchBranchHost.innerHTML = '';
+    if(!branches.length){
+      searchBranchHost.classList.remove('active');
+      searchBranchHost.innerHTML = '';
+      return;
+    }
+    const branch = branches[index] || branches[0];
+    const warehouses = getBranchWarehouseList(index);
+    const activeWarehouse = String(appState.productFilters?.warehouse || '').trim();
+    searchBranchHost.classList.add('active');
+    searchBranchHost.innerHTML = `
+      <div class="branch-switch-card v53">
+        <div class="branch-switch-main">
+          <div class="branch-switch-dot" style="background:${escapeHtml(branch?.color || getActiveBrandColor())}"></div>
+          <div class="branch-switch-copy">
+            <span>Sucursal activa</span>
+            <b>${escapeHtml(branch?.name || 'Sucursal')}</b>
+          </div>
+        </div>
+        <div class="branch-switch-controls">
+          <select id="globalBranchSelect" title="Cambiar sucursal">${branches.map((b,i)=>`<option value="${i}" ${i===index?'selected':''}>${escapeHtml(b?.name || ('Sucursal '+(i+1)))}</option>`).join('')}</select>
+          <select id="globalWarehouseSelect" title="Filtrar almacén"><option value="">Todos los almacenes</option>${warehouses.map(w=>`<option value="${escapeHtml(w)}" ${w===activeWarehouse?'selected':''}>${escapeHtml(w)}</option>`).join('')}</select>
+        </div>
+        <div class="branch-switch-actions">
+          <button type="button" class="tiny-btn" id="branchGoLayout">Layout</button>
+          <button type="button" class="tiny-btn" id="branchGoHealth">Salud</button>
+        </div>
+      </div>`;
+    const branchSelect = document.getElementById('globalBranchSelect');
+    if(branchSelect) branchSelect.onchange = e => setGlobalBranch(Number(e.target.value), { screen:'viewer' });
+    const warehouseSelect = document.getElementById('globalWarehouseSelect');
+    if(warehouseSelect) warehouseSelect.onchange = e => {
+      appState.productFilters.warehouse = String(e.target.value || '').trim();
+      filterProducts();
+      renderViewerBranchHost(index);
+    };
+    document.getElementById('branchGoLayout')?.addEventListener('click', () => { setLayoutBranch(index); setScreen('layout'); });
+    document.getElementById('branchGoHealth')?.addEventListener('click', () => openDataQualityModal());
   }
   function getBranchPreviewProducts(branch){
     return Array.isArray(branch?.sheetPreviewProducts) ? branch.sheetPreviewProducts : [];
@@ -5505,8 +5595,10 @@ function getSheetBranchOpenMap(){
     if(selectedZone && !appState.selectedZoneId) appState.selectedZoneId = selectedZone.id;
 
     contentTitle.textContent = 'Dashboard WMS';
-    contentSubtitle.textContent = 'Resumen operativo del almacén con ocupación, alertas y foco rápido.';
-    setTags(['KPI', 'ocupación', 'alertas', 'racks', 'zonas']);
+    const branchIdx = getActiveBranchContextIndex();
+    const branchName = appState.admin?.branches?.[branchIdx]?.name || 'Sucursal activa';
+    contentSubtitle.textContent = `Resumen operativo de ${branchName} con ocupación, alertas y foco rápido.`;
+    setTags([`Sucursal: ${branchName}`, 'KPI', 'ocupación', 'alertas', 'racks', 'zonas']);
 
     const kpis = [
       { label:'Productos analizados', value:data.totalProducts.toLocaleString('es-PE'), foot:`${data.skuCount.toLocaleString('es-PE')} SKU únicos`, trend:'up', trendText:'Inventario' },
@@ -5900,7 +5992,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div class="data-quality-shell dq-health-shell">
         <div class="data-quality-head">
-          <div><div class="search-card-kicker">Control de calidad · v52</div><h2>Salud del almacén</h2><p>Valida productos, ubicaciones, racks, duplicados e imágenes antes de operar picking, reposición o Bsale.</p></div>
+          <div><div class="search-card-kicker">Control de calidad · v53</div><h2>Salud del almacén</h2><p>Sucursal: ${escapeHtml((appState.admin?.branches || [])[getActiveBranchContextIndex()]?.name || 'Sucursal activa')} · valida productos, ubicaciones, racks, duplicados e imágenes antes de operar picking, reposición o Bsale.</p></div>
           <div class="data-quality-actions"><span class="dq-score ${score < 75 ? 'danger' : score < 90 ? 'warning' : ''}">Calidad ${score}%</span><button class="iso-tool" type="button" data-dq-export>Exportar CSV</button><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
         </div>
         <div class="data-quality-grid dq-health-grid">${cards}</div>

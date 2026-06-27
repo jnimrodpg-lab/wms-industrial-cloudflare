@@ -47,3 +47,8 @@ El archivo `public/assets/app-main.js` legacy fue eliminado porque `public/index
 ## V52 - Salud del almacén
 
 Se agregó un diagnóstico avanzado para validar datos importados del Sheet, ubicaciones, duplicados, racks y zonas antes de operar picking, reposición o integraciones como Bsale. El reporte permite exportar observaciones en CSV para corregir los datos de origen.
+
+
+## v53 - Sucursales y almacenes
+
+Esta versión separa operación por sucursal: selector global, filtro de almacén, layout independiente y salud por sede.
