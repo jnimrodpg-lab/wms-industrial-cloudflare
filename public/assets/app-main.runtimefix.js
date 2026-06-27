@@ -8745,16 +8745,18 @@ function getSheetBranchOpenMap(){
     root.appendChild(face([toIso(rackDims.x-28,rackDims.y-20,floorY),toIso(rackDims.x+rackDims.w+28,rackDims.y-20,floorY),toIso(rackDims.x+rackDims.w+28,rackDims.y+rackDims.d+20,floorY),toIso(rackDims.x-28,rackDims.y+rackDims.d+20,floorY)],{fill:'rgba(255,255,255,.04)',stroke:'rgba(146,170,198,.22)','stroke-width':'1.2'}));
     trackIsoPrismBounds(rackDims.x - 28, rackDims.y - 20, floorY - 2, rackDims.w + 56, rackDims.d + 40, 2);
     if(renderContextMode && selectedLayoutRack){
-      const sideContextUnits = 100;
-      const verticalContextUnits = 100;
+      const contextPaddingUnits = 10;
+      const sideContextUnits = contextPaddingUnits;
+      const depthContextUnits = contextPaddingUnits;
+      const verticalContextUnits = contextPaddingUnits;
       const selectedX = Number(selectedLayoutRack.x || 0);
       const selectedY = Number(selectedLayoutRack.y || 0);
       const selectedW = Number(selectedLayoutRack.w || 0);
       const selectedH = Number(selectedLayoutRack.h || 0);
       const rangeX0 = selectedX - sideContextUnits;
       const rangeX1 = selectedX + selectedW + sideContextUnits;
-      const rangeY0 = selectedY;
-      const rangeY1 = selectedY + selectedH;
+      const rangeY0 = selectedY - depthContextUnits;
+      const rangeY1 = selectedY + selectedH + depthContextUnits;
       const selectedCenterX = selectedX + selectedW / 2;
       const selectedCenterY = selectedY + selectedH / 2;
       const selectedBaseHeight = Math.max(0, Number(selectedLayoutRack.baseHeight || 0) || 0);
@@ -9028,10 +9030,10 @@ function getSheetBranchOpenMap(){
     floorLabel.textContent = `Piso ${clearance}cm`; root.appendChild(floorLabel);
     try {
       const isPreviewSvg = holder && holder.id === 'rackModelSvg';
-      const sideMargin = renderContextMode ? 100 : (isPreviewSvg ? 2 : 10);
-      const topMargin = isPreviewSvg ? 0 : 100;
-      const frontMargin = 0;
-      const bottomMargin = isPreviewSvg ? 0 : 100;
+      const sideMargin = renderContextMode ? 10 : (isPreviewSvg ? 2 : 10);
+      const topMargin = renderContextMode ? 10 : (isPreviewSvg ? 0 : 100);
+      const frontMargin = renderContextMode ? 10 : 0;
+      const bottomMargin = renderContextMode ? 10 : (isPreviewSvg ? 0 : 100);
       const envX0 = rackDims.x - sideMargin;
       const envX1 = rackDims.x + rackDims.w + sideMargin;
       const envY0 = rackDims.y - frontMargin;
@@ -9060,22 +9062,18 @@ function getSheetBranchOpenMap(){
   function fitSelectedViewerRackPreview(holder, root, fillRatio = 0.88){
     try {
       if(!holder || !root) return;
-      if(holder.id === 'rackViewPrimary'){
-        holder.setAttribute('viewBox', '-121.59515592786995 -225.15226089174166 324.75952572292744 432.80452177622624');
-        return;
-      }
-      if(holder.id === 'rackViewStore'){
-        holder.setAttribute('viewBox', '-134.86196899414062 -198.444665512236 282.6610565185547 387.889331024472');
-        return;
-      }
+      const holderId = holder.id || '';
+      const cardFillRatio = /^(rackViewPrimary|rackViewStore|nav3dRackPrimary|nav3dRackStore)$/.test(holderId)
+        ? 0.76
+        : fillRatio;
       const bbox = root.getBBox();
       if(!bbox || !Number.isFinite(bbox.width) || !Number.isFinite(bbox.height) || bbox.width <= 0 || bbox.height <= 0) return;
       const vb = holder.viewBox && holder.viewBox.baseVal ? holder.viewBox.baseVal : null;
       const targetW = Math.max(220, Number(vb?.width || 470) || 470);
       const targetH = Math.max(220, Number(vb?.height || 520) || 520);
       const aspect = targetW / Math.max(1, targetH);
-      const desiredW = bbox.width / Math.max(0.1, fillRatio);
-      const desiredH = bbox.height / Math.max(0.1, fillRatio);
+      const desiredW = bbox.width / Math.max(0.1, cardFillRatio);
+      const desiredH = bbox.height / Math.max(0.1, cardFillRatio);
       let viewW = desiredW;
       let viewH = desiredH;
       if((viewW / Math.max(1, viewH)) > aspect){
@@ -9085,7 +9083,10 @@ function getSheetBranchOpenMap(){
       }
       const cx = bbox.x + bbox.width / 2;
       const cy = bbox.y + bbox.height / 2;
-      holder.setAttribute('viewBox', `${cx - viewW / 2} ${cy - viewH / 2} ${viewW} ${viewH}`);
+      const cardOffsetY = /^(rackViewPrimary|rackViewStore|nav3dRackPrimary|nav3dRackStore)$/.test(holderId)
+        ? Math.max(0, viewH * 0.04)
+        : 0;
+      holder.setAttribute('viewBox', `${cx - viewW / 2} ${(cy - viewH / 2) - cardOffsetY} ${viewW} ${viewH}`);
     } catch(err) {}
   }
 
