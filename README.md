@@ -67,3 +67,11 @@ Esta versión reencamina la app para que el flujo principal sea buscar un produc
 ## V58
 - Panel de propiedades de producto restaurado al diseño anterior.
 - Mantiene el resto del flujo actual y sin botón Copiar ubicación en el panel principal.
+
+
+## V60 - Plano 2D enfocado al producto
+- El modal de ubicación ahora abre directamente en modo Rack para enfocarse en el producto.
+- Se agregó resumen visual: producto, ubicación principal y ubicación en almacén.
+- Selector de enfoque: Ubicación / Almacén / Ambas.
+- Zoom automático al rack/zona activa usando el mismo sistema de coordenadas del layout.
+- Se mantiene eliminado el botón Copiar ubicación del panel principal.

@@ -4598,7 +4598,38 @@
   }
 
   function setUnifiedMapLayout(){}
-  function focusBoundsForProduct(){ return null; }
+  
+  function focusBoundsForProduct(product = appState.selectedProduct){
+    const ctx = getViewerProductLocationContext(product);
+    const prod = product || ctx.prod;
+    if(!prod) return null;
+    const mode = appState.ui?.locationFocusMode || 'both';
+    const ids = [];
+    if((mode === 'primary' || mode === 'both') && ctx.primaryRackId) ids.push(ctx.primaryRackId);
+    if((mode === 'store' || mode === 'both') && ctx.storeRackId && ctx.storeRackId !== ctx.primaryRackId) ids.push(ctx.storeRackId);
+    if(!ids.length && ctx.primaryRackId) ids.push(ctx.primaryRackId);
+    const points = [];
+    ids.forEach(id => {
+      const rack = findRackById(id);
+      if(!rack) return;
+      const plan = getRackIsoPlan(rack);
+      (plan?.corners || []).forEach(p => points.push(toIso(p.x, p.y, 0)));
+      (plan?.corners || []).forEach(p => points.push(toIso(p.x, p.y, getRackRenderHeight3D(rack))));
+    });
+    const zoneIds = new Set();
+    if((mode === 'primary' || mode === 'both') && prod.zona) zoneIds.add(prod.zona);
+    if((mode === 'store' || mode === 'both') && prod.zonaStore) zoneIds.add(prod.zonaStore);
+    (appState.layout?.zones || []).forEach(z => {
+      if(zoneIds.has(z.id)) (z.pts || []).forEach(p => points.push(toIso(p.x, p.y, 0)));
+    });
+    if(!points.length) return null;
+    return {
+      minX: Math.min(...points.map(p => p.x)),
+      maxX: Math.max(...points.map(p => p.x)),
+      minY: Math.min(...points.map(p => p.y)),
+      maxY: Math.max(...points.map(p => p.y))
+    };
+  }
   function getActiveSheetBranch(){
     ensureBranchSheetFields();
     const branches = appState.admin.branches || [];
@@ -7220,6 +7251,10 @@ function getSheetBranchOpenMap(){
   }
 
   function openProductLocationModal(product = appState.selectedProduct){
+    ensureAppRuntimeState();
+    if(!appState.ui.locationFocusMode) appState.ui.locationFocusMode = 'primary';
+    appState.ui.isoIsolation = 'rack';
+    appState.ui.isoGhost = true;
     const ctx = getViewerProductLocationContext(product);
     const prod = product || ctx.prod;
     if(!prod){ showToast('Selecciona un producto primero.', 'warning'); return; }
@@ -7232,19 +7267,29 @@ function getSheetBranchOpenMap(){
       <div class="location-modal-card">
         <div class="location-modal-head">
           <div>
-            <b>Ubicación 3D del producto</b>
-            <div class="muted tiny">${escapeHtml(prod.nombre || 'Producto')} • ${escapeHtml(prod.sku || 'SKU —')}</div>
+            <b>Plano de ubicación del producto</b>
+            <div class="muted tiny">Enfoque directo al rack, nivel y slot del producto seleccionado.</div>
           </div>
           <div class="location-modal-head-actions">
-            <span class="chip">${escapeHtml(ctx.primaryLoc)}</span>
-            <button class="btn secondary nav3d-open-btn" type="button" id="btnOpenNavigable3DFromLocation">3D navegable</button>
+            <span class="chip location-focus-chip">${escapeHtml(prod.sku || 'SKU —')}</span>
+            <button class="btn secondary nav3d-open-btn" type="button" id="btnOpenNavigable3DFromLocation">Abrir 3D</button>
             <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
           </div>
         </div>
-        <div class="location-modal-body">
-          <div class="location-modal-main dual-rack-card">
+        <div class="location-modal-focus-strip">
+          <div class="location-focus-product"><span>Producto</span><b>${escapeHtml(prod.nombre || 'Sin nombre')}</b><small>${escapeHtml(prod.sku || 'SKU —')}</small></div>
+          <div class="location-focus-target"><span>Ubicación principal</span><b>${escapeHtml(ctx.primaryLoc)}</b><small>Rack ${escapeHtml(ctx.primaryRackId || '—')} · N${escapeHtml(prod.nivel || '—')} · S${escapeHtml(prod.slot || '—')}</small></div>
+          <div class="location-focus-target ${ctx.storeRackId && ctx.storeRackId !== ctx.primaryRackId ? '' : 'muted-target'}"><span>Ubicación en almacén</span><b>${escapeHtml(ctx.storeLoc)}</b><small>Rack ${escapeHtml(ctx.storeRackId || '—')} · N${escapeHtml(prod.nivelStore || prod.nivel || '—')} · S${escapeHtml(prod.slotStore || prod.slot || '—')}</small></div>
+          <div class="location-focus-tabs" role="group" aria-label="Enfoque de ubicación">
+            <button type="button" data-location-focus="primary" class="iso-tool ${appState.ui.locationFocusMode === 'primary' ? 'active' : ''}">Ubicación</button>
+            <button type="button" data-location-focus="store" class="iso-tool ${appState.ui.locationFocusMode === 'store' ? 'active' : ''}">Almacén</button>
+            <button type="button" data-location-focus="both" class="iso-tool ${appState.ui.locationFocusMode === 'both' ? 'active' : ''}">Ambas</button>
+          </div>
+        </div>
+        <div class="location-modal-body v60-product-location-body">
+          <div class="location-modal-main dual-rack-card v60-focused-map">
             <div class="dual-rack-head modal-iso-head">
-              <div><b>Plano general 3D isométrico</b><div class="muted tiny">Cambia el ángulo sin perder la ubicación activa.</div></div>
+              <div><b>Plano 2D enfocado al producto</b><div class="muted tiny">Abre con el rack del producto aislado. Usa Zona o Todo solo si necesitas contexto.</div></div>
               <div class="iso-toolbar modal-iso-toolbar" id="locationModalIsoToolbar">
                 ${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-modal-iso-view="${v}">${v}</button>`).join('')}
                 <button type="button" class="iso-tool" data-modal-iso-rotate="-1">↺</button>
@@ -7275,7 +7320,7 @@ function getSheetBranchOpenMap(){
       const rackStore = modal.querySelector('#locationModalRackStore');
       const toolbar = modal.querySelector('#locationModalIsoToolbar');
       if(toolbar){
-        toolbar.innerHTML = `${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-modal-iso-view="${v}">${v}</button>`).join('')}<button type="button" class="iso-tool" data-modal-iso-rotate="-1">↺</button><button type="button" class="iso-tool" data-modal-iso-rotate="1">↻</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='zone'?'active':''}" data-modal-iso-isolate="zone">Zona</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='rack'?'active':''}" data-modal-iso-isolate="rack">Rack</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='all'?'active':''}" data-modal-iso-isolate="all">Todo</button><button type="button" class="iso-tool ${appState.ui.isoGhost?'active':''}" data-modal-iso-ghost="toggle">Ghost</button><span class="iso-compass">${escapeHtml(getIsoViewConfig().compass)}</span>`;
+        toolbar.innerHTML = `${['NE','NW','SE','SW'].map(v => `<button type="button" class="iso-tool ${appState.ui.isoView===v?'active':''}" data-modal-iso-view="${v}">${v}</button>`).join('')}<button type="button" class="iso-tool" data-modal-iso-rotate="-1">↺</button><button type="button" class="iso-tool" data-modal-iso-rotate="1">↻</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='rack'?'active':''}" data-modal-iso-isolate="rack">Rack</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='zone'?'active':''}" data-modal-iso-isolate="zone">Zona</button><button type="button" class="iso-tool ${appState.ui.isoIsolation==='all'?'active':''}" data-modal-iso-isolate="all">Todo</button><button type="button" class="iso-tool ${appState.ui.isoGhost?'active':''}" data-modal-iso-ghost="toggle">Ghost</button><span class="iso-compass">${escapeHtml(getIsoViewConfig().compass)}</span>`;
       }
       renderIsoLocationSvg(iso, prod);
       renderRackDetail(updatedCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label: 'Ubicación', fullLabel: updatedCtx.primaryLoc }, rackPrimary);
@@ -7284,6 +7329,10 @@ function getSheetBranchOpenMap(){
       modal.querySelectorAll('[data-modal-iso-rotate]').forEach(btn => { btn.onclick = () => { rotateIsoView(Number(btn.dataset.modalIsoRotate || 1)); redrawModalViews(); }; });
       modal.querySelectorAll('[data-modal-iso-isolate]').forEach(btn => { btn.onclick = () => { appState.ui.isoIsolation = btn.dataset.modalIsoIsolate || 'all'; redrawModalViews(); }; });
       modal.querySelectorAll('[data-modal-iso-ghost]').forEach(btn => { btn.onclick = () => { appState.ui.isoGhost = !appState.ui.isoGhost; redrawModalViews(); }; });
+      modal.querySelectorAll('[data-location-focus]').forEach(btn => {
+        btn.classList.toggle('active', appState.ui.locationFocusMode === btn.dataset.locationFocus);
+        btn.onclick = () => { appState.ui.locationFocusMode = btn.dataset.locationFocus || 'primary'; redrawModalViews(); };
+      });
     };
     redrawModalViews();
   }
@@ -7392,12 +7441,11 @@ function getSheetBranchOpenMap(){
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
           </div>
         </div>
-        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button><button class="btn secondary viewer-location-btn" type="button" id="btnCopyLocation"><span>⧉</span> Copiar ubicación</button></div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
     document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
     document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
-    document.getElementById('btnCopyLocation')?.addEventListener('click', () => copySelectedProductLocation(prod));
     bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
   }
 
