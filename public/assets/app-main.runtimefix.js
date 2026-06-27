@@ -5856,6 +5856,7 @@ function getSheetBranchOpenMap(){
             <button class="iso-tool active" data-nav3d-action="all">Todo</button>
             <button class="iso-tool" data-nav3d-action="zone">Zona</button>
             <button class="iso-tool" data-nav3d-action="rack">Rack</button>
+            <button class="iso-tool nav3d-solo-location" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
             <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
             <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
@@ -6373,6 +6374,7 @@ function getSheetBranchOpenMap(){
             <button class="iso-tool active" data-nav3d-action="all">Todo</button>
             <button class="iso-tool" data-nav3d-action="zone">Zona</button>
             <button class="iso-tool" data-nav3d-action="rack">Rack</button>
+            <button class="iso-tool nav3d-solo-location" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
             <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
             <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
@@ -6520,7 +6522,7 @@ function getSheetBranchOpenMap(){
     rackZoom?.addEventListener('click', e => { if(e.target === rackZoom){ rackZoom.hidden=true; rackZoom.classList.remove('show'); } });
 
     const syncToolbar = () => {
-      modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === ui.isolation));
+      modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"],[data-nav3d-action="solo"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === ui.isolation));
       modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', ui.ghost);
       modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', ui.labels);
       modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', ui.route);
@@ -6618,7 +6620,9 @@ function getSheetBranchOpenMap(){
         const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2,2); return tex;
       };
       const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
-      const layoutZones = Array.isArray(appState.layout?.zones) ? appState.layout.zones.filter(z => (z.pts || []).length >= 3) : [];
+      const { focusRackIds, focusZoneIds } = getFocusSets();
+      const layoutZonesRaw = Array.isArray(appState.layout?.zones) ? appState.layout.zones.filter(z => (z.pts || []).length >= 3) : [];
+      const layoutZones = ui.isolation === 'solo' ? layoutZonesRaw.filter(z => focusZoneIds.has(z.id)) : layoutZonesRaw;
       const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .08 : 1 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
       const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.38, visual.grid*.52); world.add(grid);
@@ -6722,8 +6726,12 @@ function getSheetBranchOpenMap(){
         return group;
       };
 
-      const { focusRackIds, focusZoneIds } = getFocusSets();
-      const visibleRacks = getNav3DRacks().filter(r => ui.isolation === 'all' || (ui.isolation === 'zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
+      const visibleRacks = getNav3DRacks().filter(r => {
+        if(ui.isolation === 'all') return true;
+        if(ui.isolation === 'zone') return focusZoneIds.has(r.zoneId);
+        if(ui.isolation === 'solo') return focusRackIds.has(r.id);
+        return focusRackIds.has(r.id);
+      });
       visibleRacks.forEach(r => {
         const active = focusRackIds.has(r.id);
         const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, ui.ghost);
@@ -6739,7 +6747,9 @@ function getSheetBranchOpenMap(){
         const activeRack = visibleRacks.find(r => focusRackIds.has(r.id));
         if(activeRack){
           const routeGroup = new THREE.Group();
-          const start = toWorld(bounds.minX + bounds.w*.12, bounds.minY + bounds.h*.82, 0);
+          const relatedZone = (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).find(z => z.id === activeRack.zoneId || focusZoneIds.has(z.id));
+          const zoneCenter = relatedZone ? centroid(relatedZone.pts || []) : { x: bounds.minX + bounds.w*.12, y: bounds.minY + bounds.h*.82 };
+          const start = toWorld(zoneCenter.x, zoneCenter.y, 0);
           const end = toWorld(Number(activeRack.x||0)+Number(activeRack.w||120)/2, Number(activeRack.y||0)+Number(activeRack.h||56)/2, 0);
           const mid = new THREE.Vector3((start.x+end.x)/2, .055, start.z);
           const points = [new THREE.Vector3(start.x,.065,start.z), mid, new THREE.Vector3(end.x,.065,end.z)];
@@ -6761,7 +6771,7 @@ function getSheetBranchOpenMap(){
       const initialPan = cameraFocusRack
         ? toWorld(Number(cameraFocusRack.x||0)+Number(cameraFocusRack.w||120)/2, Number(cameraFocusRack.y||0)+Number(cameraFocusRack.h||56)/2, 18)
         : new THREE.Vector3(0,0,0);
-      const initialDistance = Math.max(8, Math.max(floorW,floorD) * .82);
+      const initialDistance = Math.max(6, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .46 : .68));
       const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
       const selectedInitial = ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
       if(selectedInitial) renderRackPopover(selectedInitial);
@@ -6849,7 +6859,7 @@ function getSheetBranchOpenMap(){
         if(action === 'focus' || action === 'slot'){
           controls.targetYaw = -Math.PI/4;
           controls.targetPitch = .68;
-          controls.targetDistance = action === 'slot' ? Math.max(6, floorW*.58) : initialDistance;
+          controls.targetDistance = action === 'slot' ? Math.max(4.8, floorW*.42) : initialDistance;
           controls.targetPan.copy(initialPan);
         }
         if(action && action.startsWith('visual-')){
@@ -6857,7 +6867,7 @@ function getSheetBranchOpenMap(){
           appState.ui.nav3DVisualMode = mode;
           ui.visual = mode;
         }
-        if(action === 'all' || action === 'zone' || action === 'rack') ui.isolation = action;
+        if(action === 'all' || action === 'zone' || action === 'rack' || action === 'solo') ui.isolation = action;
         if(action === 'ghost') ui.ghost = !ui.ghost;
         if(action === 'labels') ui.labels = !ui.labels;
         if(action === 'route') ui.route = !ui.route;

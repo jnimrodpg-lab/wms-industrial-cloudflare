@@ -4820,3 +4820,15 @@ body.theme-light .brand-box{
 }
 .nav3d-stage canvas{cursor:grab}
 .nav3d-stage canvas:active{cursor:grabbing}
+
+
+/* V50: modo Solo ubicación y enfoque automático */
+.nav3d-actions .iso-tool.nav3d-solo-location{
+  border-color:rgba(111,255,183,.42);
+  color:#dfffe9;
+}
+.nav3d-actions .iso-tool.nav3d-solo-location.active{
+  background:linear-gradient(180deg,rgba(50,195,111,.34),rgba(255,255,255,.045));
+  border-color:rgba(126,255,184,.72);
+  box-shadow:0 0 0 1px rgba(111,255,183,.16),0 12px 30px rgba(42,210,116,.16);
+}
