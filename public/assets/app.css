@@ -4907,3 +4907,72 @@ body.theme-light .brand-box{
 .branch-switch-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.branch-switch-controls select{width:100%;min-width:0;border:1px solid rgba(255,255,255,.11);border-radius:12px;background:rgba(5,14,25,.74);color:#eefbf3;padding:9px 10px;font-weight:800;outline:none}.branch-switch-actions{display:flex;gap:8px;justify-content:flex-end}.branch-switch-actions .tiny-btn{white-space:nowrap}
 .branch-layout-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}.company-mini-action{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#eaffef;border-radius:12px;padding:10px 8px;font-weight:900;cursor:pointer}.company-mini-action:hover{border-color:rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.10)}
 @media(max-width:1180px){.branch-switch-card.v53{grid-template-columns:1fr}.branch-switch-controls{grid-template-columns:1fr}.branch-switch-actions{justify-content:flex-start}.branch-layout-actions{grid-template-columns:1fr}}
+
+/* V54 - Picking por lista de SKUs */
+.picking-launch-btn{background:linear-gradient(135deg,rgba(111,240,168,.22),rgba(31,141,104,.34));border-color:rgba(111,240,168,.45)}
+.picking-modal{align-items:center;justify-content:center;padding:22px;background:rgba(2,8,12,.72);backdrop-filter:blur(16px)}
+.picking-card{width:min(1180px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column;border:1px solid rgba(111,240,168,.2);box-shadow:0 28px 80px rgba(0,0,0,.55)}
+.picking-head{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:16px}
+.picking-head h2{margin:0;color:#f3fff7;font-size:1.45rem}
+.picking-head p{margin:6px 0 0;color:rgba(220,235,230,.72);max-width:720px;font-size:.9rem;line-height:1.45}
+.picking-head-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.picking-context{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.picking-context span{border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:999px;padding:8px 11px;font-size:.78rem;color:rgba(230,245,240,.76)}
+.picking-context b{color:#9bf7bd}
+.picking-input{width:100%;min-height:110px;max-height:155px;resize:vertical;background:rgba(4,15,23,.72);border:1px solid rgba(111,240,168,.18);border-radius:18px;color:#effff5;padding:14px 16px;font:500 .92rem/1.5 Poppins,system-ui;outline:none}
+.picking-input:focus{border-color:rgba(111,240,168,.5);box-shadow:0 0 0 3px rgba(111,240,168,.08)}
+.picking-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.picking-stat{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.035));border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:13px 14px}
+.picking-stat b{display:block;color:#f2fff7;font-size:1.25rem;line-height:1}
+.picking-stat span{display:block;color:rgba(230,245,240,.68);font-size:.76rem;margin-top:7px}.picking-stat.success b{color:#79f5a9}.picking-stat.danger b{color:#ff9a9a}
+.picking-results{overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:10px}
+.picking-empty{padding:28px;text-align:center;border:1px dashed rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.035)}
+.picking-row{display:grid;grid-template-columns:46px 58px minmax(220px,1fr) minmax(150px,210px) minmax(230px,auto);gap:12px;align-items:center;padding:12px;border-radius:20px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.075)}
+.picking-row.is-found{border-color:rgba(111,240,168,.16)}.picking-row.is-missing{border-color:rgba(255,120,120,.22);opacity:.9}
+.picking-order{width:38px;height:38px;border-radius:13px;display:grid;place-items:center;background:rgba(111,240,168,.12);color:#9bf7bd;font-weight:800}
+.picking-thumb{width:58px;height:58px;border-radius:15px;overflow:hidden;background:rgba(255,255,255,.08);display:grid;place-items:center;color:rgba(255,255,255,.45);font-size:.8rem}.picking-thumb img{width:100%;height:100%;object-fit:cover}
+.picking-title{color:#f3fff7;font-weight:800;font-size:.92rem}.picking-sub{color:rgba(230,245,240,.62);font-size:.76rem;margin-top:3px}.picking-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.picking-badges span{font-size:.68rem;color:#bdfbd4;background:rgba(111,240,168,.09);border:1px solid rgba(111,240,168,.16);border-radius:999px;padding:4px 7px}
+.picking-loc small{display:block;color:rgba(230,245,240,.55);font-size:.68rem}.picking-loc b{display:block;color:#fff;font-size:.86rem;margin-top:2px;word-break:break-word}.picking-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}.picking-actions .mini-btn{border:1px solid rgba(111,240,168,.22);background:rgba(111,240,168,.08);color:#eafff1;border-radius:999px;padding:8px 10px;font-weight:700;font-size:.72rem;cursor:pointer}.picking-actions .mini-btn:hover{background:rgba(111,240,168,.18)}.picking-missing{color:#ffb0b0;font-weight:700;font-size:.75rem}
+@media(max-width:860px){.picking-head{flex-direction:column}.picking-stats{grid-template-columns:repeat(2,1fr)}.picking-row{grid-template-columns:38px 48px 1fr}.picking-loc,.picking-actions{grid-column:3}.picking-actions{justify-content:flex-start}.picking-thumb{width:48px;height:48px}}
+
+/* V55 - Reposición / Restock operativo */
+.restock-launch-btn{background:linear-gradient(135deg,rgba(255,216,77,.24),rgba(255,160,64,.28));border-color:rgba(255,216,77,.48);color:#fff9d7}
+.restock-menu-item{color:#fff4c5}
+.restock-modal .restock-card{border-color:rgba(255,216,77,.22);box-shadow:0 30px 90px rgba(0,0,0,.58),0 0 0 1px rgba(255,216,77,.04) inset}
+.restock-head h2{color:#fff8d8}.restock-head p{color:rgba(255,248,225,.72)}
+.restock-controls{display:grid;grid-template-columns:minmax(240px,1fr) 180px auto;gap:10px;align-items:center;margin:0 0 14px}
+.restock-search,.restock-select{height:44px;border-radius:15px;background:rgba(4,15,23,.72);border:1px solid rgba(255,216,77,.18);color:#fff9df;padding:0 13px;font:600 .82rem Poppins,system-ui;outline:none}
+.restock-search:focus,.restock-select:focus{border-color:rgba(255,216,77,.5);box-shadow:0 0 0 3px rgba(255,216,77,.08)}
+.restock-check{height:44px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:15px;padding:0 13px;display:flex;align-items:center;gap:8px;color:rgba(255,248,225,.78);font-size:.78rem;font-weight:700;white-space:nowrap}
+.restock-check input{accent-color:#ffd84d}
+.restock-stat.success b{color:#ffd84d}.restock-stat.danger b{color:#ffb37a}
+.restock-group-title{position:sticky;top:0;z-index:2;margin:4px 0 2px;padding:8px 12px;border-radius:14px;background:linear-gradient(90deg,rgba(255,216,77,.16),rgba(255,255,255,.04));border:1px solid rgba(255,216,77,.18);color:#fff3b5;font-weight:900;font-size:.78rem;letter-spacing:.02em;text-transform:uppercase;backdrop-filter:blur(10px)}
+.restock-row{grid-template-columns:54px 58px minmax(220px,1fr) minmax(150px,210px) minmax(270px,auto)}
+.restock-row.is-pending{border-color:rgba(255,216,77,.2)}.restock-row.is-reviewed{opacity:.64;border-color:rgba(111,240,168,.13)}
+.restock-qty{background:linear-gradient(135deg,rgba(255,216,77,.2),rgba(255,160,64,.16));color:#ffe98d;font-size:.9rem}
+.restock-results .picking-badges span{background:rgba(255,216,77,.08);border-color:rgba(255,216,77,.16);color:#fff0a8}
+.restock-results .picking-actions .mini-btn{border-color:rgba(255,216,77,.22);background:rgba(255,216,77,.08);color:#fff7d7}.restock-results .picking-actions .mini-btn:hover{background:rgba(255,216,77,.16)}
+@media(max-width:940px){.restock-controls{grid-template-columns:1fr}.restock-row{grid-template-columns:42px 48px 1fr}.restock-row .picking-loc,.restock-row .picking-actions{grid-column:3}.restock-row .picking-actions{justify-content:flex-start}}
+
+
+/* V56 - Visualización principal de ubicación del producto */
+.picking-launch-btn,.restock-launch-btn,.picking-menu-item,.restock-menu-item,#btnOpenPicking,#btnOpenRestock,#menuPickingBtn,#menuRestockBtn{display:none!important}
+.visual-location-panel{gap:16px!important}
+.visual-location-hero{display:grid;grid-template-columns:minmax(220px,.88fr) minmax(320px,1.22fr);gap:18px;align-items:stretch}
+.visual-media-col{min-width:0}
+.visual-location-main-panel{display:flex;flex-direction:column;gap:14px;min-width:0}
+.visual-location-cards{display:grid;grid-template-columns:1fr;gap:12px}
+.visual-location-card{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:15px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.visual-location-card.active{border-color:rgba(82,255,150,.52);box-shadow:0 0 0 1px rgba(82,255,150,.18),0 18px 40px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.10)}
+.visual-location-card.ok:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 16% 0%,rgba(80,227,123,.18),transparent 42%);pointer-events:none}
+.visual-location-card.warn{border-color:rgba(255,192,90,.34)}
+.visual-location-card-head{display:flex;align-items:center;gap:11px;position:relative;z-index:1}
+.visual-location-card-head b{display:block;font-size:13px;color:#e8fff3}.visual-location-card-head small{display:block;color:rgba(225,238,255,.58);font-size:11px;margin-top:2px}
+.visual-loc-icon{width:38px;height:38px;border-radius:14px;display:grid;place-items:center;background:rgba(82,255,150,.12);border:1px solid rgba(82,255,150,.24);color:#73ffad;font-weight:900}
+.visual-loc-full{position:relative;z-index:1;margin-top:12px;padding:10px 12px;border-radius:15px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);font-weight:800;color:#fff;letter-spacing:.01em;word-break:break-word}
+.visual-loc-breakdown{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:11px}
+.visual-loc-breakdown span{padding:9px 8px;border-radius:13px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.075);min-width:0}.visual-loc-breakdown small{display:block;color:rgba(214,228,255,.55);font-size:10px}.visual-loc-breakdown b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f8fff9;font-size:13px}
+.visual-location-quick-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.visual-location-quick-actions .viewer-location-btn{margin-top:0!important;min-height:52px!important;border-radius:16px!important}
+.visual-location-support-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.visual-location-variants-card,.visual-location-summary-card{min-height:0}.variant-location-list{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto;padding-right:2px}.variant-location-row{width:100%;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;text-align:left;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.045);border-radius:15px;padding:10px 11px;color:inherit;cursor:pointer}.variant-location-row:hover{border-color:rgba(82,255,150,.34);background:rgba(82,255,150,.08)}.variant-location-row.active{border-color:rgba(82,255,150,.58);background:rgba(82,255,150,.12)}.variant-location-main b{display:block;font-size:12px;color:#fff}.variant-location-main small{display:block;font-size:11px;color:rgba(220,231,255,.62);margin-top:2px}.variant-location-loc{font-size:11px;color:#86ffb5;font-weight:800;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.visual-mini-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(220,231,255,.56);margin-right:7px}.viewer-variant-chip-wrap.compact{align-items:center;margin-top:10px}.visual-more-note{padding:4px 2px}.v56-visual-location-modal .location-modal-card{box-shadow:0 30px 90px rgba(0,0,0,.55),0 0 0 1px rgba(82,255,150,.10)}
+@media(max-width:1180px){.visual-location-hero,.visual-location-support-grid{grid-template-columns:1fr}.visual-location-quick-actions{grid-template-columns:1fr 1fr}}
+@media(max-width:720px){.visual-loc-breakdown{grid-template-columns:1fr 1fr}.visual-location-quick-actions{grid-template-columns:1fr}.variant-location-row{grid-template-columns:1fr}.variant-location-loc{max-width:none}}

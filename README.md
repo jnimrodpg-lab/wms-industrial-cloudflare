@@ -52,3 +52,13 @@ Se agregó un diagnóstico avanzado para validar datos importados del Sheet, ubi
 ## v53 - Sucursales y almacenes
 
 Esta versión separa operación por sucursal: selector global, filtro de almacén, layout independiente y salud por sede.
+
+
+## V55 - Reposición / Restock operativo
+
+Esta versión agrega un módulo operativo para productos con `Cant. Restock` mayor a 0. Permite generar una ruta de reposición ordenada por zona, rack, nivel y slot, filtrar pendientes, marcar ítems revisados y exportar CSV para trabajo en almacén.
+
+
+## V56 - Enfoque visual de ubicación
+
+Esta versión reencamina la app para que el flujo principal sea buscar un producto y visualizar dónde está: ubicación principal, almacén, zona, rack, nivel y slot, con acceso directo a plano 2D y 3D. Los módulos de picking/reposición quedan fuera del flujo principal.

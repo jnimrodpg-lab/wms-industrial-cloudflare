@@ -11914,6 +11914,477 @@ function zoomLayout(factor, center){
     applyUiTheme(e.target.checked ? 'light' : 'dark');
   });
 
+  // V54 - Picking por lista de SKUs / códigos
+  function ensurePickingUi(){
+    if(!document.getElementById('btnOpenPicking')){
+      const searchbar = document.querySelector('.searchbar');
+      const before = document.getElementById('btnScanCode');
+      const btn = document.createElement('button');
+      btn.className = 'action-btn picking-launch-btn';
+      btn.id = 'btnOpenPicking';
+      btn.type = 'button';
+      btn.textContent = 'Picking';
+      if(searchbar) searchbar.insertBefore(btn, before || null);
+      btn.addEventListener('click', openPickingModal);
+    }
+    const adminMenu = document.querySelector('.menu-section .menu-items');
+    if(adminMenu && !document.getElementById('menuPickingBtn')){
+      const item = document.createElement('div');
+      item.className = 'menu-item';
+      item.id = 'menuPickingBtn';
+      item.innerHTML = '🧾 <span>Picking</span>';
+      item.addEventListener('click', (e)=>{ e.preventDefault(); openPickingModal(); });
+      adminMenu.appendChild(item);
+    }
+  }
+
+  function normalizePickingToken(value){
+    return norm(String(value || '').replace(/[^a-zA-Z0-9ñÑáéíóúÁÉÍÓÚüÜ_-]+/g,' ').trim());
+  }
+
+  function splitPickingInput(raw){
+    return String(raw || '')
+      .split(/[\n,;\t]+/)
+      .map(x => x.trim())
+      .filter(Boolean)
+      .map((token, index) => ({ token, key:normalizePickingToken(token), index:index + 1 }));
+  }
+
+  function productPickingKeys(product){
+    const sku = normalizePickingToken(product?.sku || '');
+    const barras = normalizePickingToken(product?.barras || product?.barcode || '');
+    const nombre = normalizePickingToken(product?.nombre || product?.name || '');
+    const variante = normalizePickingToken(product?.variante || '');
+    const color = normalizePickingToken(getProductColorValue(product));
+    const talla = normalizePickingToken(getProductSizeValue(product));
+    return { sku, barras, nombre, variante, color, talla, joined:[sku,barras,nombre,variante,color,talla].filter(Boolean).join(' ') };
+  }
+
+  function findPickingProduct(tokenObj, indexMaps){
+    if(!tokenObj?.key) return null;
+    const key = tokenObj.key;
+    if(indexMaps.bySku.has(key)) return { product:indexMaps.bySku.get(key), match:'SKU exacto' };
+    if(indexMaps.byBar.has(key)) return { product:indexMaps.byBar.get(key), match:'Barras exacto' };
+    if(indexMaps.byLocation.has(key)) return { product:indexMaps.byLocation.get(key), match:'Ubicación exacta' };
+    const partial = indexMaps.products.find(p => {
+      const k = p.__pickKeys;
+      return k?.sku?.includes(key) || k?.barras?.includes(key) || k?.nombre?.includes(key) || k?.joined?.includes(key);
+    });
+    return partial ? { product:partial, match:'Coincidencia parcial' } : null;
+  }
+
+  function buildPickingIndex(products){
+    const bySku = new Map(), byBar = new Map(), byLocation = new Map();
+    const list = (products || []).map(p => ({ ...p, __pickKeys:productPickingKeys(p) }));
+    list.forEach(p => {
+      if(p.__pickKeys.sku && !bySku.has(p.__pickKeys.sku)) bySku.set(p.__pickKeys.sku, p);
+      if(p.__pickKeys.barras && !byBar.has(p.__pickKeys.barras)) byBar.set(p.__pickKeys.barras, p);
+      const locKey = normalizePickingToken(p.ubicacion || p.almacen || '');
+      if(locKey && !byLocation.has(locKey)) byLocation.set(locKey, p);
+    });
+    return { products:list, bySku, byBar, byLocation };
+  }
+
+  function getPickingSortInfo(product){
+    const parsed = parseLocationCode(product?.ubicacion || product?.almacen || '', product?.rack || product?.rackStore || 'Z1-E1');
+    return { parsed, zone:parsed.zoneId || 'ZZ', est:Number(parsed.est || 999), level:Number(parsed.level || 999), slot:Number(parsed.slot || 999), rack:parsed.rackId || product?.rack || product?.rackStore || '' };
+  }
+
+  function analyzePickingInput(raw){
+    const tokens = splitPickingInput(raw);
+    const products = Array.isArray(appState.filtered) && appState.filtered.length ? appState.filtered : (appState.products || []);
+    const indexMaps = buildPickingIndex(products);
+    const rows = tokens.map(tokenObj => {
+      const hit = findPickingProduct(tokenObj, indexMaps);
+      if(!hit) return { ...tokenObj, found:false, product:null, match:'No encontrado', sort:{ zone:'ZZZ', est:999, level:999, slot:999, rack:'' } };
+      const sort = getPickingSortInfo(hit.product);
+      return { ...tokenObj, found:true, product:hit.product, match:hit.match, sort };
+    });
+    rows.sort((a,b) => {
+      if(a.found !== b.found) return a.found ? -1 : 1;
+      return String(a.sort.zone).localeCompare(String(b.sort.zone),'es',{numeric:true}) || a.sort.est-b.sort.est || a.sort.level-b.sort.level || a.sort.slot-b.sort.slot || a.index-b.index;
+    });
+    return rows;
+  }
+
+  function pickingCsv(rows){
+    const header = ['orden','buscado','estado','sku','nombre','variante','ubicacion','almacen','rack','nivel','slot','match'];
+    const esc = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+    const lines = [header.join(',')];
+    rows.forEach((r,i)=>{
+      const p = r.product || {};
+      lines.push([
+        i+1, r.token, r.found ? 'ENCONTRADO' : 'NO ENCONTRADO', p.sku, p.nombre, p.variante, p.ubicacion, p.almacen,
+        r.sort?.rack || p.rack || p.rackStore || '', r.sort?.parsed?.level || '', r.sort?.parsed?.slot || '', r.match
+      ].map(esc).join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function downloadPickingCsv(rows){
+    const csv = pickingCsv(rows);
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `picking_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 700);
+  }
+
+  function renderPickingResults(modal, rows){
+    const host = modal.querySelector('#pickingResults');
+    const stats = modal.querySelector('#pickingStats');
+    const found = rows.filter(r=>r.found).length;
+    const missing = rows.length - found;
+    const zones = Array.from(new Set(rows.filter(r=>r.found).map(r=>r.sort.zone).filter(Boolean)));
+    stats.innerHTML = `
+      <div class="picking-stat"><b>${rows.length}</b><span>Total</span></div>
+      <div class="picking-stat success"><b>${found}</b><span>Encontrados</span></div>
+      <div class="picking-stat danger"><b>${missing}</b><span>Faltantes</span></div>
+      <div class="picking-stat"><b>${zones.length}</b><span>Zonas</span></div>`;
+    if(!rows.length){
+      host.innerHTML = '<div class="empty picking-empty">Pega una lista de SKUs, códigos de barras o nombres para generar el recorrido.</div>';
+      return;
+    }
+    host.innerHTML = rows.map((r,i)=>{
+      const p = r.product || {};
+      const img = r.found ? (getProductImageUrls(p)[0] || '') : '';
+      const loc = p.ubicacion || p.almacen || '—';
+      const zoneBadge = r.found ? `${escapeHtml(r.sort.zone)} · ${escapeHtml(r.sort.rack || '')} · N${escapeHtml(r.sort.parsed?.level || '')}-S${escapeHtml(r.sort.parsed?.slot || '')}` : 'Sin coincidencia';
+      return `<article class="picking-row ${r.found ? 'is-found' : 'is-missing'}" data-pick-row="${i}">
+        <div class="picking-order">${i+1}</div>
+        <div class="picking-thumb ${img ? '' : 'empty'}">${img ? `<img src="${escapeHtml(img)}" alt="">` : '—'}</div>
+        <div class="picking-main">
+          <div class="picking-title">${escapeHtml(p.nombre || r.token)}</div>
+          <div class="picking-sub">${escapeHtml(p.sku || r.token)} ${p.variante ? '· '+escapeHtml(p.variante) : ''}</div>
+          <div class="picking-badges"><span>${escapeHtml(zoneBadge)}</span><span>${escapeHtml(r.match)}</span></div>
+        </div>
+        <div class="picking-loc"><small>Ubicación</small><b>${escapeHtml(loc)}</b></div>
+        <div class="picking-actions">
+          ${r.found ? `<button class="mini-btn" data-pick-action="select" data-index="${i}">Seleccionar</button><button class="mini-btn" data-pick-action="loc" data-index="${i}">Ver ubicación</button><button class="mini-btn" data-pick-action="copy" data-index="${i}">Copiar</button>` : `<span class="picking-missing">Revisar Sheet</span>`}
+        </div>
+      </article>`;
+    }).join('');
+    host.querySelectorAll('[data-pick-action]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const r = rows[Number(btn.dataset.index)];
+        if(!r?.product) return;
+        if(btn.dataset.pickAction === 'select'){
+          selectProduct(r.product);
+          showToast('Producto seleccionado en el viewer.', 'success');
+        }
+        if(btn.dataset.pickAction === 'loc'){
+          selectProduct(r.product);
+          openProductLocationModal(r.product);
+        }
+        if(btn.dataset.pickAction === 'copy'){
+          navigator.clipboard?.writeText(r.product.ubicacion || r.product.almacen || '');
+          showToast('Ubicación copiada.', 'success');
+        }
+      });
+    });
+  }
+
+  function openPickingModal(){
+    ensureAppRuntimeState();
+    let modal = document.getElementById('pickingModal');
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = 'pickingModal';
+      modal.className = 'modal picking-modal';
+      modal.innerHTML = `<div class="modal-card picking-card">
+        <button class="modal-close" id="btnClosePicking" type="button">✕</button>
+        <div class="modal-head picking-head">
+          <div>
+            <h2>Picking por lista de SKUs</h2>
+            <p>Pega SKUs, códigos de barras o nombres. La app los ordena por zona, rack, nivel y slot para armar un recorrido operativo.</p>
+          </div>
+          <div class="picking-head-actions">
+            <button class="action-btn" id="btnAnalyzePicking" type="button">Generar recorrido</button>
+            <button class="seg-btn" id="btnExportPicking" type="button">Exportar CSV</button>
+          </div>
+        </div>
+        <div class="picking-context" id="pickingContext"></div>
+        <textarea id="pickingInput" class="picking-input" placeholder="Ejemplo:\nSKU-001\n7894561230001\nProducto color negro talla M"></textarea>
+        <div class="picking-stats" id="pickingStats"></div>
+        <div class="picking-results" id="pickingResults"></div>
+      </div>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e=>{ if(e.target === modal) modal.classList.remove('show'); });
+      modal.querySelector('#btnClosePicking').addEventListener('click', ()=>modal.classList.remove('show'));
+    }
+    const branch = (appState.admin?.branches || [])[getActiveBranchIndex?.() ?? appState.activeBranchIndex] || {};
+    modal.querySelector('#pickingContext').innerHTML = `<span>Sucursal: <b>${escapeHtml(branch.name || 'Actual')}</b></span><span>Productos cargados: <b>${Number((appState.products || []).length).toLocaleString('es-PE')}</b></span><span>Orden: <b>Zona → Rack → Nivel → Slot</b></span>`;
+    let currentRows = [];
+    const input = modal.querySelector('#pickingInput');
+    const analyze = () => { currentRows = analyzePickingInput(input.value); renderPickingResults(modal, currentRows); };
+    modal.querySelector('#btnAnalyzePicking').onclick = analyze;
+    modal.querySelector('#btnExportPicking').onclick = () => currentRows.length ? downloadPickingCsv(currentRows) : showToast('Primero genera un recorrido.', 'warn');
+    input.onkeydown = e => { if((e.ctrlKey || e.metaKey) && e.key === 'Enter'){ e.preventDefault(); analyze(); } };
+    renderPickingResults(modal, currentRows);
+    modal.classList.add('show');
+    setTimeout(()=>input.focus(), 80);
+  }
+
+  ensurePickingUi();
+
+
+  // V55 - Reposición / Restock operativo
+  function ensureRestockUi(){
+    if(!document.getElementById('btnOpenRestock')){
+      const anchor = document.getElementById('btnOpenPicking') || document.querySelector('.search-action-bar .action-btn, .viewer-toolbar .action-btn, .viewer-actions .action-btn');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'action-btn restock-launch-btn';
+      btn.id = 'btnOpenRestock';
+      btn.textContent = 'Reposición';
+      btn.title = 'Ver productos con cantidad de restock y generar ruta de reposición';
+      btn.addEventListener('click', openRestockModal);
+      if(anchor?.parentNode) anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+      else document.body.appendChild(btn);
+    }
+    const adminMenu = document.querySelector('.sidebar-menu, .menu-list, nav');
+    if(adminMenu && !document.getElementById('menuRestockBtn')){
+      const item = document.createElement('a');
+      item.href = '#';
+      item.id = 'menuRestockBtn';
+      item.className = 'menu-item restock-menu-item';
+      item.innerHTML = '📦 <span>Reposición</span>';
+      item.addEventListener('click', (e)=>{ e.preventDefault(); openRestockModal(); });
+      const pickItem = document.getElementById('menuPickingBtn');
+      if(pickItem?.parentNode) pickItem.parentNode.insertBefore(item, pickItem.nextSibling);
+      else adminMenu.appendChild(item);
+    }
+  }
+
+  function parseRestockNumber(value){
+    if(value == null) return 0;
+    const raw = String(value).trim();
+    if(!raw) return 0;
+    const cleaned = raw.replace(/[^0-9,.-]/g,'').replace(/,/g,'.');
+    const n = Number.parseFloat(cleaned);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function getRestockValue(product){
+    if(!product) return 0;
+    const direct = parseRestockNumber(product.restock ?? product.cantRestock ?? product.cantidad_restock ?? product.cant_restock);
+    if(direct > 0) return direct;
+    const headers = ['Cant. Restock','Cant Restock','Cantidad Restock','Restock','Cant. restock','cant restock'];
+    for(const h of headers){
+      try{
+        const v = typeof productHeaderValue === 'function' ? productHeaderValue(product, h) : '';
+        const n = parseRestockNumber(v);
+        if(n > 0) return n;
+      }catch(_err){}
+    }
+    const raw = product._raw && typeof product._raw === 'object' ? product._raw : {};
+    for(const [k,v] of Object.entries(raw)){
+      const key = String(k || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+      if((key.includes('restock') || (key.includes('cant') && key.includes('stock'))) && !key.includes('precio')){
+        const n = parseRestockNumber(v);
+        if(n > 0) return n;
+      }
+    }
+    return 0;
+  }
+
+  function getRestockKey(product){
+    return normalizePickingToken?.(product?.sku || product?.barras || `${product?.nombre || ''}-${product?.ubicacion || ''}-${product?.almacen || ''}`) || String(product?.sku || product?.nombre || Math.random());
+  }
+
+  function ensureRestockState(){
+    ensureAppRuntimeState();
+    if(!appState.ui) appState.ui = {};
+    if(!appState.ui.restockReviewed || typeof appState.ui.restockReviewed !== 'object') appState.ui.restockReviewed = {};
+    if(!appState.ui.restockFilters || typeof appState.ui.restockFilters !== 'object') appState.ui.restockFilters = { search:'', pendingOnly:false, group:'zone' };
+  }
+
+  function getRestockRows(){
+    ensureRestockState();
+    const base = Array.isArray(appState.filtered) && appState.filtered.length ? appState.filtered : (appState.products || []);
+    const rows = base.map(product => {
+      const qty = getRestockValue(product);
+      if(qty <= 0) return null;
+      const sort = getPickingSortInfo(product);
+      const key = getRestockKey(product);
+      return { product, qty, key, reviewed: !!appState.ui.restockReviewed[key], sort };
+    }).filter(Boolean);
+    rows.sort((a,b) => String(a.sort.zone).localeCompare(String(b.sort.zone),'es',{numeric:true}) || a.sort.est-b.sort.est || a.sort.level-b.sort.level || a.sort.slot-b.sort.slot || String(a.product?.sku||'').localeCompare(String(b.product?.sku||''),'es',{numeric:true}));
+    return rows;
+  }
+
+  function filterRestockRows(rows, modal){
+    ensureRestockState();
+    const q = normalizePickingToken?.(modal?.querySelector('#restockSearch')?.value || appState.ui.restockFilters.search || '') || '';
+    const pendingOnly = !!modal?.querySelector('#restockPendingOnly')?.checked;
+    appState.ui.restockFilters.search = q;
+    appState.ui.restockFilters.pendingOnly = pendingOnly;
+    return (rows || []).filter(r => {
+      if(pendingOnly && r.reviewed) return false;
+      if(!q) return true;
+      const p = r.product || {};
+      const hay = [p.sku,p.barras,p.nombre,p.variante,p.color,p.talla,p.ubicacion,p.almacen,r.sort.zone,r.sort.rack].map(v => normalizePickingToken?.(v || '') || '').join(' ');
+      return hay.includes(q);
+    });
+  }
+
+  function restockCsv(rows){
+    const header = ['orden','estado','cantidad_restock','sku','barras','nombre','variante','ubicacion','almacen','zona','rack','nivel','slot'];
+    const esc = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+    const lines = [header.join(',')];
+    rows.forEach((r,i)=>{
+      const p = r.product || {};
+      lines.push([i+1, r.reviewed ? 'REVISADO' : 'PENDIENTE', r.qty, p.sku, p.barras, p.nombre, p.variante, p.ubicacion, p.almacen, r.sort.zone, r.sort.rack, r.sort.parsed?.level || '', r.sort.parsed?.slot || ''].map(esc).join(','));
+    });
+    return lines.join('\n');
+  }
+
+  function downloadRestockCsv(rows){
+    const csv = restockCsv(rows);
+    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reposicion_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 700);
+  }
+
+  function renderRestockResults(modal){
+    const allRows = getRestockRows();
+    const rows = filterRestockRows(allRows, modal);
+    const stats = modal.querySelector('#restockStats');
+    const host = modal.querySelector('#restockResults');
+    const totalQty = rows.reduce((s,r)=>s + Number(r.qty || 0),0);
+    const pending = rows.filter(r=>!r.reviewed).length;
+    const reviewed = rows.length - pending;
+    const zones = Array.from(new Set(rows.map(r=>r.sort.zone).filter(Boolean)));
+    const racks = Array.from(new Set(rows.map(r=>r.sort.rack).filter(Boolean)));
+    stats.innerHTML = `
+      <div class="picking-stat restock-stat"><b>${rows.length}</b><span>Productos</span></div>
+      <div class="picking-stat restock-stat success"><b>${Number(totalQty).toLocaleString('es-PE')}</b><span>Und. por reponer</span></div>
+      <div class="picking-stat restock-stat danger"><b>${pending}</b><span>Pendientes</span></div>
+      <div class="picking-stat restock-stat"><b>${zones.length}</b><span>Zonas · ${racks.length} racks</span></div>`;
+    modal.__restockRows = rows;
+    if(!rows.length){
+      host.innerHTML = '<div class="empty picking-empty">No hay productos con Cant. Restock mayor a 0 en el filtro actual.</div>';
+      return;
+    }
+    const groupMode = modal.querySelector('#restockGroupMode')?.value || 'zone';
+    let lastGroup = '';
+    host.innerHTML = rows.map((r,i)=>{
+      const p = r.product || {};
+      const img = getProductImageUrls(p)[0] || '';
+      const loc = p.ubicacion || p.almacen || '—';
+      const group = groupMode === 'rack' ? (r.sort.rack || 'Sin rack') : (r.sort.zone || 'Sin zona');
+      const heading = group !== lastGroup ? `<div class="restock-group-title">${escapeHtml(groupMode === 'rack' ? 'Rack ' : 'Zona ')}${escapeHtml(group)}</div>` : '';
+      lastGroup = group;
+      const place = `${escapeHtml(r.sort.zone)} · ${escapeHtml(r.sort.rack || '')} · N${escapeHtml(r.sort.parsed?.level || '')}-S${escapeHtml(r.sort.parsed?.slot || '')}`;
+      return `${heading}<article class="picking-row restock-row ${r.reviewed ? 'is-reviewed' : 'is-pending'}" data-restock-row="${i}">
+        <div class="picking-order restock-qty">${escapeHtml(r.qty)}</div>
+        <div class="picking-thumb ${img ? '' : 'empty'}">${img ? `<img src="${escapeHtml(img)}" alt="">` : '—'}</div>
+        <div class="picking-main">
+          <div class="picking-title">${escapeHtml(p.nombre || 'Sin nombre')}</div>
+          <div class="picking-sub">${escapeHtml(p.sku || 'Sin SKU')} ${p.variante ? '· '+escapeHtml(p.variante) : ''}</div>
+          <div class="picking-badges"><span>${place}</span><span>${r.reviewed ? 'Revisado' : 'Pendiente'}</span></div>
+        </div>
+        <div class="picking-loc"><small>Ubicación</small><b>${escapeHtml(loc)}</b></div>
+        <div class="picking-actions">
+          <button class="mini-btn" data-restock-action="review" data-index="${i}">${r.reviewed ? 'Desmarcar' : 'Marcar revisado'}</button>
+          <button class="mini-btn" data-restock-action="select" data-index="${i}">Seleccionar</button>
+          <button class="mini-btn" data-restock-action="loc" data-index="${i}">Ver ubicación</button>
+          <button class="mini-btn" data-restock-action="copy" data-index="${i}">Copiar</button>
+        </div>
+      </article>`;
+    }).join('');
+    host.querySelectorAll('[data-restock-action]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const r = rows[Number(btn.dataset.index)];
+        if(!r?.product) return;
+        const action = btn.dataset.restockAction;
+        if(action === 'review'){
+          appState.ui.restockReviewed[r.key] = !appState.ui.restockReviewed[r.key];
+          try{ saveAdminState?.(); }catch(_err){}
+          renderRestockResults(modal);
+          showToast(appState.ui.restockReviewed[r.key] ? 'Producto marcado como revisado.' : 'Producto regresó a pendiente.', 'success');
+          return;
+        }
+        if(action === 'select'){
+          selectProduct(r.product);
+          showToast('Producto seleccionado en el viewer.', 'success');
+        }
+        if(action === 'loc'){
+          selectProduct(r.product);
+          openProductLocationModal(r.product);
+        }
+        if(action === 'copy'){
+          navigator.clipboard?.writeText(r.product.ubicacion || r.product.almacen || '');
+          showToast('Ubicación copiada.', 'success');
+        }
+      });
+    });
+  }
+
+  function openRestockModal(){
+    ensureRestockState();
+    let modal = document.getElementById('restockModal');
+    if(!modal){
+      modal = document.createElement('div');
+      modal.id = 'restockModal';
+      modal.className = 'modal picking-modal restock-modal';
+      modal.innerHTML = `<div class="modal-card picking-card restock-card">
+        <button class="modal-close" id="btnCloseRestock" type="button">✕</button>
+        <div class="modal-head picking-head restock-head">
+          <div>
+            <h2>Reposición / Restock</h2>
+            <p>Lista los productos con Cant. Restock mayor a 0, los ordena por zona, rack, nivel y slot, y permite marcar cada ítem como revisado.</p>
+          </div>
+          <div class="picking-head-actions">
+            <button class="action-btn" id="btnRefreshRestock" type="button">Actualizar ruta</button>
+            <button class="seg-btn" id="btnExportRestock" type="button">Exportar CSV</button>
+          </div>
+        </div>
+        <div class="picking-context" id="restockContext"></div>
+        <div class="restock-controls">
+          <input id="restockSearch" class="restock-search" placeholder="Filtrar por SKU, nombre, color, talla, rack o ubicación">
+          <select id="restockGroupMode" class="restock-select"><option value="zone">Agrupar por zona</option><option value="rack">Agrupar por rack</option></select>
+          <label class="restock-check"><input id="restockPendingOnly" type="checkbox"> Solo pendientes</label>
+        </div>
+        <div class="picking-stats" id="restockStats"></div>
+        <div class="picking-results restock-results" id="restockResults"></div>
+      </div>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e=>{ if(e.target === modal) modal.classList.remove('show'); });
+      modal.querySelector('#btnCloseRestock').addEventListener('click', ()=>modal.classList.remove('show'));
+      modal.querySelector('#restockSearch').addEventListener('input', debounce(()=>renderRestockResults(modal), 90));
+      modal.querySelector('#restockGroupMode').addEventListener('change', ()=>renderRestockResults(modal));
+      modal.querySelector('#restockPendingOnly').addEventListener('change', ()=>renderRestockResults(modal));
+      modal.querySelector('#btnRefreshRestock').addEventListener('click', ()=>renderRestockResults(modal));
+      modal.querySelector('#btnExportRestock').addEventListener('click', ()=>{
+        const rows = modal.__restockRows || [];
+        rows.length ? downloadRestockCsv(rows) : showToast('No hay productos para exportar.', 'warn');
+      });
+    }
+    const branch = (appState.admin?.branches || [])[getActiveBranchIndex?.() ?? appState.activeBranchIndex] || {};
+    modal.querySelector('#restockContext').innerHTML = `<span>Sucursal: <b>${escapeHtml(branch.name || 'Actual')}</b></span><span>Productos cargados: <b>${Number((appState.products || []).length).toLocaleString('es-PE')}</b></span><span>Fuente: <b>Cant. Restock</b></span><span>Orden: <b>Zona → Rack → Nivel → Slot</b></span>`;
+    const input = modal.querySelector('#restockSearch');
+    input.value = appState.ui.restockFilters.search || '';
+    modal.querySelector('#restockPendingOnly').checked = !!appState.ui.restockFilters.pendingOnly;
+    modal.querySelector('#restockGroupMode').value = appState.ui.restockFilters.group || 'zone';
+    renderRestockResults(modal);
+    modal.classList.add('show');
+    setTimeout(()=>input.focus(), 80);
+  }
+
+  ensureRestockUi();
+
+
   toggleSidebar.addEventListener('click', () => {
     appRoot.classList.toggle('sidebar-collapsed');
     toggleSidebar.textContent = appRoot.classList.contains('sidebar-collapsed') ? '❯' : '❮';
@@ -12029,6 +12500,196 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   if(btnContinueViewer){ btnContinueViewer.onclick = continueAsViewer; }
   if(loginPassword) loginPassword.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
   if(loginUsername) loginUsername.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
+
+
+
+  // V56 - Enfoque principal: visualización de ubicación del producto
+  function getLocationPartsForVisual(product, type='primary'){
+    const prod = product || {};
+    const isStore = type === 'store';
+    const ctx = getViewerProductLocationContext(prod);
+    const rackId = isStore ? (ctx.storeRackId || prod.rackStore || '') : (ctx.primaryRackId || prod.rack || '');
+    const rack = rackId ? findRackById(rackId) : null;
+    const zone = rack?.zoneId ? findZoneById(rack.zoneId) : null;
+    const locText = isStore ? (ctx.storeLoc || prod.almacen || '') : (ctx.primaryLoc || prod.ubicacion || '');
+    return {
+      label: isStore ? 'Ubicación en almacén' : 'Ubicación principal',
+      shortLabel: isStore ? 'Almacén' : 'Ubicación',
+      icon: isStore ? '◫' : '⌖',
+      loc: locText || '—',
+      zone: prod[isStore ? 'zonaStore' : 'zona'] || zone?.name || zone?.id || '—',
+      rack: rackId || prod[isStore ? 'rackStore' : 'rack'] || '—',
+      level: prod[isStore ? 'nivelStore' : 'nivel'] || prod.nivel || '—',
+      slot: prod[isStore ? 'slotStore' : 'slot'] || prod.slot || '—',
+      hasRack: !!rackId,
+      rackFound: !!rack,
+      zoneFound: !!zone
+    };
+  }
+  function renderVisualLocationCard(parts, active=false){
+    const state = parts.rackFound ? 'Rack encontrado en layout' : (parts.hasRack ? 'Rack no encontrado en layout' : 'Ubicación incompleta');
+    return `<article class="visual-location-card ${active ? 'active' : ''} ${parts.rackFound ? 'ok' : 'warn'}">
+      <div class="visual-location-card-head">
+        <div class="visual-loc-icon">${escapeHtml(parts.icon)}</div>
+        <div><b>${escapeHtml(parts.label)}</b><small>${escapeHtml(state)}</small></div>
+      </div>
+      <div class="visual-loc-full">${escapeHtml(parts.loc)}</div>
+      <div class="visual-loc-breakdown">
+        <span><small>Zona</small><b>${escapeHtml(parts.zone)}</b></span>
+        <span><small>Rack</small><b>${escapeHtml(parts.rack)}</b></span>
+        <span><small>Nivel</small><b>${escapeHtml(parts.level)}</b></span>
+        <span><small>Slot</small><b>${escapeHtml(parts.slot)}</b></span>
+      </div>
+    </article>`;
+  }
+  function getProductFamilyVariants(product){
+    const prod = product || {};
+    const byName = norm(prod.nombre || '');
+    const bySku = norm(prod.sku || '');
+    const products = Array.isArray(appState.products) ? appState.products : [];
+    return products.filter(p => {
+      if(byName && norm(p.nombre || '') === byName) return true;
+      if(bySku && norm(p.sku || '') === bySku) return true;
+      return false;
+    }).slice(0, 80);
+  }
+  function renderVariantLocationRows(product){
+    const items = getProductFamilyVariants(product);
+    if(!items.length) return '<div class="muted tiny">No se detectaron variantes relacionadas.</div>';
+    return items.slice(0, 12).map((p, idx) => {
+      const color = getProductColorValue(p) || p.color || '—';
+      const size = getProductSizeValue(p) || p.talla || '—';
+      const active = getProductIdentityKey(p) === getProductIdentityKey(product);
+      const loc = p.ubicacion || p.almacen || '—';
+      return `<button class="variant-location-row ${active ? 'active' : ''}" type="button" data-v56-variant-index="${idx}">
+        <span class="variant-location-main"><b>${escapeHtml(p.variante || p.sku || 'Variante')}</b><small>${escapeHtml(color)} · Talla ${escapeHtml(size)}</small></span>
+        <span class="variant-location-loc">${escapeHtml(loc)}</span>
+      </button>`;
+    }).join('') + (items.length > 12 ? `<div class="muted tiny visual-more-note">+ ${items.length - 12} variantes adicionales. Usa el botón Variantes para ver todas.</div>` : '');
+  }
+  function removeOperationalStockUi(){
+    ['btnOpenPicking','btnOpenRestock','menuPickingBtn','menuRestockBtn'].forEach(id => document.getElementById(id)?.remove());
+    document.querySelectorAll('.picking-launch-btn,.restock-launch-btn,.picking-menu-item,.restock-menu-item').forEach(el => el.remove());
+  }
+
+  renderViewerProductInfoPanel = function(){
+    clearViewerImageRotationTimer();
+    removeOperationalStockUi();
+    const ctx = getViewerProductLocationContext(appState.selectedProduct);
+    const prod = appState.selectedProduct || null;
+    detailTitle.textContent = 'Ubicación del producto';
+    detailSubtitle.textContent = prod ? 'Visualización principal de zona, rack, nivel y slot.' : '';
+    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
+    detailChip.textContent = prod ? (prod.ubicacion || prod.almacen || '—') : '—';
+    if(!prod){
+      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Busca por SKU, código de barras, nombre, talla o color para ver su ubicación visual.</div></div></div>`;
+      return;
+    }
+    const images = getProductImageUrls(prod).filter(Boolean);
+    const img = images[0] || '';
+    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
+    const family = getViewerProductFamilySummary(prod);
+    const primary = getLocationPartsForVisual(prod, 'primary');
+    const store = getLocationPartsForVisual(prod, 'store');
+    const sizesHtml = family.sizes.length ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('') : '<span class="muted tiny">Sin tallas detectadas</span>';
+    const colorsHtml = family.colors.length ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('') : '<span class="muted tiny">Sin colores detectados</span>';
+    detailWrap.innerHTML = `
+      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel visual-location-panel">
+        <div class="visual-location-hero">
+          <div class="viewer-media-col visual-media-col">
+            <div class="viewer-product-media ${img ? '' : 'empty'}">
+              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
+              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
+            </div>
+            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
+          </div>
+          <div class="visual-location-main-panel">
+            <div class="viewer-product-copy tight">
+              <div class="search-card-kicker">Producto seleccionado</div>
+              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
+              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
+            </div>
+            <div class="visual-location-cards">
+              ${renderVisualLocationCard(primary, true)}
+              ${renderVisualLocationCard(store, false)}
+            </div>
+          </div>
+        </div>
+        <div class="visual-location-quick-actions">
+          <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver en plano 2D</button>
+          <button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Ver en 3D</button>
+          <button class="btn secondary viewer-location-btn" type="button" id="btnCopyLocation"><span>⧉</span> Copiar ubicación</button>
+          <button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button>
+        </div>
+        <div class="visual-location-support-grid">
+          <div class="viewer-variant-panel visual-location-variants-card">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">▦</span><div><b>Variantes y ubicación</b><small>Selecciona una variante para cambiar el foco visual.</small></div></div>
+            <div class="variant-location-list">${renderVariantLocationRows(prod)}</div>
+          </div>
+          <div class="viewer-variant-panel visual-location-summary-card">
+            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas y colores del modelo</b><small>${family.sizes.length || 0} tallas · ${family.colors.length || 0} colores</small></div></div>
+            <div class="viewer-variant-chip-wrap compact"><b class="visual-mini-label">Tallas</b>${sizesHtml}</div>
+            <div class="viewer-variant-chip-wrap compact"><b class="visual-mini-label">Colores</b>${colorsHtml}</div>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
+    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
+    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
+    document.getElementById('btnCopyLocation')?.addEventListener('click', () => copySelectedProductLocation(prod));
+    detailWrap.querySelectorAll('[data-v56-variant-index]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.v56VariantIndex || 0);
+        const item = getProductFamilyVariants(prod)[idx];
+        if(item){ selectProduct(item); showToast('Variante enfocada en el visor.', 'success'); }
+      });
+    });
+    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
+  };
+
+  const __v56OriginalOpenProductLocationModal = openProductLocationModal;
+  openProductLocationModal = function(product = appState.selectedProduct){
+    const previousIso = appState.ui.isoIsolation;
+    appState.ui.isoIsolation = 'rack';
+    __v56OriginalOpenProductLocationModal(product);
+    const modal = document.getElementById('productLocationModal');
+    if(modal){
+      modal.classList.add('v56-visual-location-modal');
+      const title = modal.querySelector('.location-modal-head b');
+      if(title) title.textContent = 'Plano de ubicación del producto';
+      const desc = modal.querySelector('.modal-iso-head .muted');
+      if(desc) desc.textContent = 'Vista enfocada en zona, rack, nivel y slot del producto seleccionado.';
+      const head = modal.querySelector('.location-modal-head-actions');
+      if(head && !modal.querySelector('#btnV56CopyLocationModal')){
+        const btn = document.createElement('button');
+        btn.className = 'btn secondary';
+        btn.id = 'btnV56CopyLocationModal';
+        btn.type = 'button';
+        btn.textContent = 'Copiar ubicación';
+        btn.addEventListener('click', () => copySelectedProductLocation(product));
+        head.insertBefore(btn, head.querySelector('.location-modal-close'));
+      }
+    }
+    setTimeout(() => { appState.ui.isoIsolation = previousIso || appState.ui.isoIsolation; }, 0);
+  };
+
+  function applyV56VisualLocationFocus(){
+    removeOperationalStockUi();
+    const productTitle = document.querySelector('.search-panel .panel-header h2');
+    if(productTitle) productTitle.textContent = 'Buscar ubicación';
+    const productHint = document.querySelector('.search-panel .panel-header .muted.tiny');
+    if(productHint) productHint.textContent = 'Busca un producto para ver zona, rack, nivel y slot en 2D/3D.';
+    const searchInput = document.getElementById('searchInput');
+    if(searchInput) searchInput.placeholder = 'Buscar producto para ubicar: SKU, barras, nombre, color o talla...';
+    const activeBtn = document.getElementById('btnFocusProductMap');
+    if(activeBtn) activeBtn.textContent = 'Ver ubicación visual';
+    const viewerBtn = document.getElementById('btnOpenViewerFromProduct');
+    if(viewerBtn) viewerBtn.textContent = 'Abrir visor de ubicación';
+  }
+  setTimeout(applyV56VisualLocationFocus, 0);
+  setTimeout(applyV56VisualLocationFocus, 600);
+  setTimeout(applyV56VisualLocationFocus, 1600);
+
 
   bootstrapApp();
 
