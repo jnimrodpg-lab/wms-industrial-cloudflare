@@ -4762,3 +4762,11 @@ body.theme-light .brand-box{
 @media(max-width:680px){
   .nav3d-side{grid-template-columns:1fr}
 }
+
+/* V44: visor 3D real con Three.js */
+.nav3d-webgl-mode .nav3d-stage canvas{background:#061018;cursor:grab;touch-action:none}
+.nav3d-webgl-mode .nav3d-stage canvas:active{cursor:grabbing}
+.nav3d-loading{position:absolute;inset:auto 50% 50% auto;transform:translate(50%,50%);display:grid;gap:8px;place-items:center;text-align:center;min-width:220px;padding:16px 18px;border-radius:18px;border:1px solid rgba(111,240,168,.22);background:rgba(5,15,24,.76);backdrop-filter:blur(10px);color:#defbea;font-weight:900;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+.nav3d-loading span{font-size:12px;color:rgba(222,251,234,.68);font-weight:700}
+.nav3d-webgl-mode .nav3d-hud b::after{content:' · WebGL';color:#7df0aa;font-weight:1000}
+.nav3d-webgl-mode .nav3d-rack-stage svg{animation:none!important;transform:none!important}

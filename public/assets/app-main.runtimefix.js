@@ -6330,6 +6330,353 @@ function getSheetBranchOpenMap(){
     setTimeout(() => { render(); requestSmoothRender(); }, 40);
   }
 
+
+  // V44: visor 3D real con Three.js/WebGL. Reemplaza el visor canvas 2D anterior.
+  function loadThreeRuntime(){
+    if(window.THREE) return Promise.resolve(window.THREE);
+    if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
+    window.__threeRuntimePromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/three@0.160.0/build/three.min.js';
+      script.async = true;
+      script.onload = () => window.THREE ? resolve(window.THREE) : reject(new Error('Three.js no quedó disponible'));
+      script.onerror = () => reject(new Error('No se pudo cargar Three.js'));
+      document.head.appendChild(script);
+    });
+    return window.__threeRuntimePromise;
+  }
+
+  function openNavigable3DModal(prod = appState.selectedProduct){
+    const existing = document.getElementById('navigable3DModal');
+    if(existing) existing.remove();
+    const ctx = getViewerProductLocationContext(prod);
+    const modal = document.createElement('div');
+    modal.id = 'navigable3DModal';
+    modal.className = 'nav3d-backdrop show nav3d-webgl-mode';
+    modal.innerHTML = `
+      <div class="nav3d-shell">
+        <div class="nav3d-head">
+          <div>
+            <div class="search-card-kicker">Visor libre · WebGL</div>
+            <h2>Entorno 3D navegable</h2>
+            <p>Three.js activo: orbita suave, zoom controlado y racks 3D reales para la ubicación activa.</p>
+          </div>
+          <div class="nav3d-actions">
+            <span class="chip">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</span>
+            <button class="iso-tool active" data-nav3d-action="all">Todo</button>
+            <button class="iso-tool" data-nav3d-action="zone">Zona</button>
+            <button class="iso-tool" data-nav3d-action="rack">Rack</button>
+            <button class="iso-tool active" data-nav3d-action="ghost">Ghost</button>
+            <button class="iso-tool active" data-nav3d-action="labels">Etiquetas</button>
+            <button class="iso-tool active" data-nav3d-action="route">Ruta</button>
+            <button class="iso-tool" data-nav3d-action="slot">Slot</button>
+            <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="location-modal-close" type="button" aria-label="Cerrar">✕</button>
+          </div>
+        </div>
+        <div class="nav3d-body">
+          <div class="nav3d-stage">
+            <canvas id="nav3dCanvas"></canvas>
+            <div class="nav3d-hud">
+              <b>Controles</b>
+              <span>Arrastrar: orbitar suave</span>
+              <span>Rueda: zoom progresivo</span>
+              <span>Shift + arrastrar: pan</span>
+            </div>
+            <div class="nav3d-compass" id="nav3dCompass">N</div>
+            <div class="nav3d-loading" id="nav3dLoading">Cargando motor 3D…</div>
+          </div>
+          <div class="nav3d-side">
+            <div class="nav3d-rack-card is-primary">
+              <div class="nav3d-rack-head">
+                <div><b>Rack de ubicación</b><div class="muted tiny">${escapeHtml(ctx.primaryLoc || 'Sin ubicación principal')}</div></div>
+                <div class="nav3d-rack-tools"><span class="chip">${escapeHtml(ctx.primaryRackId || '—')}</span><button class="nav3d-rack-expand" type="button" data-rack-expand="primary">⤢</button></div>
+              </div>
+              <div class="nav3d-rack-stage"><svg id="nav3dRackPrimary"></svg></div>
+              <div class="nav3d-rack-meta" id="nav3dRackPrimaryMeta"></div>
+            </div>
+            <div class="nav3d-rack-card is-store">
+              <div class="nav3d-rack-head">
+                <div><b>Rack de almacén</b><div class="muted tiny">${escapeHtml(ctx.storeLoc || 'Sin ubicación de almacén')}</div></div>
+                <div class="nav3d-rack-tools"><span class="chip">${escapeHtml(ctx.storeRackId || '—')}</span><button class="nav3d-rack-expand" type="button" data-rack-expand="store">⤢</button></div>
+              </div>
+              <div class="nav3d-rack-stage"><svg id="nav3dRackStore"></svg></div>
+              <div class="nav3d-rack-meta" id="nav3dRackStoreMeta"></div>
+            </div>
+          </div>
+        </div>
+        <div class="nav3d-rack-zoom" id="nav3dRackZoom" hidden>
+          <div class="nav3d-rack-zoom-card">
+            <div class="nav3d-rack-zoom-head">
+              <div><div class="search-card-kicker">Vista ampliada</div><b id="nav3dRackZoomTitle">Rack</b></div>
+              <div class="nav3d-rack-tools"><span class="chip" id="nav3dRackZoomChip">—</span><button class="nav3d-rack-expand" type="button" data-rack-zoom-close>✕</button></div>
+            </div>
+            <div class="nav3d-rack-zoom-stage"><svg id="nav3dRackZoomSvg"></svg></div>
+            <div class="nav3d-rack-meta" id="nav3dRackZoomMeta"></div>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const canvas = modal.querySelector('#nav3dCanvas');
+    const loading = modal.querySelector('#nav3dLoading');
+    const compass = modal.querySelector('#nav3dCompass');
+    const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
+    const rackStoreSvg = modal.querySelector('#nav3dRackStore');
+    const rackZoom = modal.querySelector('#nav3dRackZoom');
+    const rackZoomSvg = modal.querySelector('#nav3dRackZoomSvg');
+    const rackZoomTitle = modal.querySelector('#nav3dRackZoomTitle');
+    const rackZoomChip = modal.querySelector('#nav3dRackZoomChip');
+    const rackZoomMeta = modal.querySelector('#nav3dRackZoomMeta');
+    const baseRackModel = () => rackModel(appState.selectedModelId) || appState.models?.[0] || { id:'std_4', name:'Rack estándar', levels:4, slots:2, width:120, depth:40, height:240, clearance:0, style:'metallic' };
+    const makeVirtualRack = (rackId, loc, isStore=false, index=0) => {
+      const model = baseRackModel();
+      const parsed = parseLocationCode(loc || rackId || '', isStore ? 'ALM-E1' : 'Z1-E1');
+      const id = rackId || parsed.rackId || (isStore ? 'ALM-E1' : 'Z1-E1');
+      return { id, modelId:model.id, zoneId:parsed.zoneId || (isStore ? 'ALM' : 'Z1'), x:isStore ? 200 : 0, y:index * 150, w:Number(model.width || 120) || 120, h:Number(model.depth || 56) || 56, rackHeight:Number(model.height || 240) || 240, baseHeight:0, _virtual:true };
+    };
+    const getVirtualRacks = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      const out = [];
+      if(liveCtx.primaryRackId && !findRackById(liveCtx.primaryRackId)) out.push(makeVirtualRack(liveCtx.primaryRackId, liveCtx.primaryLoc, false, 0));
+      if(liveCtx.storeRackId && liveCtx.storeRackId !== liveCtx.primaryRackId && !findRackById(liveCtx.storeRackId)) out.push(makeVirtualRack(liveCtx.storeRackId, liveCtx.storeLoc, true, 1));
+      if(!out.length && !(appState.layout?.racks || []).length){
+        out.push(makeVirtualRack(liveCtx.primaryRackId || 'Z1-E1', liveCtx.primaryLoc || 'Z1-E1-N1-S1', false, 0));
+        if(liveCtx.storeRackId && liveCtx.storeRackId !== liveCtx.primaryRackId) out.push(makeVirtualRack(liveCtx.storeRackId, liveCtx.storeLoc, true, 1));
+      }
+      return out;
+    };
+    const getNav3DRacks = () => {
+      const real = Array.isArray(appState.layout?.racks) ? appState.layout.racks.slice() : [];
+      const realIds = new Set(real.map(r => r.id));
+      getVirtualRacks().forEach(r => { if(!realIds.has(r.id)) real.push(r); });
+      return real;
+    };
+    const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
+    const getFocusSets = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      const focusRackIds = new Set([prod?.rack, prod?.rackStore, liveCtx.primaryRackId, liveCtx.storeRackId].filter(Boolean));
+      const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
+      focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
+      return { focusRackIds, focusZoneIds };
+    };
+    const getBounds = () => {
+      const pts = [];
+      (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => (z.pts || []).forEach(pt => pts.push({x:Number(pt.x)||0,y:Number(pt.y)||0})));
+      getNav3DRacks().forEach(r => { const x=Number(r.x)||0,y=Number(r.y)||0,w=Math.max(10,Number(r.w)||80),d=Math.max(10,Number(r.h)||40); pts.push({x,y},{x:x+w,y},{x:x+w,y:y+d},{x,y:y+d}); });
+      if(!pts.length) pts.push({x:-250,y:-180},{x:250,y:180});
+      const minX=Math.min(...pts.map(p=>p.x)), maxX=Math.max(...pts.map(p=>p.x)), minY=Math.min(...pts.map(p=>p.y)), maxY=Math.max(...pts.map(p=>p.y));
+      return { minX,maxX,minY,maxY,w:Math.max(1,maxX-minX),h:Math.max(1,maxY-minY),cx:(minX+maxX)/2,cy:(minY+maxY)/2 };
+    };
+    const buildRackMetaHtml = (rackId, nivel, slot, extraActive = '') => {
+      const rack = findNav3DRackById(rackId);
+      const model = rackModel(rack?.modelId) || baseRackModel();
+      const levelCount = Math.max(1, Number(model.levels || 1) || 1);
+      const slotCount = Math.max(1, Number(model.slots || model.capacity || 1) || 1);
+      return `<span class="nav3d-rack-badge">WebGL</span><span class="nav3d-rack-badge">Niveles ${levelCount}</span><span class="nav3d-rack-badge">Slots ${slotCount}</span><span class="nav3d-rack-badge is-active">Nivel ${Math.max(1, Number(nivel || 1) || 1)}</span><span class="nav3d-rack-badge is-active">Slot ${Math.max(1, Number(slot || 1) || 1)}</span>${extraActive ? `<span class="nav3d-rack-badge is-accent">${escapeHtml(extraActive)}</span>` : ''}`;
+    };
+    const renderSideRacks = () => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      renderRackDetail(liveCtx.primaryRackId, { nivel: prod?.nivel || 0, slot: prod?.slot || 0, label:'Ubicación', fullLabel:liveCtx.primaryLoc || 'Sin ubicación' }, rackPrimarySvg, null, findNav3DRackById(liveCtx.primaryRackId));
+      renderRackDetail(liveCtx.storeRackId, { nivel: prod?.nivelStore || 0, slot: prod?.slotStore || 0, label:'Almacén', fullLabel:liveCtx.storeLoc || 'Sin ubicación de almacén' }, rackStoreSvg, null, findNav3DRackById(liveCtx.storeRackId));
+      modal.querySelector('#nav3dRackPrimaryMeta').innerHTML = buildRackMetaHtml(liveCtx.primaryRackId, prod?.nivel, prod?.slot);
+      modal.querySelector('#nav3dRackStoreMeta').innerHTML = buildRackMetaHtml(liveCtx.storeRackId, prod?.nivelStore, prod?.slotStore);
+    };
+    const openRackZoom = (type) => {
+      const liveCtx = getViewerProductLocationContext(prod);
+      const isPrimary = type === 'primary';
+      const rackId = isPrimary ? liveCtx.primaryRackId : liveCtx.storeRackId;
+      const fullLabel = isPrimary ? liveCtx.primaryLoc : liveCtx.storeLoc;
+      const nivel = isPrimary ? prod?.nivel : prod?.nivelStore;
+      const slot = isPrimary ? prod?.slot : prod?.slotStore;
+      rackZoomTitle.textContent = isPrimary ? 'Rack de ubicación' : 'Rack de almacén';
+      rackZoomChip.textContent = rackId || '—';
+      rackZoomMeta.innerHTML = buildRackMetaHtml(rackId, nivel, slot, fullLabel);
+      renderRackDetail(rackId, { nivel, slot, label: isPrimary ? 'Ubicación' : 'Almacén', fullLabel }, rackZoomSvg, null, findNav3DRackById(rackId));
+      rackZoom.hidden = false; rackZoom.classList.add('show');
+    };
+
+    let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
+    const ui = { isolation:'all', ghost:true, labels:true, route:true };
+    const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
+    modal.querySelector('.location-modal-close')?.addEventListener('click', close);
+    modal.addEventListener('click', e => { if(e.target === modal) close(); });
+    modal.querySelectorAll('[data-rack-expand]').forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
+    modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', () => { rackZoom.hidden=true; rackZoom.classList.remove('show'); });
+    rackZoom?.addEventListener('click', e => { if(e.target === rackZoom){ rackZoom.hidden=true; rackZoom.classList.remove('show'); } });
+
+    const syncToolbar = () => {
+      modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === ui.isolation));
+      modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', ui.ghost);
+      modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', ui.labels);
+      modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', ui.route);
+    };
+
+    loadThreeRuntime().then(THREE => {
+      loading?.remove();
+      renderSideRacks();
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x061018);
+      scene.fog = new THREE.Fog(0x061018, 26, 130);
+      renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      camera = new THREE.PerspectiveCamera(42, 1, .1, 500);
+      const hemi = new THREE.HemisphereLight(0xcaf7ff, 0x0a0e14, 1.4); scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, 2.1); key.position.set(18,28,14); key.castShadow = true; key.shadow.mapSize.set(1024,1024); scene.add(key);
+      const rim = new THREE.DirectionalLight(0x52ff9d, .85); rim.position.set(-20,16,-10); scene.add(rim);
+
+      const bounds = getBounds();
+      const scale = 0.035;
+      const hScale = 0.020;
+      const world = new THREE.Group(); scene.add(world);
+      const toWorld = (x,y,z=0) => new THREE.Vector3((Number(x||0)-bounds.cx)*scale, z*hScale, (Number(y||0)-bounds.cy)*scale);
+      const floorW = Math.max(12, bounds.w*scale + 6), floorD = Math.max(12, bounds.h*scale + 6);
+      const floorMat = new THREE.MeshStandardMaterial({ color:0x0b1722, roughness:.72, metalness:.1 });
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), 28, 0x245444, 0x14303a); grid.position.y=.01; world.add(grid);
+
+      const zoneMat = new THREE.MeshBasicMaterial({ color:0x43e68c, transparent:true, opacity:.075, side:THREE.DoubleSide, depthWrite:false });
+      (Array.isArray(appState.layout?.zones) ? appState.layout.zones : []).forEach(z => {
+        const pts = (z.pts || []).map(p => new THREE.Vector2((Number(p.x||0)-bounds.cx)*scale, (Number(p.y||0)-bounds.cy)*scale));
+        if(pts.length >= 3){ const shape = new THREE.Shape(pts); const geo = new THREE.ShapeGeometry(shape); const mesh = new THREE.Mesh(geo, zoneMat.clone()); mesh.rotation.x = -Math.PI/2; mesh.position.y=.025; world.add(mesh); }
+      });
+
+      const matGhost = new THREE.MeshStandardMaterial({ color:0x879cb4, transparent:true, opacity:.15, roughness:.8, metalness:.05 });
+      const matGhostWire = new THREE.LineBasicMaterial({ color:0x9fb8cf, transparent:true, opacity:.22 });
+      const matFrame = new THREE.MeshStandardMaterial({ color:0x0d4f83, roughness:.38, metalness:.55 });
+      const matBeam = new THREE.MeshStandardMaterial({ color:0xe4872e, roughness:.42, metalness:.35 });
+      const matBox = new THREE.MeshStandardMaterial({ color:0xc99a5c, roughness:.84, metalness:.04 });
+      const matBox2 = new THREE.MeshStandardMaterial({ color:0xd6d0bd, roughness:.7, metalness:.02 });
+      const matActive = new THREE.MeshStandardMaterial({ color:0x6cff9c, emissive:0x27d86e, emissiveIntensity:.48, transparent:true, opacity:.42 });
+
+      const addBox = (group, w,h,d, x,y,z, mat, cast=true) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); m.position.set(x,y,z); m.castShadow=cast; m.receiveShadow=true; group.add(m); return m; };
+      const activeInfoForRack = (r) => {
+        const liveCtx = getViewerProductLocationContext(prod);
+        const isStore = r.id === liveCtx.storeRackId || r.id === prod?.rackStore;
+        return { level: Math.max(1, Number(isStore ? prod?.nivelStore : prod?.nivel) || 1), slot: Math.max(1, Number(isStore ? prod?.slotStore : prod?.slot) || 1) };
+      };
+      const buildDetailedRack = (r, active=false) => {
+        const group = new THREE.Group();
+        const model = rackModel(r.modelId) || baseRackModel();
+        const w = Math.max(.8, (Number(r.w || model.width || 120))*scale);
+        const d = Math.max(.45, (Number(r.h || model.depth || 56))*scale);
+        const rackH = Math.max(1.2, (Number(r.rackHeight || model.height || 240))*hScale);
+        const levels = Math.max(1, Math.min(8, Number(model.levels || 4) || 4));
+        const slots = Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2));
+        const p = toWorld(Number(r.x||0) + Number(r.w||model.width||120)/2, Number(r.y||0) + Number(r.h||model.depth||56)/2, 0);
+        group.position.set(p.x, 0, p.z);
+        const postW = Math.max(.045, w*.045);
+        const beamH = Math.max(.035, rackH*.014);
+        [[-w/2,-d/2],[w/2,-d/2],[-w/2,d/2],[w/2,d/2]].forEach(([x,z]) => addBox(group, postW, rackH, postW, x, rackH/2, z, matFrame));
+        for(let i=0;i<=levels;i++){
+          const y = (rackH/levels)*i;
+          addBox(group, w+postW, beamH, postW, 0, y, -d/2, matBeam);
+          addBox(group, w+postW, beamH, postW, 0, y, d/2, matBeam);
+          addBox(group, postW, beamH, d+postW, -w/2, y, 0, matBeam);
+          addBox(group, postW, beamH, d+postW, w/2, y, 0, matBeam);
+        }
+        const target = activeInfoForRack(r);
+        for(let li=1; li<=levels; li++){
+          const baseY = ((li-1)/levels)*rackH + beamH*3;
+          const boxH = Math.max(.18, rackH/levels*.52);
+          const boxD = d*.58;
+          for(let si=1; si<=slots; si++){
+            const bw = (w*.78)/slots;
+            const bx = -w*.39 + bw*(si-.5);
+            const isTarget = active && li === target.level && si === target.slot;
+            const box = addBox(group, bw*.76, boxH, boxD, bx, baseY + boxH/2, d*.05, (li+si)%2 ? matBox : matBox2);
+            if(isTarget){ addBox(group, bw*.86, boxH*1.08, boxD*1.08, bx, baseY + boxH/2, d*.05, matActive, false); }
+          }
+        }
+        if(active){
+          const haloGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(w+.18, rackH+.18, d+.18));
+          const halo = new THREE.LineSegments(haloGeo, new THREE.LineBasicMaterial({ color:0x55ff99, transparent:true, opacity:.95 }));
+          halo.position.y = rackH/2; group.add(halo);
+        }
+        return group;
+      };
+      const buildBasicRack = (r, active=false, ghost=true) => {
+        const group = new THREE.Group();
+        const model = rackModel(r.modelId) || baseRackModel();
+        const w = Math.max(.8, (Number(r.w || model.width || 120))*scale), d = Math.max(.45, (Number(r.h || model.depth || 56))*scale), rackH = Math.max(1.1, (Number(r.rackHeight || model.height || 240))*hScale);
+        const p = toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2, Number(r.y||0)+Number(r.h||model.depth||56)/2, 0);
+        group.position.set(p.x,0,p.z);
+        const mesh = addBox(group, w, rackH, d, 0, rackH/2, 0, ghost ? matGhost : matActive, false);
+        mesh.material.opacity = active ? .34 : (ghost ? .13 : .24);
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), active ? new THREE.LineBasicMaterial({ color:0x55ff99, transparent:true, opacity:.85 }) : matGhostWire);
+        edges.position.copy(mesh.position); group.add(edges);
+        return group;
+      };
+
+      const { focusRackIds, focusZoneIds } = getFocusSets();
+      const visibleRacks = getNav3DRacks().filter(r => ui.isolation === 'all' || (ui.isolation === 'zone' ? focusZoneIds.has(r.zoneId) : focusRackIds.has(r.id)));
+      visibleRacks.forEach(r => {
+        const active = focusRackIds.has(r.id);
+        const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, ui.ghost);
+        rackObject.userData.rackId = r.id;
+        world.add(rackObject);
+      });
+      if(ui.route && prod){
+        const activeRack = visibleRacks.find(r => focusRackIds.has(r.id));
+        if(activeRack){
+          const start = toWorld(bounds.minX + bounds.w*.12, bounds.minY + bounds.h*.82, 0);
+          const end = toWorld(Number(activeRack.x||0)+Number(activeRack.w||120)/2, Number(activeRack.y||0)+Number(activeRack.h||56)/2, 0);
+          const mid = new THREE.Vector3((start.x+end.x)/2, .05, start.z);
+          const pts = [new THREE.Vector3(start.x,.06,start.z), mid, new THREE.Vector3(end.x,.06,end.z)];
+          const geo = new THREE.BufferGeometry().setFromPoints(pts);
+          const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color:0x55ff99, linewidth:3 }));
+          world.add(line);
+        }
+      }
+
+      const controls = { yaw:-Math.PI/4, pitch:.74, distance:Math.max(12, Math.max(floorW,floorD)*1.12), pan:new THREE.Vector3(0,0,0), targetYaw:-Math.PI/4, targetPitch:.74, targetDistance:Math.max(12, Math.max(floorW,floorD)*1.12), targetPan:new THREE.Vector3(0,0,0), dragging:false, lastX:0, lastY:0 };
+      const updateCamera = () => {
+        controls.yaw += (controls.targetYaw-controls.yaw)*.16;
+        controls.pitch += (controls.targetPitch-controls.pitch)*.16;
+        controls.distance += (controls.targetDistance-controls.distance)*.16;
+        controls.pan.lerp(controls.targetPan,.16);
+        const x = Math.cos(controls.pitch)*Math.sin(controls.yaw)*controls.distance;
+        const y = Math.sin(controls.pitch)*controls.distance;
+        const z = Math.cos(controls.pitch)*Math.cos(controls.yaw)*controls.distance;
+        camera.position.set(controls.pan.x+x, controls.pan.y+y, controls.pan.z+z);
+        camera.lookAt(controls.pan);
+        if(compass){ const deg = Math.round((((controls.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
+      };
+      const resize = () => { const rect = canvas.getBoundingClientRect(); renderer.setSize(Math.max(320,rect.width), Math.max(260,rect.height), false); camera.aspect = Math.max(1,rect.width)/Math.max(1,rect.height); camera.updateProjectionMatrix(); };
+      resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas); resize();
+      const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); renderer.render(scene,camera); };
+      animate();
+      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener('pointermove', e => {
+        if(!controls.dragging) return;
+        const dx=e.clientX-controls.lastX, dy=e.clientY-controls.lastY; controls.lastX=e.clientX; controls.lastY=e.clientY;
+        if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
+        else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.28, Math.min(1.16, controls.targetPitch + dy*.0022)); }
+      });
+      canvas.addEventListener('pointerup', e => { controls.dragging=false; try{canvas.releasePointerCapture(e.pointerId)}catch{}; });
+      canvas.addEventListener('pointerleave', () => { controls.dragging=false; });
+      canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); }, { passive:false });
+      modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
+        const action = btn.dataset.nav3dAction;
+        if(action === 'focus' || action === 'slot'){ controls.targetYaw = -Math.PI/4; controls.targetPitch = .74; controls.targetDistance = action === 'slot' ? Math.max(7,floorW*.75) : Math.max(12, Math.max(floorW,floorD)*1.12); controls.targetPan.set(0,0,0); }
+        if(action === 'all' || action === 'zone' || action === 'rack') ui.isolation = action;
+        if(action === 'ghost') ui.ghost = !ui.ghost;
+        if(action === 'labels') ui.labels = !ui.labels;
+        if(action === 'route') ui.route = !ui.route;
+        syncToolbar();
+        close();
+        openNavigable3DModal(prod);
+      }));
+      syncToolbar();
+    }).catch(err => {
+      console.error(err);
+      if(loading) loading.innerHTML = '<b>No se pudo cargar Three.js</b><span>Revisa conexión o bloqueos del navegador.</span>';
+      showToast('No se pudo cargar el motor 3D.', 'warning');
+    });
+  }
+
   function openProductLocationModal(product = appState.selectedProduct){
     const ctx = getViewerProductLocationContext(product);
     const prod = product || ctx.prod;
