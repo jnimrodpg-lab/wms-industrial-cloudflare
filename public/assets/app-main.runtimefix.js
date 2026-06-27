@@ -6395,6 +6395,8 @@ function getSheetBranchOpenMap(){
             </div>
             <div class="nav3d-compass" id="nav3dCompass">N</div>
             <div class="nav3d-loading" id="nav3dLoading">Cargando motor 3D…</div>
+            <div class="nav3d-rack-popover" id="nav3dRackPopover" hidden></div>
+            <div class="nav3d-hover-label" id="nav3dHoverLabel" hidden></div>
           </div>
           <div class="nav3d-side">
             <div class="nav3d-rack-card is-primary">
@@ -6431,6 +6433,8 @@ function getSheetBranchOpenMap(){
     const canvas = modal.querySelector('#nav3dCanvas');
     const loading = modal.querySelector('#nav3dLoading');
     const compass = modal.querySelector('#nav3dCompass');
+    const rackPopover = modal.querySelector('#nav3dRackPopover');
+    const hoverLabel = modal.querySelector('#nav3dHoverLabel');
     const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
     const rackStoreSvg = modal.querySelector('#nav3dRackStore');
     const rackZoom = modal.querySelector('#nav3dRackZoom');
@@ -6465,7 +6469,7 @@ function getSheetBranchOpenMap(){
     const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
     const getFocusSets = () => {
       const liveCtx = getViewerProductLocationContext(prod);
-      const focusRackIds = new Set([prod?.rack, prod?.rackStore, liveCtx.primaryRackId, liveCtx.storeRackId].filter(Boolean));
+      const focusRackIds = new Set([prod?.rack, prod?.rackStore, liveCtx.primaryRackId, liveCtx.storeRackId, appState.ui?.nav3DSelectedRackId].filter(Boolean));
       const focusZoneIds = new Set([prod?.zona, prod?.zonaStore].filter(Boolean));
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
       return { focusRackIds, focusZoneIds };
@@ -6507,7 +6511,7 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
-    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode };
+    const ui = { isolation:'all', ghost:true, labels:true, route:true, visual: currentVisualMode, selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -6523,6 +6527,39 @@ function getSheetBranchOpenMap(){
       modal.querySelectorAll('[data-nav3d-action^="visual-"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === `visual-${ui.visual}`));
     };
 
+    const rackStatsForPopover = (rackId) => {
+      const rack = findNav3DRackById(rackId);
+      const model = rackModel(rack?.modelId) || baseRackModel();
+      const levelCount = Math.max(1, Number(model.levels || 1) || 1);
+      const slotCount = Math.max(1, Number(model.slots || model.capacity || 1) || 1);
+      const liveCtx = getViewerProductLocationContext(prod);
+      const isPrimary = rackId && rackId === liveCtx.primaryRackId;
+      const isStore = rackId && rackId === liveCtx.storeRackId;
+      const level = isPrimary ? (prod?.nivel || 1) : (isStore ? (prod?.nivelStore || 1) : 1);
+      const slot = isPrimary ? (prod?.slot || 1) : (isStore ? (prod?.slotStore || 1) : 1);
+      return { rack, model, levelCount, slotCount, level, slot, isPrimary, isStore };
+    };
+    const renderRackPopover = (rackId) => {
+      if(!rackPopover) return;
+      const { rack, levelCount, slotCount, level, slot, isPrimary, isStore } = rackStatsForPopover(rackId);
+      if(!rack || !rackId){ rackPopover.hidden = true; return; }
+      const zone = rack.zoneId || (isStore ? 'Almacén' : 'Zona');
+      rackPopover.hidden = false;
+      rackPopover.innerHTML = `
+        <div class="nav3d-popover-head"><span>${isPrimary ? 'Rack de ubicación' : isStore ? 'Rack de almacén' : 'Rack seleccionado'}</span><b>${escapeHtml(rackId)}</b></div>
+        <div class="nav3d-popover-grid">
+          <span>Zona</span><b>${escapeHtml(zone)}</b>
+          <span>Niveles</span><b>${levelCount}</b>
+          <span>Slots</span><b>${slotCount}</b>
+          <span>Activo</span><b>N${escapeHtml(String(level))} · S${escapeHtml(String(slot))}</b>
+        </div>
+        <div class="nav3d-popover-actions">
+          <button type="button" data-popover-action="detail">Ver detalle</button>
+          <button type="button" data-popover-action="isolate">Aislar rack</button>
+          <button type="button" data-popover-action="center">Centrar</button>
+        </div>`;
+    };
+
     loadThreeRuntime().then(THREE => {
       loading?.remove();
       renderSideRacks();
@@ -6532,6 +6569,11 @@ function getSheetBranchOpenMap(){
         claro: { bg:0x0d2232, fog:.010, exposure:1.72, ambient:1.05, hemi:1.70, key:4.25, fill:1.38, rim:1.75, active:3.2, floor:0x1a3347, floorA:'#234159', floorB:'#173047', floorC:'#102538', grid:.68, ghost:.26, wire:.52 }
       };
       const visual = visualProfiles[ui.visual] || visualProfiles.operativo;
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const pickables = [];
+      let hoveredRackId = '';
+      let downX = 0, downY = 0, downTime = 0, downMoved = false;
       scene = new THREE.Scene();
       scene.background = new THREE.Color(visual.bg);
       scene.fog = new THREE.FogExp2(visual.bg, visual.fog);
@@ -6668,6 +6710,11 @@ function getSheetBranchOpenMap(){
         const active = focusRackIds.has(r.id);
         const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, ui.ghost);
         rackObject.userData.rackId = r.id;
+        rackObject.traverse(obj => {
+          obj.userData.rackId = r.id;
+          obj.userData.isRackPickable = true;
+          if(obj.isMesh) pickables.push(obj);
+        });
         world.add(rackObject);
       });
       if(ui.route && prod){
@@ -6698,6 +6745,8 @@ function getSheetBranchOpenMap(){
         : new THREE.Vector3(0,0,0);
       const initialDistance = Math.max(8, Math.max(floorW,floorD) * .82);
       const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
+      const selectedInitial = ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
+      if(selectedInitial) renderRackPopover(selectedInitial);
       const updateCamera = () => {
         controls.yaw += (controls.targetYaw-controls.yaw)*.16;
         controls.pitch += (controls.targetPitch-controls.pitch)*.16;
@@ -6710,19 +6759,72 @@ function getSheetBranchOpenMap(){
         camera.lookAt(controls.pan);
         if(compass){ const deg = Math.round((((controls.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
       };
+      const setPointerFromEvent = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        pointer.x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+        pointer.y = -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+      };
+      const pickRackId = (e) => {
+        if(!pickables.length) return '';
+        setPointerFromEvent(e);
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(pickables, false)[0];
+        return hit?.object?.userData?.rackId || '';
+      };
+      const focusRackCamera = (rackId, closeDistance = false) => {
+        const rack = findNav3DRackById(rackId);
+        if(!rack) return;
+        const target = toWorld(Number(rack.x||0)+Number(rack.w||120)/2, Number(rack.y||0)+Number(rack.h||56)/2, 18);
+        controls.targetPan.copy(target);
+        controls.targetDistance = closeDistance ? Math.max(4.5, initialDistance * .45) : Math.max(6, initialDistance * .66);
+      };
+      const selectRackFromScene = (rackId, center = false) => {
+        if(!rackId) return;
+        appState.ui.nav3DSelectedRackId = rackId;
+        ui.selectedRackId = rackId;
+        renderRackPopover(rackId);
+        if(center) focusRackCamera(rackId, true);
+        else focusRackCamera(rackId, false);
+        setTimeout(() => { close(); openNavigable3DModal(prod); }, 160);
+      };
       const resize = () => { const rect = canvas.getBoundingClientRect(); renderer.setSize(Math.max(320,rect.width), Math.max(260,rect.height), false); camera.aspect = Math.max(1,rect.width)/Math.max(1,rect.height); camera.updateProjectionMatrix(); };
       resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas); resize();
       const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); renderer.render(scene,camera); };
       animate();
-      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); });
       canvas.addEventListener('pointermove', e => {
-        if(!controls.dragging) return;
+        if(!controls.dragging){
+          const rid = pickRackId(e);
+          if(rid !== hoveredRackId){
+            hoveredRackId = rid;
+            canvas.style.cursor = rid ? 'pointer' : 'grab';
+            if(hoverLabel){
+              hoverLabel.hidden = !rid;
+              hoverLabel.textContent = rid || '';
+            }
+          }
+          if(rid && hoverLabel){
+            const rect = canvas.getBoundingClientRect();
+            hoverLabel.style.left = `${e.clientX - rect.left + 14}px`;
+            hoverLabel.style.top = `${e.clientY - rect.top + 14}px`;
+          }
+          return;
+        }
         const dx=e.clientX-controls.lastX, dy=e.clientY-controls.lastY; controls.lastX=e.clientX; controls.lastY=e.clientY;
+        if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 6) downMoved = true;
         if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
         else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.28, Math.min(1.16, controls.targetPitch + dy*.0022)); }
       });
-      canvas.addEventListener('pointerup', e => { controls.dragging=false; try{canvas.releasePointerCapture(e.pointerId)}catch{}; });
-      canvas.addEventListener('pointerleave', () => { controls.dragging=false; });
+      canvas.addEventListener('pointerup', e => {
+        controls.dragging=false;
+        try{canvas.releasePointerCapture(e.pointerId)}catch{};
+        if(!downMoved && Date.now() - downTime < 420){
+          const rid = pickRackId(e);
+          if(rid) selectRackFromScene(rid, false);
+        }
+      });
+      canvas.addEventListener('dblclick', e => { const rid = pickRackId(e); if(rid) selectRackFromScene(rid, true); });
+      canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; });
       canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); }, { passive:false });
       modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
         const action = btn.dataset.nav3dAction;
@@ -6745,6 +6847,14 @@ function getSheetBranchOpenMap(){
         close();
         openNavigable3DModal(prod);
       }));
+      rackPopover?.addEventListener('click', e => {
+        const action = e.target?.dataset?.popoverAction;
+        if(!action) return;
+        const rid = ui.selectedRackId || appState.ui?.nav3DSelectedRackId;
+        if(action === 'center') focusRackCamera(rid, true);
+        if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); }
+        if(action === 'detail') openRackZoom(rid === getViewerProductLocationContext(prod).storeRackId ? 'store' : 'primary');
+      });
       syncToolbar();
     }).catch(err => {
       console.error(err);

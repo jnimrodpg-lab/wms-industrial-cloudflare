@@ -4777,3 +4777,46 @@ body.theme-light .brand-box{
 .nav3d-webgl-mode .nav3d-hud{background:rgba(4,11,20,.72);border-color:rgba(119,255,177,.16)}
 .nav3d-webgl-mode .nav3d-loading{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 45%,rgba(82,255,157,.08),transparent 32%);color:#dff8ea;font-weight:900;letter-spacing:.02em;pointer-events:none}
 .nav3d-webgl-mode .nav3d-loading b{display:block;font-size:15px;color:#fff;text-align:center}.nav3d-webgl-mode .nav3d-loading span{display:block;color:rgba(224,238,232,.68);font-size:12px;margin-top:6px;text-align:center}
+
+/* V47: interacción real con racks en el visor WebGL */
+.nav3d-rack-popover{
+  position:absolute;
+  left:22px;
+  top:92px;
+  width:min(310px,calc(100% - 44px));
+  z-index:6;
+  border:1px solid rgba(125,245,184,.24);
+  border-radius:22px;
+  background:linear-gradient(180deg,rgba(8,20,32,.86),rgba(5,12,20,.92));
+  box-shadow:0 18px 50px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter:blur(16px);
+  padding:14px;
+  color:#ecfff5;
+}
+.nav3d-popover-head{display:grid;gap:4px;margin-bottom:12px}
+.nav3d-popover-head span{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#72f0ad}
+.nav3d-popover-head b{font-size:18px;line-height:1.1;color:#fff}
+.nav3d-popover-grid{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:12px;margin-bottom:14px}
+.nav3d-popover-grid span{color:rgba(226,239,232,.62);font-weight:800}
+.nav3d-popover-grid b{text-align:right;color:#f5fff8}
+.nav3d-popover-actions{display:grid;gap:8px}
+.nav3d-popover-actions button{
+  min-height:36px;border:1px solid rgba(125,245,184,.16);border-radius:13px;
+  background:rgba(255,255,255,.045);color:#eafff1;font-weight:900;cursor:pointer;
+}
+.nav3d-popover-actions button:hover{border-color:rgba(125,245,184,.38);background:rgba(125,245,184,.10)}
+.nav3d-hover-label{
+  position:absolute;
+  z-index:7;
+  pointer-events:none;
+  padding:7px 10px;
+  border-radius:999px;
+  border:1px solid rgba(125,245,184,.22);
+  background:rgba(4,12,20,.82);
+  color:#dfffea;
+  font-size:12px;
+  font-weight:900;
+  box-shadow:0 10px 26px rgba(0,0,0,.28);
+}
+.nav3d-stage canvas{cursor:grab}
+.nav3d-stage canvas:active{cursor:grabbing}
