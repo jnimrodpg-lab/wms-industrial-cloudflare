@@ -194,7 +194,7 @@
   function ensureAppRuntimeState(){
     ensureProductPagingState();
     if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, ...appState.ui };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:false, ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!['NE','NW','SE','SW'].includes(appState.ui.isoView)) appState.ui.isoView = 'NE';
@@ -6657,6 +6657,10 @@ function getSheetBranchOpenMap(){
             </div>
             <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
+            <button class="iso-tool ${appState.ui?.nav3DWallCut ? 'active' : ''}" data-nav3d-action="wall-cut">Vista corte</button>
+            <button class="iso-tool ${appState.ui?.nav3DArchitectural ? 'active' : ''}" data-nav3d-action="arch-mode">Arquitectónico</button>
+            <button class="iso-tool ${appState.ui?.nav3DRoof ? 'active' : ''}" data-nav3d-action="roof-toggle">Techo</button>
+            <button class="iso-tool" data-nav3d-action="camera-top">Planta 3D</button>
             <div class="nav3d-visual-switch">
               <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
               <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
@@ -6817,7 +6821,7 @@ function getSheetBranchOpenMap(){
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
     const activePulseTargets = [];
-    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '' };
+    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof };
     const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
@@ -6831,6 +6835,9 @@ function getSheetBranchOpenMap(){
       modal.querySelector('[data-nav3d-action="labels"]')?.classList.toggle('active', ui.labels);
       modal.querySelector('[data-nav3d-action="route"]')?.classList.toggle('active', ui.route);
       modal.querySelectorAll('[data-nav3d-action^="visual-"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === `visual-${ui.visual}`));
+      modal.querySelector('[data-nav3d-action="wall-cut"]')?.classList.toggle('active', !!appState.ui?.nav3DWallCut);
+      modal.querySelector('[data-nav3d-action="arch-mode"]')?.classList.toggle('active', !!appState.ui?.nav3DArchitectural);
+      modal.querySelector('[data-nav3d-action="roof-toggle"]')?.classList.toggle('active', !!appState.ui?.nav3DRoof);
       modal.querySelectorAll('[data-nav3d-target]').forEach(b => b.classList.toggle('active', b.dataset.nav3dTarget === ui.target));
     };
 
@@ -6982,7 +6989,7 @@ function getSheetBranchOpenMap(){
       const layoutZones = layoutZonesRaw;
       const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .055 : 1 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = Math.min(.34, visual.grid*.48); world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = appState.ui?.nav3DArchitectural ? Math.min(.16, visual.grid*.24) : Math.min(.34, visual.grid*.48); world.add(grid);
 
       const DEFAULT_WALL_HEIGHT = 290;
       const DEFAULT_WALL_THICKNESS = 14;
@@ -7094,6 +7101,26 @@ function getSheetBranchOpenMap(){
         group.add(edges);
         return mesh;
       };
+      const buildArchitecturalRoofGroup = (zones=[], activeZoneIds=new Set(), wallHeight=2.8) => {
+        const group = new THREE.Group();
+        if(!appState.ui?.nav3DRoof) return group;
+        const roofMat = new THREE.MeshStandardMaterial({ color:0xe8f1f7, transparent:true, opacity:.18, roughness:.72, metalness:.02, side:THREE.DoubleSide, depthWrite:false });
+        const roofEdgeMat = new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:.38 });
+        zones.forEach(z => {
+          const pts = (z.pts || []).map(layoutToShapePoint);
+          if(pts.length < 3) return;
+          const shape = new THREE.Shape(pts);
+          const geo = new THREE.ShapeGeometry(shape);
+          const mesh = new THREE.Mesh(geo, roofMat);
+          mesh.rotation.x = -Math.PI/2;
+          mesh.position.y = Math.max(1.25, wallHeight + .035);
+          group.add(mesh);
+          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, mesh.position.y + .01, -v.y));
+          group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), roofEdgeMat));
+        });
+        return group;
+      };
+
       const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
         const group = new THREE.Group();
         if(!segments.length) return group;
@@ -7112,13 +7139,13 @@ function getSheetBranchOpenMap(){
           const wallMat = new THREE.MeshStandardMaterial({
             color:isActive ? 0xf2f7fb : 0xb8c8d8,
             transparent:true,
-            opacity:wallCut ? (isActive ? .62 : .38) : (isActive ? .96 : .72),
+            opacity:appState.ui?.nav3DArchitectural ? (wallCut ? (isActive ? .74 : .48) : (isActive ? .98 : .86)) : (wallCut ? (isActive ? .62 : .38) : (isActive ? .96 : .72)),
             roughness:.78,
             metalness:.03,
             side:THREE.DoubleSide
           });
-          const glassMat = new THREE.MeshStandardMaterial({ color:0x8feaff, transparent:true, opacity:.32, roughness:.18, metalness:.04, side:THREE.DoubleSide, depthWrite:false });
-          const leafMat = new THREE.MeshStandardMaterial({ color:0x9aa8b4, transparent:true, opacity:.46, roughness:.55, metalness:.08, side:THREE.DoubleSide });
+          const glassMat = new THREE.MeshStandardMaterial({ color:0x8feaff, transparent:true, opacity:appState.ui?.nav3DArchitectural ? .46 : .32, roughness:.18, metalness:.04, side:THREE.DoubleSide, depthWrite:false });
+          const leafMat = new THREE.MeshStandardMaterial({ color:0x9aa8b4, transparent:true, opacity:appState.ui?.nav3DArchitectural ? .62 : .46, roughness:.55, metalness:.08, side:THREE.DoubleSide });
           const openings = getWallOpeningsForSegment(seg, rawLengthUnits);
           if(openings.length){
             let cursor = 0;
@@ -7188,9 +7215,9 @@ function getSheetBranchOpenMap(){
         return group;
       };
       const makeZoneMaterials = (active=false) => ({
-        floor: new THREE.MeshStandardMaterial({ color:active ? 0x18394b : visual.floor, roughness:.56, metalness:.15, transparent:true, opacity:active ? .54 : .07, side:THREE.DoubleSide, depthWrite:active }),
-        overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .08 : .12) : .014, side:THREE.DoubleSide, depthWrite:false }),
-        line: new THREE.LineBasicMaterial({ color:active ? 0x86ffd0 : 0x91bad3, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .52 : .70) : .12 })
+        floor: new THREE.MeshStandardMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xd9e4ec : 0x18394b) : (appState.ui?.nav3DArchitectural ? 0x2b3c4b : visual.floor), roughness:.62, metalness:.08, transparent:true, opacity:appState.ui?.nav3DArchitectural ? (active ? .36 : .10) : (active ? .54 : .07), side:THREE.DoubleSide, depthWrite:active }),
+        overlay: new THREE.MeshBasicMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xe9f3fa : 0x43e68c) : 0x8eb3ca, transparent:true, opacity:appState.ui?.nav3DArchitectural ? (active ? .08 : .012) : (active ? (ui.visual === 'oscuro' ? .08 : .12) : .014), side:THREE.DoubleSide, depthWrite:false }),
+        line: new THREE.LineBasicMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xffffff : 0x86ffd0) : 0x91bad3, transparent:true, opacity:active ? (appState.ui?.nav3DArchitectural ? .78 : (ui.visual === 'oscuro' ? .52 : .70)) : .12 })
       });
       layoutZones.forEach(z => {
         const pts = (z.pts || []).map(layoutToShapePoint);
@@ -7209,6 +7236,9 @@ function getSheetBranchOpenMap(){
       const zoneWallsGroup = buildWallGroup(zoneWallSegments, focusZoneIds);
       zoneWallsGroup.position.y = .01;
       world.add(zoneWallsGroup);
+      const maxWallHeight = Math.max(2.8, ...zoneWallSegments.map(s => (Number(s.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale));
+      const roofGroup = buildArchitecturalRoofGroup(layoutZones, focusZoneIds, appState.ui?.nav3DWallCut ? Math.min(1.25, maxWallHeight) : maxWallHeight);
+      world.add(roofGroup);
 
       const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:Math.min(visual.ghost, .10), roughness:.86, metalness:.08, depthWrite:false });
       const matGhostWire = new THREE.LineBasicMaterial({ color:0xd0ecff, transparent:true, opacity:Math.min(visual.wire, .24) });
@@ -7374,7 +7404,7 @@ function getSheetBranchOpenMap(){
         });
         world.add(rackObject);
       });
-      if(ui.route && prod){
+      if(ui.route && prod && !appState.ui?.nav3DArchitectural){
         const activeRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
         if(activeRack){
           const routeGroup = new THREE.Group();
@@ -7492,6 +7522,7 @@ function getSheetBranchOpenMap(){
         ui.target = btn.dataset.nav3dTarget || 'primary';
         appState.ui.nav3DTarget = ui.target;
         syncToolbar();
+        if(action === 'camera-top') return;
         close();
         openNavigable3DModal(prod);
       }));
@@ -7517,6 +7548,19 @@ function getSheetBranchOpenMap(){
         }
         if(action === 'wall-cut'){
           appState.ui.nav3DWallCut = !appState.ui.nav3DWallCut;
+        }
+        if(action === 'arch-mode'){
+          appState.ui.nav3DArchitectural = !appState.ui.nav3DArchitectural;
+          if(appState.ui.nav3DArchitectural) ui.route = false;
+        }
+        if(action === 'roof-toggle'){
+          appState.ui.nav3DRoof = !appState.ui.nav3DRoof;
+        }
+        if(action === 'camera-top'){
+          controls.targetYaw = 0;
+          controls.targetPitch = 1.20;
+          controls.targetDistance = Math.max(7.2, initialDistance*.78);
+          controls.targetPan.copy(initialPan);
         }
         if(action === 'all' || action === 'zone' || action === 'rack' || action === 'solo') ui.isolation = action;
         if(action === 'ghost') ui.ghost = !ui.ghost;
