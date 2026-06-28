@@ -7019,6 +7019,34 @@ function getSheetBranchOpenMap(){
         const len = Math.hypot(dx, dy) || 1;
         return { x:-dy/len, y:dx/len };
       };
+      const makeWallPrismGeometry = (footprint=[], height=2.8) => {
+        const pts = (footprint || []).filter(Boolean).map(pt => ({
+          x:(Number(pt.x || 0) - bounds.cx) * scale,
+          z:(Number(pt.y || 0) - bounds.cy) * scale
+        }));
+        if(pts.length < 3 || !Number.isFinite(height) || height <= 0) return null;
+        const positions = [];
+        pts.forEach(pt => positions.push(pt.x, 0, pt.z));
+        pts.forEach(pt => positions.push(pt.x, height, pt.z));
+        const indices = [];
+        const n = pts.length;
+        for(let i=1; i<n-1; i++){
+          indices.push(0, i+1, i);            // bottom
+          indices.push(n, n+i, n+i+1);        // top
+        }
+        for(let i=0; i<n; i++){
+          const j = (i + 1) % n;
+          indices.push(i, j, n+j);
+          indices.push(i, n+j, n+i);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        geo.computeBoundingBox();
+        geo.computeBoundingSphere();
+        return geo;
+      };
       const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
         const group = new THREE.Group();
         if(!segments.length) return group;
@@ -7034,33 +7062,41 @@ function getSheetBranchOpenMap(){
           const height = wallCut ? Math.min(1.25, baseHeight) : baseHeight;
           const thicknessUnits = Math.max(8, Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS);
           const thickness = Math.max(.24, thicknessUnits * scale);
-          const extend = seg.autoZoneEdge ? Math.min(thicknessUnits * .48, Math.max(5, rawLengthUnits * .025)) : 0;
-          const n = getSegmentNormal(seg);
-          const midX = (Number(seg.a?.x||0) + Number(seg.b?.x||0))/2 + n.x * (thicknessUnits / 2);
-          const midY = (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2 + n.y * (thicknessUnits / 2);
-          const mid = toWorld(midX, midY, 0);
-          // Three.js maps local X to world (cosθ, -sinθ). Layout Y maps to world Z, so θ must be negative.
-          const angle = -Math.atan2(dy, dx);
           const wallMat = new THREE.MeshStandardMaterial({
             color:isActive ? 0xf2f7fb : 0xb8c8d8,
             transparent:true,
-            opacity:wallCut ? (isActive ? .58 : .34) : (isActive ? .96 : .66),
+            opacity:wallCut ? (isActive ? .62 : .38) : (isActive ? .96 : .72),
             roughness:.78,
-            metalness:.03
+            metalness:.03,
+            side:THREE.DoubleSide
           });
-          const wall = new THREE.Mesh(new THREE.BoxGeometry(length + extend * 2 * scale, height, thickness), wallMat);
-          wall.position.set(mid.x, height/2, mid.z);
-          wall.rotation.y = angle;
+          const autoPoly = seg.autoZoneEdge && seg.zoneId && Number.isFinite(seg.edgeIndex) ? getAutoWallPolygon(seg.raw || seg) : null;
+          let wall = null;
+          if(Array.isArray(autoPoly) && autoPoly.length >= 4){
+            const geo = makeWallPrismGeometry(autoPoly, height);
+            if(geo) wall = new THREE.Mesh(geo, wallMat);
+          }
+          if(!wall){
+            const n = getSegmentNormal(seg);
+            const midX = (Number(seg.a?.x||0) + Number(seg.b?.x||0))/2 + n.x * (thicknessUnits / 2);
+            const midY = (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2 + n.y * (thicknessUnits / 2);
+            const mid = toWorld(midX, midY, 0);
+            const angle = -Math.atan2(dy, dx);
+            wall = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), wallMat);
+            wall.position.set(mid.x, height/2, mid.z);
+            wall.rotation.y = angle;
+          }
           wall.castShadow = true;
           wall.receiveShadow = true;
           wall.userData.wallId = seg.id || '';
           group.add(wall);
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(wall.geometry),
-            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .34 })
+            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
           );
           edges.position.copy(wall.position);
           edges.rotation.copy(wall.rotation);
+          edges.scale.copy(wall.scale);
           group.add(edges);
         });
         return group;
