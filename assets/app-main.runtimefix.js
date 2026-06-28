@@ -7141,9 +7141,13 @@ function getSheetBranchOpenMap(){
                 const panelH = Math.max(.12, Math.min(openingTop - sill, height) * .86);
                 const geo = makeWallBandGeometry(seg, safeT0+.015, safeT1-.015, midY - panelH/2, midY + panelH/2, Math.max(4, thicknessUnits * .28));
                 addWallMesh(group, geo, glassMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.018, safeT1), sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.018, safeT0), safeT1, sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
               } else {
                 const leafGeo = makeWallBandGeometry(seg, safeT0+.025, Math.min(safeT1, safeT0+.06), 0, Math.min(openingTop, height), Math.max(4, thicknessUnits * .20));
                 addWallMesh(group, leafGeo, leafMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.016, safeT1), 0, openingTop, Math.max(6, thicknessUnits*.58)), leafMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.016, safeT0), safeT1, 0, openingTop, Math.max(6, thicknessUnits*.58)), leafMat, true, o.id);
               }
               cursor = Math.max(cursor, safeT1);
             });
@@ -9630,6 +9634,39 @@ function getSheetBranchOpenMap(){
       t
     };
   }
+
+  function getWallOpeningNormal(wall){
+    if(wall?.autoZoneEdge){
+      const zone = findZoneById(wall.zoneId);
+      const idx = Number(wall.edgeIndex || 0) || 0;
+      const a = zone?.pts?.[idx];
+      const b = zone?.pts?.[(idx + 1) % (zone?.pts?.length || 1)];
+      if(zone && a && b){
+        const base = getZoneOutwardEdgeNormal(zone, a, b);
+        const side = typeof getWallSideSign === 'function' ? getWallSideSign(wall.side) : (Number(wall.side || 1) >= 0 ? 1 : -1);
+        return { x:base.x * side, y:base.y * side };
+      }
+    }
+    return wallNormal(wall);
+  }
+
+  function getOpeningFootprint(opening, wall=findWallById(opening?.wallId), inflate=1.15){
+    const seg = getOpeningSegment(opening, wall);
+    if(!seg || !wall) return null;
+    const n = getWallOpeningNormal(wall);
+    const t = Math.max(10, Number(wall.thickness || 14) || 14) * inflate;
+    const h = t / 2;
+    return {
+      seg,
+      normal:n,
+      poly:[
+        { x:seg.a.x - n.x*h, y:seg.a.y - n.y*h },
+        { x:seg.b.x - n.x*h, y:seg.b.y - n.y*h },
+        { x:seg.b.x + n.x*h, y:seg.b.y + n.y*h },
+        { x:seg.a.x + n.x*h, y:seg.a.y + n.y*h }
+      ]
+    };
+  }
   function findNearestWallProjection(point, threshold = 22){
     ensureLayoutDecorations();
     let best = null;
@@ -10654,32 +10691,50 @@ function getSheetBranchOpenMap(){
       const seg = getOpeningSegment(opening, wall);
       if(!wall || !seg) return;
       const selected = appState.selectedOpeningId === opening.id;
-      const thickness = Math.max(5, Number(wall.thickness || 12) - 2);
-      const erase = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:'rgba(7,19,31,.98)','stroke-width':String(Math.max(6, thickness + 4)),'stroke-linecap':'round'});
-      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':String(Math.max(4, thickness * .34)),'stroke-linecap':'round',opacity:'.98'});
-      const normal = wallNormal(wall);
-      if(opening.type === 'window'){
-        const off = Math.max(6, thickness * .55);
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2',opacity:'.85'}));
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2',opacity:'.85'}));
-      } else {
-        const dir = wallDirection(wall);
-        const doorLen = Math.max(16, Math.min(seg.width, 48));
-        const leafEnd = { x:seg.a.x + normal.x * doorLen, y:seg.a.y + normal.y * doorLen };
-        const arcMid = { x:seg.a.x + dir.x * (doorLen*.78) + normal.x * (doorLen*.78), y:seg.a.y + dir.y * (doorLen*.78) + normal.y * (doorLen*.78) };
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:leafEnd.x,y2:leafEnd.y,stroke:selected?'#7dffaf':'#53e7ff','stroke-width':'2.2',opacity:'.9'}));
-        openingLayer.appendChild(svgEl('path',{d:`M ${seg.a.x} ${seg.a.y} Q ${arcMid.x} ${arcMid.y} ${seg.b.x} ${seg.b.y}`,fill:'none',stroke:selected?'rgba(125,255,175,.9)':'rgba(83,231,255,.82)','stroke-width':'1.8','stroke-dasharray':'4 4'}));
-      }
-      const hit = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:'transparent','stroke-width':'18','stroke-linecap':'round',style:'cursor:pointer'});
-      hit.addEventListener('pointerdown', evt => {
+      const footprint = getOpeningFootprint(opening, wall, 1.42);
+      const cutFill = selected ? 'rgba(10,25,38,.98)' : 'rgba(7,19,31,.96)';
+      const accentColor = selected ? '#7dffaf' : (opening.type === 'window' ? '#53e7ff' : '#ffd66f');
+      const selectOpening = evt => {
         evt.stopPropagation();
         appState.selectedOpeningId = opening.id;
         appState.selectedWallId = opening.wallId;
         appState.selectedRackLayoutId = '';
         renderLayoutEditor();
-      });
-      openingLayer.append(erase, accent, hit);
+      };
+      if(footprint?.poly){
+        const d = wallPolygonPath(footprint.poly);
+        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.4':'1.8',opacity:'1',style:'cursor:pointer'});
+        cut.addEventListener('pointerdown', selectOpening);
+        openingLayer.appendChild(cut);
+      }
+      const normal = getWallOpeningNormal(wall);
+      const thickness = Math.max(8, Number(wall.thickness || 14) || 14);
+      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(4, thickness * .36)),'stroke-linecap':'round',opacity:'.98',style:'cursor:pointer'});
+      accent.addEventListener('pointerdown', selectOpening);
+      openingLayer.appendChild(accent);
+      if(opening.type === 'window'){
+        const off = Math.max(5, thickness * .46);
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95'}));
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95'}));
+      } else {
+        const dir = wallDirection(wall);
+        const doorLen = Math.max(18, Math.min(Number(opening.width || 90) * .55, 56));
+        const leafEnd = { x:seg.a.x + normal.x * doorLen, y:seg.a.y + normal.y * doorLen };
+        const arcMid = { x:seg.a.x + dir.x * (doorLen*.82) + normal.x * (doorLen*.82), y:seg.a.y + dir.y * (doorLen*.82) + normal.y * (doorLen*.82) };
+        openingLayer.appendChild(svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.4',opacity:'.95'}));
+        openingLayer.appendChild(svgEl('path',{d:`M ${seg.a.x} ${seg.a.y} Q ${arcMid.x} ${arcMid.y} ${seg.b.x} ${seg.b.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.9','stroke-dasharray':'4 4',opacity:'.9'}));
+      }
+      const tagW = opening.type === 'window' ? 58 : 48;
+      const labelX = seg.center.x + normal.x * (thickness + 20) - tagW/2;
+      const labelY = seg.center.y + normal.y * (thickness + 20) - 10;
+      const tag = svgEl('g',{transform:`translate(${labelX} ${labelY})`,style:'pointer-events:none'});
+      tag.appendChild(svgEl('rect',{x:0,y:0,width:tagW,height:20,rx:10,fill:selected?'rgba(125,255,175,.96)':'rgba(6,18,30,.94)',stroke:accentColor,'stroke-width':'1.2'}));
+      const t = svgEl('text',{x:tagW/2,y:13,'text-anchor':'middle',style:`font-size:9px;font-weight:900;fill:${selected?'#062016':'#eafff9'};pointer-events:none`});
+      t.textContent = opening.type === 'window' ? 'VENTANA' : 'PUERTA';
+      tag.appendChild(t);
+      openingLayer.appendChild(tag);
     });
+
     if(appState.editor.pendingWallPoint){
       const pending = appState.editor.pendingWallPoint;
       guideLayer.appendChild(svgEl('circle',{cx:pending.x, cy:pending.y, r:'7', fill:'#ffd84d', stroke:'#fff', 'stroke-width':'1.5'}));
@@ -11528,7 +11583,11 @@ function zoomLayout(factor, center){
             <label class="layout-mini-field">Espesor<input id="edgeWallThickness" type="number" min="8" max="80" step="1" value="${Math.round(Number(edgeWallCtx.wall?.thickness || getZoneWallThickness(edgeWallCtx.zone) || 14))}"></label>
             <label class="layout-mini-field">Altura 3D<input id="edgeWallHeight" type="number" min="120" max="600" step="10" value="${Math.round(Number(edgeWallCtx.wall?.height || appState.layout?.meta?.defaultWallHeight || 290))}"></label>
           </div>
-          <div class="tiny muted">Haz clic en una arista de la zona para elegir qué tramo será pared. Esa pared se verá también en 3D.</div>
+          <div class="two">
+            <button class="seg-btn" id="btnEdgeAddDoor" ${edgeWallCtx.isWall ? '' : 'disabled'}>Agregar puerta</button>
+            <button class="seg-btn" id="btnEdgeAddWindow" ${edgeWallCtx.isWall ? '' : 'disabled'}>Agregar ventana</button>
+          </div>
+          <div class="tiny muted">Selecciona una arista convertida en pared y agrega puertas/ventanas sin tener que buscar el muro manualmente.</div>
         </div>
       </div>` : ''}
       ${stackOpen ? `
@@ -11585,6 +11644,20 @@ function zoomLayout(factor, center){
       persistActiveLayout();
       renderLayoutEditor();
     };
+    const addOpeningFromSelectedEdge = (type='door') => {
+      const ctx = getSelectedEdgeWallContext();
+      if(!ctx) return;
+      if(!ctx.isWall){
+        setZoneEdgeWall(ctx.zone, ctx.edgeIndex, { thickness:Math.max(8, Math.min(80, Number($('#edgeWallThickness')?.value || 14) || 14)), height:Math.max(120, Math.min(600, Number($('#edgeWallHeight')?.value || 290) || 290)) });
+        syncZonePerimeterWalls();
+      }
+      const wallId = zoneEdgeWallId(ctx.zone.id, ctx.edgeIndex);
+      createOpeningOnWall(wallId, type);
+      persistActiveLayout();
+      renderLayoutEditor();
+    };
+    if($('#btnEdgeAddDoor')) $('#btnEdgeAddDoor').onclick = () => addOpeningFromSelectedEdge('door');
+    if($('#btnEdgeAddWindow')) $('#btnEdgeAddWindow').onclick = () => addOpeningFromSelectedEdge('window');
     if($('#edgeWallThickness')) $('#edgeWallThickness').onchange = e => {
       const ctx = getSelectedEdgeWallContext();
       if(!ctx?.isWall) return;
