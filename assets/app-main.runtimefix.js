@@ -7031,8 +7031,8 @@ function getSheetBranchOpenMap(){
         const indices = [];
         const n = pts.length;
         for(let i=1; i<n-1; i++){
-          indices.push(0, i+1, i);            // bottom
-          indices.push(n, n+i, n+i+1);        // top
+          indices.push(0, i+1, i);
+          indices.push(n, n+i, n+i+1);
         }
         for(let i=0; i<n; i++){
           const j = (i + 1) % n;
@@ -7046,6 +7046,53 @@ function getSheetBranchOpenMap(){
         geo.computeBoundingBox();
         geo.computeBoundingSphere();
         return geo;
+      };
+      const makeWallBandGeometry = (seg, t0, t1, y0, y1, thicknessUnits) => {
+        const height = Math.max(.02, Number(y1 || 0) - Number(y0 || 0));
+        if(t1 - t0 <= .002 || height <= .02) return null;
+        const ax = Number(seg.a?.x || 0), ay = Number(seg.a?.y || 0);
+        const bx = Number(seg.b?.x || 0), by = Number(seg.b?.y || 0);
+        const n = getSegmentNormal(seg);
+        const a = { x:ax + (bx-ax)*t0, y:ay + (by-ay)*t0 };
+        const b = { x:ax + (bx-ax)*t1, y:ay + (by-ay)*t1 };
+        const footprint = [a, b, { x:b.x + n.x*thicknessUnits, y:b.y + n.y*thicknessUnits }, { x:a.x + n.x*thicknessUnits, y:a.y + n.y*thicknessUnits }];
+        const basePts = footprint.map(pt => ({ x:(Number(pt.x || 0)-bounds.cx)*scale, z:(Number(pt.y || 0)-bounds.cy)*scale }));
+        const positions = [];
+        basePts.forEach(pt => positions.push(pt.x, y0, pt.z));
+        basePts.forEach(pt => positions.push(pt.x, y1, pt.z));
+        const indices = [0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,1,2,6,1,6,5,2,3,7,2,7,6,3,0,4,3,4,7];
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        geo.computeBoundingBox();
+        geo.computeBoundingSphere();
+        return geo;
+      };
+      const getWallOpeningsForSegment = (seg, rawLengthUnits) => {
+        const wallOpenings = (appState.layout?.openings || []).filter(o => o.wallId === seg.id);
+        return wallOpenings.map(o => {
+          const width = Math.max(40, Math.min(rawLengthUnits * .86, Number(o.width || (o.type === 'window' ? 120 : 90)) || 90));
+          const half = (width / 2) / Math.max(1, rawLengthUnits);
+          const t = Math.max(half, Math.min(1-half, Number(o.t || .5)));
+          const sillUnits = o.type === 'window' ? Math.max(0, Number(o.sill || 90) || 90) : 0;
+          const heightUnits = Math.max(30, Number(o.height || (o.type === 'window' ? 100 : 210)) || 210);
+          return { ...o, t, t0:Math.max(0, t-half), t1:Math.min(1, t+half), sillUnits, heightUnits };
+        }).sort((a,b)=>a.t0-b.t0);
+      };
+      const addWallMesh = (group, geo, mat, isActive, wallId='') => {
+        if(!geo) return null;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.userData.wallId = wallId || '';
+        group.add(mesh);
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(geo),
+          new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
+        );
+        group.add(edges);
+        return mesh;
       };
       const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
         const group = new THREE.Group();
@@ -7070,6 +7117,41 @@ function getSheetBranchOpenMap(){
             metalness:.03,
             side:THREE.DoubleSide
           });
+          const glassMat = new THREE.MeshStandardMaterial({ color:0x8feaff, transparent:true, opacity:.32, roughness:.18, metalness:.04, side:THREE.DoubleSide, depthWrite:false });
+          const leafMat = new THREE.MeshStandardMaterial({ color:0x9aa8b4, transparent:true, opacity:.46, roughness:.55, metalness:.08, side:THREE.DoubleSide });
+          const openings = getWallOpeningsForSegment(seg, rawLengthUnits);
+          if(openings.length){
+            let cursor = 0;
+            openings.forEach(o => {
+              const safeT0 = Math.max(cursor, o.t0);
+              const safeT1 = Math.max(safeT0, o.t1);
+              if(safeT0 > cursor + .004){
+                addWallMesh(group, makeWallBandGeometry(seg, cursor, safeT0, 0, height, thicknessUnits), wallMat, isActive, seg.id);
+              }
+              const sill = Math.max(0, Number(o.sillUnits || 0) * hScale);
+              const openingTop = Math.min(height, Math.max(.08, (Number(o.sillUnits || 0) + Number(o.heightUnits || 210)) * hScale));
+              if(sill > .035){
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0, safeT1, 0, Math.min(sill, height), thicknessUnits), wallMat, isActive, seg.id);
+              }
+              if(openingTop < height - .035){
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0, safeT1, openingTop, height, thicknessUnits), wallMat, isActive, seg.id);
+              }
+              if(o.type === 'window'){
+                const midY = Math.min(height - .05, Math.max(.08, (sill + openingTop) / 2));
+                const panelH = Math.max(.12, Math.min(openingTop - sill, height) * .86);
+                const geo = makeWallBandGeometry(seg, safeT0+.015, safeT1-.015, midY - panelH/2, midY + panelH/2, Math.max(4, thicknessUnits * .28));
+                addWallMesh(group, geo, glassMat, true, o.id);
+              } else {
+                const leafGeo = makeWallBandGeometry(seg, safeT0+.025, Math.min(safeT1, safeT0+.06), 0, Math.min(openingTop, height), Math.max(4, thicknessUnits * .20));
+                addWallMesh(group, leafGeo, leafMat, true, o.id);
+              }
+              cursor = Math.max(cursor, safeT1);
+            });
+            if(cursor < .996){
+              addWallMesh(group, makeWallBandGeometry(seg, cursor, 1, 0, height, thicknessUnits), wallMat, isActive, seg.id);
+            }
+            return;
+          }
           const autoPoly = seg.autoZoneEdge && seg.zoneId && Number.isFinite(seg.edgeIndex) ? getAutoWallPolygon(seg.raw || seg) : null;
           let wall = null;
           if(Array.isArray(autoPoly) && autoPoly.length >= 4){
@@ -9573,11 +9655,24 @@ function getSheetBranchOpenMap(){
     ensureLayoutDecorations();
     const nearest = findNearestWallProjection(point, 28);
     if(!nearest || !nearest.wall) return null;
-    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:type==='window' ? 110 : 90, type };
+    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:type==='window' ? 120 : 90, height:type==='window' ? 100 : 210, sill:type==='window' ? 90 : 0, type, swing:1 };
     opening.t = openingClampT(nearest.wall, opening.width, opening.t);
     appState.layout.openings.push(opening);
     appState.selectedOpeningId = opening.id;
     appState.selectedWallId = nearest.wall.id;
+    appState.selectedRackLayoutId = '';
+    return opening;
+  }
+
+  function createOpeningOnWall(wallId, type='door'){
+    ensureLayoutDecorations();
+    const wall = findWallById(wallId);
+    if(!wall) return null;
+    const opening = { id:nextOpeningId(), wallId:wall.id, t:.5, width:type==='window' ? 120 : 90, height:type==='window' ? 100 : 210, sill:type==='window' ? 90 : 0, type, swing:1 };
+    opening.t = openingClampT(wall, opening.width, opening.t);
+    appState.layout.openings.push(opening);
+    appState.selectedOpeningId = opening.id;
+    appState.selectedWallId = wall.id;
     appState.selectedRackLayoutId = '';
     return opening;
   }
@@ -9826,8 +9921,12 @@ function getSheetBranchOpenMap(){
             <label>Largo<input value="${formatUnitNumber(wallLength(findWallById(appState.selectedWallId)))}" disabled></label>
             ${findWallById(appState.selectedWallId).autoZoneEdge ? `<label>Lado<select id="rpWallSide"><option value="1" ${getWallSideSign(findWallById(appState.selectedWallId).side)===1?'selected':''}>Fuera de zona</option><option value="-1" ${getWallSideSign(findWallById(appState.selectedWallId).side)===-1?'selected':''}>Dentro de zona</option></select></label>` : `<label>Lado<input value="Manual" disabled></label>`}
           </div>
-          ${findWallById(appState.selectedWallId).autoZoneEdge ? `<div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpWallFlip">Invertir muro</button></div>` : ''}
-          <div class="tiny muted" style="margin-top:8px">La pared puede ir por fuera o por dentro de la zona. Las esquinas se unen automáticamente.</div>
+          <div class="layout-template-grid" style="margin-top:10px">
+            ${findWallById(appState.selectedWallId).autoZoneEdge ? `<button class="seg-btn" id="rpWallFlip">Invertir muro</button>` : ''}
+            <button class="seg-btn" id="rpWallAddDoor">Agregar puerta</button>
+            <button class="seg-btn" id="rpWallAddWindow">Agregar ventana</button>
+          </div>
+          <div class="tiny muted" style="margin-top:8px">La pared puede ir por fuera o por dentro de la zona. Los vanos se recortan también en 3D.</div>
         </section>` : ''}
         ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Abertura</div>
@@ -9835,9 +9934,14 @@ function getSheetBranchOpenMap(){
             <label>ID<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).id)}" disabled></label>
             <label>Tipo<select id="rpOpeningType"><option value="door" ${findOpeningById(appState.selectedOpeningId).type!=='window'?'selected':''}>Puerta / vano</option><option value="window" ${findOpeningById(appState.selectedOpeningId).type==='window'?'selected':''}>Ventana</option></select></label>
             <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="260" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).width||90)}"></label>
+            <label>Alto<input id="rpOpeningHeight" type="number" min="40" max="290" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).height || (findOpeningById(appState.selectedOpeningId).type==='window'?100:210))}"></label>
+            <label>Altura piso<input id="rpOpeningSill" type="number" min="0" max="240" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).sill || 0)}"></label>
+            <label>Posición %<input id="rpOpeningT" type="number" min="1" max="99" step="1" value="${Math.round((findOpeningById(appState.selectedOpeningId).t || .5)*100)}"></label>
             <label>Pared<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).wallId||'') }" disabled></label>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Tip: selecciona “Agregar vano” y haz clic sobre una pared.</div>
+          <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((findOpeningById(appState.selectedOpeningId).t || .5)*100)}" style="width:100%;margin-top:10px">
+          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpeningCenter">Centrar vano</button><button class="seg-btn" id="rpOpeningDelete">Eliminar vano</button></div>
+          <div class="tiny muted" style="margin-top:8px">La puerta corta desde el piso. La ventana usa altura desde piso y crea antepecho/dintel en 3D.</div>
         </section>` : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
@@ -9947,8 +10051,18 @@ function getSheetBranchOpenMap(){
       persistActiveLayout();
       renderLayoutEditor();
     };
-    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window' && Number(selectedOpening.width || 0) < 100) selectedOpening.width = 110; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpWallAddDoor')) $('#rpWallAddDoor').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'door'); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpWallAddWindow')) $('#rpWallAddWindow').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'window'); persistActiveLayout(); renderLayoutEditor(); };
+    const persistOpeningUpdate = () => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window'){ if(Number(selectedOpening.width || 0) < 100) selectedOpening.width = 120; if(!Number(selectedOpening.height)) selectedOpening.height = 100; if(Number(selectedOpening.sill || 0) < 80) selectedOpening.sill = 90; } else { selectedOpening.sill = 0; if(!Number(selectedOpening.height)) selectedOpening.height = 210; } persistOpeningUpdate(); };
+    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); persistOpeningUpdate(); };
+    if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(290, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
+    if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = selectedOpening.type === 'window' ? Math.max(0, Math.min(240, Number(e.target.value || 0) || 0)) : 0; persistOpeningUpdate(); };
+    const setOpeningPositionPct = value => { if(!selectedOpening) return; selectedOpening.t = Math.max(.01, Math.min(.99, (Number(value || 50) || 50) / 100)); persistOpeningUpdate(); };
+    if($('#rpOpeningT')) $('#rpOpeningT').onchange = e => setOpeningPositionPct(e.target.value);
+    if($('#rpOpeningSlider')) $('#rpOpeningSlider').oninput = e => { if($('#rpOpeningT')) $('#rpOpeningT').value = e.target.value; setOpeningPositionPct(e.target.value); };
+    if($('#rpOpeningCenter')) $('#rpOpeningCenter').onclick = () => setOpeningPositionPct(50);
+    if($('#rpOpeningDelete')) $('#rpOpeningDelete').onclick = () => { if(!selectedOpening) return; appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== selectedOpening.id); appState.selectedOpeningId = ''; persistActiveLayout(); renderLayoutEditor(); };
 
     if($('#tplZoneRack')) $('#tplZoneRack').onclick = addZoneWithRackTemplate;
     if($('#tplWarehouse')) $('#tplWarehouse').onclick = addWarehouseTemplate;
