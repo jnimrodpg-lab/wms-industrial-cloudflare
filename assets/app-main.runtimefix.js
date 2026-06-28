@@ -6988,7 +6988,8 @@ function getSheetBranchOpenMap(){
       const DEFAULT_WALL_THICKNESS = 14;
       const buildWallSegmentsFromLayout = () => {
         try { syncZonePerimeterWalls(); ensureLayoutDecorations(); } catch(_err) {}
-        return (appState.layout?.walls || []).map(w => ({
+        const walls = Array.isArray(appState.layout?.walls) ? appState.layout.walls : [];
+        return walls.map(w => ({
           raw:w,
           a:{ x:Number(w.x1||0), y:Number(w.y1||0) },
           b:{ x:Number(w.x2||0), y:Number(w.y2||0) },
@@ -7001,58 +7002,62 @@ function getSheetBranchOpenMap(){
           zoneId:w.zoneId || '',
           edgeIndex:Number(w.edgeIndex),
           side:getWallSideSign(w.side)
-        }));
+        })).filter(seg => Math.hypot(seg.b.x - seg.a.x, seg.b.y - seg.a.y) > 2);
       };
-      const layoutPolyPointToVector2 = (pt) => new THREE.Vector2((Number(pt?.x||0)-bounds.cx)*scale, -(Number(pt?.y||0)-bounds.cy)*scale);
+      const getSegmentNormal = (seg) => {
+        if(seg?.autoZoneEdge && seg.zoneId && Number.isFinite(seg.edgeIndex)){
+          const zone = findZoneById(seg.zoneId);
+          if(zone?.pts?.[seg.edgeIndex] && zone?.pts?.[(seg.edgeIndex + 1) % zone.pts.length]){
+            const a = zone.pts[seg.edgeIndex];
+            const b = zone.pts[(seg.edgeIndex + 1) % zone.pts.length];
+            const n = getZoneOutwardEdgeNormal(zone, a, b);
+            return { x:n.x * getWallSideSign(seg.side), y:n.y * getWallSideSign(seg.side) };
+          }
+        }
+        const dx = Number(seg.b?.x||0) - Number(seg.a?.x||0);
+        const dy = Number(seg.b?.y||0) - Number(seg.a?.y||0);
+        const len = Math.hypot(dx, dy) || 1;
+        return { x:-dy/len, y:dx/len };
+      };
       const buildWallGroup = (segments=[], activeZoneIds=new Set()) => {
         const group = new THREE.Group();
         if(!segments.length) return group;
         segments.forEach(seg => {
           const dx = Number(seg.b?.x||0) - Number(seg.a?.x||0);
           const dy = Number(seg.b?.y||0) - Number(seg.a?.y||0);
-          const length = Math.hypot(dx, dy) * scale;
+          const rawLengthUnits = Math.hypot(dx, dy);
+          const length = rawLengthUnits * scale;
           if(length <= .08) return;
           const isActive = [...(seg.zoneIds || [])].some(id => activeZoneIds.has(id));
           const wallCut = !!appState.ui?.nav3DWallCut;
           const baseHeight = Math.max(2.8, (Number(seg.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
           const height = wallCut ? Math.min(1.25, baseHeight) : baseHeight;
-          const thickness = Math.max(.24, (Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS) * scale);
+          const thicknessUnits = Math.max(8, Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS);
+          const thickness = Math.max(.24, thicknessUnits * scale);
+          const extend = seg.autoZoneEdge ? Math.min(thicknessUnits * .48, Math.max(5, rawLengthUnits * .025)) : 0;
+          const n = getSegmentNormal(seg);
+          const midX = (Number(seg.a?.x||0) + Number(seg.b?.x||0))/2 + n.x * (thicknessUnits / 2);
+          const midY = (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2 + n.y * (thicknessUnits / 2);
+          const mid = toWorld(midX, midY, 0);
+          // Three.js maps local X to world (cosθ, -sinθ). Layout Y maps to world Z, so θ must be negative.
+          const angle = -Math.atan2(dy, dx);
           const wallMat = new THREE.MeshStandardMaterial({
             color:isActive ? 0xf2f7fb : 0xb8c8d8,
             transparent:true,
-            opacity:wallCut ? (isActive ? .52 : .30) : (isActive ? .90 : .54),
+            opacity:wallCut ? (isActive ? .58 : .34) : (isActive ? .96 : .66),
             roughness:.78,
-            metalness:.03,
-            side:THREE.DoubleSide
+            metalness:.03
           });
-          const autoPoly = seg.autoZoneEdge ? getAutoWallPolygon(seg.raw) : null;
-          if(Array.isArray(autoPoly) && autoPoly.length >= 4){
-            const shape = new THREE.Shape(autoPoly.map(layoutPolyPointToVector2));
-            const geom = new THREE.ExtrudeGeometry(shape, { depth:height, bevelEnabled:false, steps:1 });
-            geom.rotateX(Math.PI / 2);
-            geom.translate(0, height, 0);
-            const wall = new THREE.Mesh(geom, wallMat);
-            wall.castShadow = isActive;
-            wall.receiveShadow = true;
-            group.add(wall);
-            const edges = new THREE.LineSegments(
-              new THREE.EdgesGeometry(geom),
-              new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:isActive ? .56 : .22 })
-            );
-            group.add(edges);
-            return;
-          }
-          const mid = toWorld((Number(seg.a?.x||0) + Number(seg.b?.x||0))/2, (Number(seg.a?.y||0) + Number(seg.b?.y||0))/2, 0);
-          const angle = Math.atan2(dy, dx);
-          const wall = new THREE.Mesh(new THREE.BoxGeometry(length, height, thickness), wallMat);
+          const wall = new THREE.Mesh(new THREE.BoxGeometry(length + extend * 2 * scale, height, thickness), wallMat);
           wall.position.set(mid.x, height/2, mid.z);
           wall.rotation.y = angle;
-          wall.castShadow = isActive;
+          wall.castShadow = true;
           wall.receiveShadow = true;
+          wall.userData.wallId = seg.id || '';
           group.add(wall);
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(wall.geometry),
-            new THREE.LineBasicMaterial({ color:isActive ? 0xd8f5ff : 0xb8cfe1, transparent:true, opacity:isActive ? .56 : .22 })
+            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .34 })
           );
           edges.position.copy(wall.position);
           edges.rotation.copy(wall.rotation);
@@ -7060,7 +7065,6 @@ function getSheetBranchOpenMap(){
         });
         return group;
       };
-
       const makeZoneMaterials = (active=false) => ({
         floor: new THREE.MeshStandardMaterial({ color:active ? 0x18394b : visual.floor, roughness:.56, metalness:.15, transparent:true, opacity:active ? .54 : .07, side:THREE.DoubleSide, depthWrite:active }),
         overlay: new THREE.MeshBasicMaterial({ color:active ? 0x43e68c : 0x8eb3ca, transparent:true, opacity:active ? (ui.visual === 'oscuro' ? .08 : .12) : .014, side:THREE.DoubleSide, depthWrite:false }),
