@@ -1,4 +1,4 @@
-WMS Industrial v85
+WMS Industrial v84
 
 Mejoras aplicadas en vanos:
 - Vanos representados como hueco real en 3D, sin sólido fantasma.
@@ -8,25 +8,14 @@ Mejoras aplicadas en vanos:
 - ZIP limpio con solo archivos necesarios de la app.
 
 
-Mejoras v85:
-- Visual de vanos rediseñada tipo plano técnico limpio.
-- Vano seleccionado con cuerpo oscuro, borde verde, handles circulares y control central de movimiento.
-- Etiqueta tipo callout con conector y cotas compactas en metros/centímetros.
-- Se eliminó el texto grande de “inicio” que se montaba sobre el plano.
+Actualización v89 FORCE:
+- Esta versión parte del ZIP v84 que seguía cargando el modelo antiguo con rombos.
+- Reemplacé directamente el renderer viejo de puertas en assets/app-main.runtimefix.js.
+- Mantengo los nombres antiguos app-main.runtimefix.js/app.css y también agrego copias v89 para evitar que se cargue otra versión.
+- Las puertas ahora se dibujan como panel rectangular técnico del modelo imagen 2.
 
-
-Actualización v86:
-- Visualización de vanos actualizada a diseño Opción 2.
-- Se agregó cache-busting en CSS/JS para evitar que el navegador cargue la versión anterior.
-
-
-Actualización v87:
-- Las puertas ya no se grafican como vano delgado embebido.
-- Ahora se renderizan con el modelo visual de la imagen 2: panel técnico rectangular, callout lateral, ancho superior y altura lateral.
-- Se actualizó el versionado de assets para forzar recarga correcta del navegador.
-
-
-Actualización v88:
-- Se renombraron físicamente los assets JS/CSS para bloquear caché vieja.
-- La puerta se grafica como panel rectangular técnico del modelo imagen 2, no como línea delgada con rombos.
-- Si no ves el cambio, el deployment está cargando otro ZIP o una versión anterior.
+Actualización v90:
+- Corrección forzada de puertas: el renderer ya no debe mostrar el modelo delgado con rombos.
+- Botón visible “Guardar layout” agregado en la barra superior y como botón flotante dentro del canvas.
+- Badge visible: “v90 puertas modelo 2” para confirmar que se cargó el ZIP correcto.
+- Solo quedan app-main.runtimefix.js y app.css para evitar que se cargue un asset duplicado.

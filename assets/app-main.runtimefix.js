@@ -1,3 +1,4 @@
+/* WMS_V90_FORCE_PUERTAS_MODELO_2_GUARDAR_LAYOUT */
 /* WMS_V89_FORCE_FROM_V84: reemplazo real del renderer v84 de vanos/puertas */
 (() => {
   const $ = (s,el=document)=>el.querySelector(s);
@@ -10303,6 +10304,7 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
+    document.body.dataset.wmsLayoutVersion = 'v90-puertas-modelo-2';
     ensureLayoutEditorState();
     if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
     ensureRackProps();
@@ -10335,6 +10337,8 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
+            <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
+            <span class="v90-version-badge">v90 puertas modelo 2</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10354,6 +10358,7 @@ function getSheetBranchOpenMap(){
                     <span>Rejilla: <b>${formatUnitNumber(getSnapSize() / Math.max(1, getSnapSize()) * 0.25)} m</b></span>
                     <button class="seg-btn" id="btnZoomOut">−</button><span class="zoom-chip" id="zoomLabel">100%</span><button class="seg-btn" id="btnZoomIn">+</button>
                   </div>
+                  <button class="v90-floating-save-layout" id="btnSaveLayoutFloat" type="button">Guardar layout</button>
                   <div id="layoutStackMenu" class="layout-stack-overlay"></div>
                 </div>
                 <div id="layoutSectionWrap" class="v80-section-floating"></div>
@@ -10963,13 +10968,13 @@ function getSheetBranchOpenMap(){
       const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const isDoor = type === 'door';
+      const isDoor = (type === 'door' || !type || String(type).toLowerCase().includes('puerta') || String(opening.type || '').toLowerCase().includes('door') || String(opening.type || '').toLowerCase().includes('puerta'));
       const card = isDoor ? doorCardRect(
         seg.center,
         dir,
         normal,
-        clampOpeningCardSize(opening.height, 148, 80, 320),
-        clampOpeningCardSize(opening.width, 90, 55, 220)
+        clampOpeningCardSize(opening.visualHeight || 148, 148, 120, 260),
+        clampOpeningCardSize(opening.width, 90, 70, 160)
       ) : null;
       const hitPoly = card?.poly?.length ? card.poly : poly;
       const hitPath = hitPoly.length >= 4 ? svgEl('path',{ d:wallPolygonPath(hitPoly), fill:'rgba(0,0,0,.001)', stroke:'transparent', 'stroke-width':'12', style:'cursor:grab' }) : null;
@@ -11418,6 +11423,8 @@ function zoomLayout(factor, center){
     const runSaveLayout = async () => { persistActiveLayout(); if(await saveRemoteAppState('layout')) alert('Layout guardado.'); };
     if($('#btnSaveLayoutRemote')) $('#btnSaveLayoutRemote').onclick = runSaveLayout;
     if($('#btnSaveLayoutTop')) $('#btnSaveLayoutTop').onclick = runSaveLayout;
+    if($('#btnSaveLayoutVisible')) $('#btnSaveLayoutVisible').onclick = runSaveLayout;
+    if($('#btnSaveLayoutFloat')) $('#btnSaveLayoutFloat').onclick = runSaveLayout;
     if($('#btnZoomIn')) $('#btnZoomIn').onclick = () => zoomLayout(0.86);
     if($('#btnZoomOut')) $('#btnZoomOut').onclick = () => zoomLayout(1.16);
     if($('#btnZoomFit')) $('#btnZoomFit').onclick = () => { fitLayoutViewBox(); renderLayoutEditor(); };
