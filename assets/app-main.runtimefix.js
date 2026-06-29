@@ -10870,6 +10870,66 @@ function getSheetBranchOpenMap(){
       wallLayer.appendChild(label);
     });
 
+    const openingTypeName = type => {
+      const kind = normalizeOpeningType(type);
+      if(kind === 'window') return 'VENTANA';
+      if(kind === 'gate') return 'PORTÓN';
+      if(kind === 'free') return 'VANO';
+      return 'PUERTA';
+    };
+    const openingAccentForType = (type, selected=false) => selected ? '#36f58d' : (normalizeOpeningType(type) === 'window' ? '#53e7ff' : normalizeOpeningType(type) === 'free' ? '#c7fff0' : '#36f58d');
+    const appendOpeningMeasure = (a, b, dir, side, value, title, selected=true) => {
+      if(!a || !b || !dir || !side) return;
+      const isVertical = Math.abs(dir.y) > Math.abs(dir.x);
+      const offset = selected ? 36 : 26;
+      const pA = { x:a.x + side.x*offset, y:a.y + side.y*offset };
+      const pB = { x:b.x + side.x*offset, y:b.y + side.y*offset };
+      const color = selected ? '#ffa728' : 'rgba(255,167,40,.72)';
+      const extOpacity = selected ? '.92' : '.55';
+      const dimLine = svgEl('line',{x1:pA.x,y1:pA.y,x2:pB.x,y2:pB.y,class:'opening-dim-line',stroke:color,'stroke-width':selected?'1.8':'1.2',opacity:selected?'.98':'.66'});
+      const extA = svgEl('line',{x1:a.x,y1:a.y,x2:pA.x,y2:pA.y,class:'opening-dim-ext',stroke:color,'stroke-width':'1.1','stroke-dasharray':'4 4',opacity:extOpacity});
+      const extB = svgEl('line',{x1:b.x,y1:b.y,x2:pB.x,y2:pB.y,class:'opening-dim-ext',stroke:color,'stroke-width':'1.1','stroke-dasharray':'4 4',opacity:extOpacity});
+      const tick = 5;
+      const n = { x:-dir.y, y:dir.x };
+      const tA = svgEl('line',{x1:pA.x-n.x*tick,y1:pA.y-n.y*tick,x2:pA.x+n.x*tick,y2:pA.y+n.y*tick,stroke:color,'stroke-width':'1.8',opacity:'.95'});
+      const tB = svgEl('line',{x1:pB.x-n.x*tick,y1:pB.y-n.y*tick,x2:pB.x+n.x*tick,y2:pB.y+n.y*tick,stroke:color,'stroke-width':'1.8',opacity:'.95'});
+      openingLayer.append(extA, extB, dimLine, tA, tB);
+      const mid = { x:(pA.x+pB.x)/2, y:(pA.y+pB.y)/2 };
+      const txtAnchor = isVertical ? (side.x >= 0 ? 'start' : 'end') : 'middle';
+      const tx = isVertical ? mid.x + (side.x >= 0 ? 10 : -10) : mid.x;
+      const ty = isVertical ? mid.y - 4 : mid.y + (side.y >= 0 ? 18 : -12);
+      const labelMain = svgEl('text',{x:tx,y:ty,class:'opening-dim-text','text-anchor':txtAnchor,style:`font-size:${selected?13:11}px`});
+      labelMain.textContent = formatDistanceCm(value);
+      const labelSub = svgEl('text',{x:tx,y:ty+14,class:'opening-dim-title','text-anchor':txtAnchor,style:`font-size:${selected?9:8}px`});
+      labelSub.textContent = title;
+      openingLayer.append(labelMain, labelSub);
+    };
+    const appendOpeningPill = (opening, seg, footprint, type, accentColor) => {
+      const normal = footprint?.normal || getWallOpeningNormal(findWallById(opening.wallId));
+      const dir = normal || {x:0,y:-1};
+      const text = openingTypeName(type);
+      const pillW = Math.max(72, Math.min(104, 42 + text.length * 7));
+      const pillH = 24;
+      const offset = Math.max(34, Number(findWallById(opening.wallId)?.thickness || 14) + 42);
+      const cx = seg.center.x + dir.x * offset;
+      const cy = seg.center.y + dir.y * offset;
+      const x = cx - pillW/2;
+      const y = cy - pillH/2;
+      const edgeDist = Math.abs(dir.x) >= Math.abs(dir.y) ? (pillW/2 + 2) : (pillH/2 + 2);
+      const from = { x:cx - dir.x*edgeDist, y:cy - dir.y*edgeDist };
+      const elbow = { x:from.x - dir.x*13, y:from.y - dir.y*13 };
+      const to = { x:seg.center.x + dir.x*7, y:seg.center.y + dir.y*7 };
+      const g = svgEl('g',{class:'opening-callout',style:'cursor:grab'});
+      const connector = svgEl('polyline',{points:`${from.x},${from.y} ${elbow.x},${elbow.y} ${to.x},${to.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.3',opacity:'.92'});
+      const rect = svgEl('rect',{x,y,width:pillW,height:pillH,rx:'9',fill:'rgba(7,25,36,.96)',stroke:accentColor,'stroke-width':'1.6'});
+      const dot = svgEl('circle',{cx:x+14,cy:cy,r:'4.5',fill:accentColor,stroke:'rgba(3,20,15,.8)','stroke-width':'1'});
+      const label = svgEl('text',{x:x+26,y:cy+4,class:'opening-pill-text',style:'font-size:11px'});
+      label.textContent = text;
+      g.append(connector, rect, dot, label);
+      g.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+      openingLayer.appendChild(g);
+    };
+
     (appState.layout.openings || []).forEach(opening => {
       const wall = findWallById(opening.wallId);
       const seg = getOpeningSegment(opening, wall);
@@ -10877,59 +10937,73 @@ function getSheetBranchOpenMap(){
       const selected = appState.selectedOpeningId === opening.id;
       const footprint = getOpeningFootprint(opening, wall, 1);
       const type = normalizeOpeningType(opening.type);
-      const accentColor = selected ? '#7dffaf' : (type === 'window' ? '#53e7ff' : type === 'free' ? '#c7fff0' : '#ffd66f');
+      const accentColor = openingAccentForType(type, selected);
       const dir = wallDirection(wall);
+      const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const hitPath = poly.length >= 4 ? svgEl('path',{ d:wallPolygonPath(poly), fill:'rgba(0,0,0,.001)', stroke:'transparent', 'stroke-width':'8', style:'cursor:grab' }) : null;
+      const hitPath = poly.length >= 4 ? svgEl('path',{ d:wallPolygonPath(poly), fill:'rgba(0,0,0,.001)', stroke:'transparent', 'stroke-width':'12', style:'cursor:grab' }) : null;
       if(hitPath){
         hitPath.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(hitPath);
       }
-      const jambStyle = `cursor:grab`;
+
+      if(poly.length >= 4){
+        const panel = svgEl('path',{
+          d:wallPolygonPath(poly),
+          class:'opening-void-body' + (selected ? ' selected' : ''),
+          fill:selected ? 'rgba(7,26,39,.90)' : 'rgba(4,16,26,.58)',
+          stroke:accentColor,
+          'stroke-width':selected?'2.3':'1.25',
+          opacity:selected?'.99':'.82',
+          style:'cursor:grab'
+        });
+        panel.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(panel);
+      }
+
       if(p0 && p3){
-        const jambA = svgEl('line',{x1:p0.x,y1:p0.y,x2:p3.x,y2:p3.y,stroke:accentColor,'stroke-width':selected?'2.6':'1.8',opacity:selected?'.98':'.86',style:jambStyle});
+        const jambA = svgEl('line',{x1:p0.x,y1:p0.y,x2:p3.x,y2:p3.y,class:'opening-jamb',stroke:accentColor,'stroke-width':selected?'2.2':'1.45',opacity:selected?'.96':'.74',style:'cursor:grab'});
         jambA.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(jambA);
       }
       if(p1 && p2){
-        const jambB = svgEl('line',{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,stroke:accentColor,'stroke-width':selected?'2.6':'1.8',opacity:selected?'.98':'.86',style:jambStyle});
+        const jambB = svgEl('line',{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,class:'opening-jamb',stroke:accentColor,'stroke-width':selected?'2.2':'1.45',opacity:selected?'.96':'.74',style:'cursor:grab'});
         jambB.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(jambB);
       }
       if(type === 'window' && p0 && p1 && p2 && p3){
         const midA = { x:(p0.x + p3.x) / 2, y:(p0.y + p3.y) / 2 };
         const midB = { x:(p1.x + p2.x) / 2, y:(p1.y + p2.y) / 2 };
-        const glass = svgEl('line',{x1:midA.x,y1:midA.y,x2:midB.x,y2:midB.y,stroke:accentColor,'stroke-width':'1.2','stroke-dasharray':'5 3',opacity:selected?'.9':'.65',style:jambStyle});
+        const glass = svgEl('line',{x1:midA.x,y1:midA.y,x2:midB.x,y2:midB.y,class:'opening-window-glass',stroke:accentColor,'stroke-width':'1.3','stroke-dasharray':'6 4',opacity:selected?'.86':'.55',style:'cursor:grab'});
         glass.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(glass);
       }
+
       if(selected){
-        if(poly.length >= 4){
-          openingLayer.appendChild(svgEl('path',{ d:wallPolygonPath(poly), fill:'none', stroke:accentColor, 'stroke-width':'1.5', 'stroke-dasharray':'5 4', opacity:'.92' }));
-        }
-        const handleR = 7;
-        const center = svgEl('circle',{cx:seg.center.x,cy:seg.center.y,r:'8',fill:'#7dffaf',stroke:'#05251c','stroke-width':'2.2',style:'cursor:grab'});
-        center.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
-        const hA = svgEl('rect',{x:seg.a.x-handleR,y:seg.a.y-handleR,width:handleR*2,height:handleR*2,rx:'4',fill:'#071a27',stroke:'#7dffaf','stroke-width':'2.2',transform:`rotate(45 ${seg.a.x} ${seg.a.y})`,style:'cursor:ew-resize'});
-        const hB = svgEl('rect',{x:seg.b.x-handleR,y:seg.b.y-handleR,width:handleR*2,height:handleR*2,rx:'4',fill:'#071a27',stroke:'#7dffaf','stroke-width':'2.2',transform:`rotate(45 ${seg.b.x} ${seg.b.y})`,style:'cursor:ew-resize'});
-        hA.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-start'));
-        hB.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-end'));
-        openingLayer.append(hA,hB,center);
+        appendOpeningPill(opening, seg, footprint, type, accentColor);
         const info = getOpeningPositionInfo(opening, wall);
         if(info){
-          const normal = footprint?.normal || getWallOpeningNormal(wall);
-          const offsetBase = Math.max(18, Number(wall.thickness || 14) + 24);
-          const yA = { x:seg.a.x + normal.x*offsetBase, y:seg.a.y + normal.y*offsetBase };
-          const yB = { x:seg.b.x + normal.x*offsetBase, y:seg.b.y + normal.y*offsetBase };
-          openingLayer.appendChild(svgEl('line',{x1:yA.x,y1:yA.y,x2:yB.x,y2:yB.y,stroke:'#7dffaf','stroke-width':'1.4','stroke-dasharray':'5 4',opacity:'.95'}));
-          const label = svgEl('text',{x:(yA.x+yB.x)/2,y:(yA.y+yB.y)/2 - 8,class:'ortho-dim-text','text-anchor':'middle',style:'font-size:12px;fill:#7dffaf;font-weight:900;paint-order:stroke;stroke:#06131e;stroke-width:3px'});
-          label.textContent = `${formatDistanceShort(info.width)} · ${type === 'window' ? 'ventana' : type === 'gate' ? 'portón' : type === 'free' ? 'vano' : 'puerta'}`;
-          openingLayer.appendChild(label);
-          const leftLabel = svgEl('text',{x:seg.a.x - dir.x*24 + normal.x*(offsetBase+8),y:seg.a.y - dir.y*24 + normal.y*(offsetBase+8),class:'ortho-dim-text','text-anchor':'middle',style:'font-size:10px;fill:#b8ffe6'});
-          leftLabel.textContent = `${formatDistanceShort(info.left)} inicio`;
-          openingLayer.appendChild(leftLabel);
+          const dimSide = { x:-normal.x, y:-normal.y };
+          const verticalInPlan = Math.abs(dir.y) > Math.abs(dir.x);
+          appendOpeningMeasure(seg.a, seg.b, dir, dimSide, info.width, verticalInPlan ? 'ALTURA' : 'ANCHO', true);
         }
+        const handleR = 6.8;
+        const hA = svgEl('circle',{cx:seg.a.x,cy:seg.a.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});
+        const hB = svgEl('circle',{cx:seg.b.x,cy:seg.b.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});
+        hA.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-start'));
+        hB.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-end'));
+        openingLayer.append(hA,hB);
+        const center = svgEl('g',{class:'opening-move-handle',style:'cursor:grab'});
+        center.appendChild(svgEl('circle',{cx:seg.center.x,cy:seg.center.y,r:'13',fill:'#4cff9b',stroke:'#06251a','stroke-width':'2.2'}));
+        center.appendChild(svgEl('line',{x1:seg.center.x-6,y1:seg.center.y,x2:seg.center.x+6,y2:seg.center.y,stroke:'#063020','stroke-width':'2.2','stroke-linecap':'round'}));
+        center.appendChild(svgEl('line',{x1:seg.center.x,y1:seg.center.y-6,x2:seg.center.x,y2:seg.center.y+6,stroke:'#063020','stroke-width':'2.2','stroke-linecap':'round'}));
+        center.appendChild(svgEl('path',{d:`M ${seg.center.x-8} ${seg.center.y} L ${seg.center.x-4} ${seg.center.y-3} L ${seg.center.x-4} ${seg.center.y+3} Z`,fill:'#063020'}));
+        center.appendChild(svgEl('path',{d:`M ${seg.center.x+8} ${seg.center.y} L ${seg.center.x+4} ${seg.center.y-3} L ${seg.center.x+4} ${seg.center.y+3} Z`,fill:'#063020'}));
+        center.appendChild(svgEl('path',{d:`M ${seg.center.x} ${seg.center.y-8} L ${seg.center.x-3} ${seg.center.y-4} L ${seg.center.x+3} ${seg.center.y-4} Z`,fill:'#063020'}));
+        center.appendChild(svgEl('path',{d:`M ${seg.center.x} ${seg.center.y+8} L ${seg.center.x-3} ${seg.center.y+4} L ${seg.center.x+3} ${seg.center.y+4} Z`,fill:'#063020'}));
+        center.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(center);
       }
     });
 
