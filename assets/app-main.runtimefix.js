@@ -1,4 +1,4 @@
-/* WMS_V90_FORCE_PUERTAS_MODELO_2_GUARDAR_LAYOUT */
+/* WMS_V91_FIX_PUBLIC_RENDERER_SAVE_LAYOUT */
 /* WMS_V89_FORCE_FROM_V84: reemplazo real del renderer v84 de vanos/puertas */
 (() => {
   const $ = (s,el=document)=>el.querySelector(s);
@@ -10020,7 +10020,7 @@ function getSheetBranchOpenMap(){
       return `<path d="${escapeHtml(d)}" class="mini-zone ${active?'active':''}" fill="${escapeHtml(hexToRgba(zone.color||'#6ff0a8', active ? .32 : .16))}" stroke="${escapeHtml(zone.color||'#6ff0a8')}"/>`;
     }).join('');
     const walls = (appState.layout.walls||[]).map(w => `<line x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke="${w.id===appState.selectedWallId?'#ffd66f':'#d7e5f5'}" stroke-width="${Math.max(2, Number(w.thickness||12)/4)}" stroke-linecap="round" opacity=".9"/>`).join('');
-    const openings = (appState.layout.openings||[]).map(o => { const wall=(appState.layout.walls||[]).find(w=>w.id===o.wallId); if(!wall) return ''; const seg=getOpeningSegment(o, wall); if(!seg) return ''; return `<line x1="${seg.a.x}" y1="${seg.a.y}" x2="${seg.b.x}" y2="${seg.b.y}" stroke="${o.id===appState.selectedOpeningId?'#7dffaf':'#5bf3d0'}" stroke-width="3" stroke-linecap="round"/>`; }).join('');
+    const openings = (appState.layout.openings||[]).map(o => { const wall=(appState.layout.walls||[]).find(w=>w.id===o.wallId); if(!wall) return ''; const seg=getOpeningSegment(o, wall); if(!seg) return ''; const d=wallDirection(wall); const n=getWallOpeningNormal(wall); const w=Math.max(28, Number(o.width||90)||90); const h=Math.max(48, Math.min(120, Number(o.visualHeight||80)||80)); const a={x:seg.center.x-d.x*h/2-n.x*w/2,y:seg.center.y-d.y*h/2-n.y*w/2}; const b={x:seg.center.x-d.x*h/2+n.x*w/2,y:seg.center.y-d.y*h/2+n.y*w/2}; const c={x:seg.center.x+d.x*h/2+n.x*w/2,y:seg.center.y+d.y*h/2+n.y*w/2}; const e={x:seg.center.x+d.x*h/2-n.x*w/2,y:seg.center.y+d.y*h/2-n.y*w/2}; return `<path d="M ${a.x} ${a.y} L ${b.x} ${b.y} L ${c.x} ${c.y} L ${e.x} ${e.y} Z" fill="rgba(8,27,40,.92)" stroke="${o.id===appState.selectedOpeningId?'#7dffaf':'#5bf3d0'}" stroke-width="2"/>`; }).join('');
     const racks = (appState.layout.racks||[]).map(r => `<rect x="${r.x}" y="${r.y}" width="${Math.max(2,r.w)}" height="${Math.max(2,r.h)}" rx="4" class="mini-rack ${r.id===appState.selectedRackLayoutId?'active':''}"/>`).join('');
     return `<svg class="layout-mini-svg" viewBox="${vb}">${zones}${walls}${openings}${racks}</svg>`;
   }
@@ -10304,7 +10304,7 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v90-puertas-modelo-2';
+    document.body.dataset.wmsLayoutVersion = 'v91-puertas-modelo-2';
     ensureLayoutEditorState();
     if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
     ensureRackProps();
@@ -10338,7 +10338,7 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
-            <span class="v90-version-badge">v90 puertas modelo 2</span>
+            <span class="v90-version-badge">v91 puertas modelo 2</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10784,8 +10784,8 @@ function getSheetBranchOpenMap(){
           edgeLineHit.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) edgeLineHit.style.pointerEvents='none';
           edgeLayer.appendChild(edgeLineHit);
           if(activeEdge) edgeLayer.appendChild(svgEl('line',{x1:p.x,y1:p.y,x2:q.x,y2:q.y,class:'edge-guide'}));
-          const hitBox = svgEl('rect',{x:hx-12,y:hy-12,width:24,height:24,rx:8,class:'edge-hit',transform:`rotate(45 ${hx} ${hy})`});
-          const handle = svgEl('rect',{x:hx-8,y:hy-8,width:16,height:16,rx:5,class:'edge-handle' + (activeEdge ? ' active' : ''),transform:`rotate(45 ${hx} ${hy})`});
+          const hitBox = svgEl('circle',{cx:hx,cy:hy,r:14,class:'edge-hit'});
+          const handle = svgEl('circle',{cx:hx,cy:hy,r:8,class:'edge-handle' + (activeEdge ? ' active' : '')});
           [hitBox, handle].forEach(el => { el.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
           edgeLayer.appendChild(hitBox);
           edgeLayer.appendChild(handle);
@@ -10968,7 +10968,7 @@ function getSheetBranchOpenMap(){
       const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const isDoor = (type === 'door' || !type || String(type).toLowerCase().includes('puerta') || String(opening.type || '').toLowerCase().includes('door') || String(opening.type || '').toLowerCase().includes('puerta'));
+      const isDoor = true; // v91: todos los vanos usan el render rectangular modelo 2
       const card = isDoor ? doorCardRect(
         seg.center,
         dir,
@@ -11030,7 +11030,7 @@ function getSheetBranchOpenMap(){
           appendOpeningPill(opening, labelAnchor, labelDir, type, accentColor);
           appendOpeningMeasure(card.topLeft, card.topRight, normal, { x:-dir.x, y:-dir.y }, Number(opening.width || 90) || 90, '', true, 18);
           const hSide = Math.abs(dir.y) > Math.abs(dir.x) ? {x:1,y:0} : {x:0,y:-1};
-          appendOpeningMeasure(card.topRight, card.bottomRight, dir, hSide, Number(opening.height || 148) || 148, 'ALTURA', true, 22);
+          appendOpeningMeasure(card.topRight, card.bottomRight, dir, hSide, Number(opening.visualHeight || 148) || 148, 'ALTURA', true, 22);
           const handleR = 6.8;
           const hA = svgEl('circle',{cx:card.topCenter.x,cy:card.topCenter.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});
           const hB = svgEl('circle',{cx:card.bottomCenter.x,cy:card.bottomCenter.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});

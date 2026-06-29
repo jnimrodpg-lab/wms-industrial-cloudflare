@@ -19,3 +19,12 @@ Actualización v90:
 - Botón visible “Guardar layout” agregado en la barra superior y como botón flotante dentro del canvas.
 - Badge visible: “v90 puertas modelo 2” para confirmar que se cargó el ZIP correcto.
 - Solo quedan app-main.runtimefix.js y app.css para evitar que se cargue un asset duplicado.
+
+
+Actualización v91 - auditoría completa:
+- Falla encontrada: wrangler.toml publica desde public/, pero el ZIP no incluía carpeta public/. En Cloudflare podía no desplegar los cambios reales.
+- Se agregó public/ con index, assets y _redirects, manteniendo también archivos en raíz para apertura local.
+- Se eliminó la representación vieja tipo línea/rombos de los vanos y se fuerza el render rectangular modelo imagen 2 para todos los vanos.
+- Se reemplazaron los rombos de aristas por círculos para que no parezcan puertas antiguas.
+- Botón Guardar layout visible en barra superior y flotante.
+- Badge visible v91 puertas modelo 2 para validar la versión cargada.
