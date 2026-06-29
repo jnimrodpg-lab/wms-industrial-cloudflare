@@ -24,3 +24,9 @@ Actualización v87:
 - Las puertas ya no se grafican como vano delgado embebido.
 - Ahora se renderizan con el modelo visual de la imagen 2: panel técnico rectangular, callout lateral, ancho superior y altura lateral.
 - Se actualizó el versionado de assets para forzar recarga correcta del navegador.
+
+
+Actualización v88:
+- Se renombraron físicamente los assets JS/CSS para bloquear caché vieja.
+- La puerta se grafica como panel rectangular técnico del modelo imagen 2, no como línea delgada con rombos.
+- Si no ves el cambio, el deployment está cargando otro ZIP o una versión anterior.
