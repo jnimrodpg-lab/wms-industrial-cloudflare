@@ -10870,6 +10870,7 @@ function getSheetBranchOpenMap(){
       wallLayer.appendChild(label);
     });
 
+    // v86 - vanos visual opción 2 (panel técnico, callout, handles y cotas)
     const openingTypeName = type => {
       const kind = normalizeOpeningType(type);
       if(kind === 'window') return 'VENTANA';

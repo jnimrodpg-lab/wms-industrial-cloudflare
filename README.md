@@ -13,3 +13,8 @@ Mejoras v85:
 - Vano seleccionado con cuerpo oscuro, borde verde, handles circulares y control central de movimiento.
 - Etiqueta tipo callout con conector y cotas compactas en metros/centímetros.
 - Se eliminó el texto grande de “inicio” que se montaba sobre el plano.
+
+
+Actualización v86:
+- Visualización de vanos actualizada a diseño Opción 2.
+- Se agregó cache-busting en CSS/JS para evitar que el navegador cargue la versión anterior.

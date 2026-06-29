@@ -5450,7 +5450,7 @@ body.theme-light .brand-box{
 #layoutSvg [style*="cursor:grab"], #layoutSvg [style*="cursor:ew-resize"]{transition:opacity .12s ease, filter .12s ease}
 #layoutSvg [style*="cursor:grab"]:hover, #layoutSvg [style*="cursor:ew-resize"]:hover{filter:drop-shadow(0 0 6px rgba(125,255,175,.6))}
 
-/* v85 - vanos: visual tipo plano técnico limpio */
+/* v86 - vanos visual opción 2: panel técnico limpio */
 #layoutSvg .opening-void-body{
   vector-effect:non-scaling-stroke;
   filter:drop-shadow(0 1px 6px rgba(0,0,0,.28));
