@@ -28,3 +28,9 @@ Actualización v91 - auditoría completa:
 - Se reemplazaron los rombos de aristas por círculos para que no parezcan puertas antiguas.
 - Botón Guardar layout visible en barra superior y flotante.
 - Badge visible v91 puertas modelo 2 para validar la versión cargada.
+
+
+Actualización v92:
+- El ancho visual de la abertura ahora usa el espesor del muro como máximo.
+- El ancho visual mínimo es la mitad del espesor del muro.
+- La cota superior del vano muestra ese ancho visual corregido.

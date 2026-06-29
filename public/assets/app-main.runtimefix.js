@@ -10968,13 +10968,17 @@ function getSheetBranchOpenMap(){
       const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const isDoor = true; // v91: todos los vanos usan el render rectangular modelo 2
+      const isDoor = true; // v92: todos los vanos usan el render rectangular modelo 2
+      const wallThickness = Math.max(8, Number(wall?.thickness || opening.depth || 14) || 14);
+      const doorCardWidthMin = Math.max(8, wallThickness / 2);
+      const doorCardWidthMax = Math.max(doorCardWidthMin, wallThickness);
+      const doorCardWidth = clampOpeningCardSize(opening.depth || wallThickness, wallThickness, doorCardWidthMin, doorCardWidthMax);
       const card = isDoor ? doorCardRect(
         seg.center,
         dir,
         normal,
         clampOpeningCardSize(opening.visualHeight || 148, 148, 120, 260),
-        clampOpeningCardSize(opening.width, 90, 70, 160)
+        doorCardWidth
       ) : null;
       const hitPoly = card?.poly?.length ? card.poly : poly;
       const hitPath = hitPoly.length >= 4 ? svgEl('path',{ d:wallPolygonPath(hitPoly), fill:'rgba(0,0,0,.001)', stroke:'transparent', 'stroke-width':'12', style:'cursor:grab' }) : null;
@@ -11028,7 +11032,7 @@ function getSheetBranchOpenMap(){
             ? (labelDir.x < 0 ? card.leftCenter : card.rightCenter)
             : (labelDir.y < 0 ? card.topCenter : card.bottomCenter);
           appendOpeningPill(opening, labelAnchor, labelDir, type, accentColor);
-          appendOpeningMeasure(card.topLeft, card.topRight, normal, { x:-dir.x, y:-dir.y }, Number(opening.width || 90) || 90, '', true, 18);
+          appendOpeningMeasure(card.topLeft, card.topRight, normal, { x:-dir.x, y:-dir.y }, doorCardWidth, '', true, 18);
           const hSide = Math.abs(dir.y) > Math.abs(dir.x) ? {x:1,y:0} : {x:0,y:-1};
           appendOpeningMeasure(card.topRight, card.bottomRight, dir, hSide, Number(opening.visualHeight || 148) || 148, 'ALTURA', true, 22);
           const handleR = 6.8;
