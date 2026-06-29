@@ -7163,14 +7163,14 @@ function getSheetBranchOpenMap(){
               if(openingTop < height - .035){
                 addWallMesh(group, makeWallBandGeometry(seg, safeT0, safeT1, openingTop, height, thicknessUnits), wallMat, isActive, seg.id);
               }
-              if(o.type === 'window'){
+              if(normalizeOpeningType(o.type) === 'window'){
                 const midY = Math.min(height - .05, Math.max(.08, (sill + openingTop) / 2));
                 const panelH = Math.max(.12, Math.min(openingTop - sill, height) * .86);
                 const geo = makeWallBandGeometry(seg, safeT0+.015, safeT1-.015, midY - panelH/2, midY + panelH/2, Math.max(4, thicknessUnits * .28));
                 addWallMesh(group, geo, glassMat, true, o.id);
                 addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.018, safeT1), sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
                 addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.018, safeT0), safeT1, sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
-              } else {
+              } else if(normalizeOpeningType(o.type) !== 'free'){
                 const leafGeo = makeWallBandGeometry(seg, safeT0+.025, Math.min(safeT1, safeT0+.06), 0, Math.min(openingTop, height), Math.max(4, thicknessUnits * .20));
                 addWallMesh(group, leafGeo, leafMat, true, o.id);
                 addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.016, safeT1), 0, openingTop, Math.max(6, thicknessUnits*.58)), leafMat, true, o.id);
@@ -9711,6 +9711,93 @@ function getSheetBranchOpenMap(){
       ]
     };
   }
+
+  function normalizeOpeningType(type){
+    if(type === 'window') return 'window';
+    if(type === 'free' || type === 'open') return 'free';
+    if(type === 'gate') return 'gate';
+    return 'door';
+  }
+  function openingDefaultForType(type){
+    const kind = normalizeOpeningType(type);
+    if(kind === 'window') return { width:120, height:100, sill:90 };
+    if(kind === 'gate') return { width:180, height:240, sill:0 };
+    if(kind === 'free') return { width:120, height:260, sill:0 };
+    return { width:90, height:210, sill:0 };
+  }
+  function getOpeningPositionInfo(opening, wall=findWallById(opening?.wallId)){
+    if(!opening || !wall) return null;
+    const len = Math.max(1, wallLength(wall));
+    const width = Math.max(40, Number(opening.width || openingDefaultForType(opening.type).width) || 90);
+    const t = openingClampT(wall, width, opening.t);
+    const start = Math.max(0, t * len - width / 2);
+    const end = Math.min(len, t * len + width / 2);
+    return { len, width, t, start, end, left:start, right:Math.max(0, len-end), center:t*len };
+  }
+  function setOpeningPositionFromPoint(opening, point, opts={}){
+    const wall = findWallById(opening?.wallId);
+    if(!opening || !wall || !point) return null;
+    const proj = projectPointToSegment(point, {x:Number(wall.x1||0), y:Number(wall.y1||0)}, {x:Number(wall.x2||0), y:Number(wall.y2||0)});
+    const len = Math.max(1, wallLength(wall));
+    const width = Math.max(40, Number(opening.width || openingDefaultForType(opening.type).width) || 90);
+    let dist = proj.t * len;
+    if(opts.snap !== false){
+      const step = Math.max(1, Number(appState.editor?.snapSize || DEFAULT_GRID_SIZE || 2) || 2);
+      dist = Math.round(dist / step) * step;
+    }
+    opening.t = openingClampT(wall, width, dist / len);
+    return opening;
+  }
+  function resizeOpeningFromPoint(opening, point, edge='end'){
+    const wall = findWallById(opening?.wallId);
+    if(!opening || !wall || !point) return null;
+    const len = Math.max(1, wallLength(wall));
+    const info = getOpeningPositionInfo(opening, wall);
+    if(!info) return null;
+    const proj = projectPointToSegment(point, {x:Number(wall.x1||0), y:Number(wall.y1||0)}, {x:Number(wall.x2||0), y:Number(wall.y2||0)});
+    let moving = proj.t * len;
+    const step = Math.max(1, Number(appState.editor?.snapSize || DEFAULT_GRID_SIZE || 2) || 2);
+    moving = Math.round(moving / step) * step;
+    let start = info.start, end = info.end;
+    const minWidth = 40;
+    if(edge === 'start') start = Math.min(end - minWidth, moving);
+    else end = Math.max(start + minWidth, moving);
+    start = Math.max(0, Math.min(len - minWidth, start));
+    end = Math.max(start + minWidth, Math.min(len, end));
+    const width = Math.max(minWidth, Math.min(360, end - start));
+    opening.width = Math.round(width);
+    opening.t = openingClampT(wall, opening.width, ((start + end) / 2) / len);
+    return opening;
+  }
+  function duplicateOpening(opening){
+    const wall = findWallById(opening?.wallId);
+    if(!opening || !wall) return null;
+    const next = clone(opening);
+    next.id = nextOpeningId();
+    const len = Math.max(1, wallLength(wall));
+    const offset = Math.min(.18, Math.max(.08, (Number(next.width || 90) * 1.35) / len));
+    next.t = openingClampT(wall, next.width, Math.min(.98, Number(opening.t || .5) + offset));
+    appState.layout.openings.push(next);
+    appState.selectedOpeningId = next.id;
+    appState.selectedWallId = next.wallId;
+    return next;
+  }
+  function startOpeningDrag(e, openingId, mode='move'){
+    if(appState.editor.mode !== 'select') return;
+    e.stopPropagation();
+    const opening = findOpeningById(openingId);
+    const wall = findWallById(opening?.wallId);
+    if(!opening || !wall) return;
+    const svg = $('#layoutSvg');
+    const p = svgPoint(e, svg);
+    appState.selectedOpeningId = opening.id;
+    appState.selectedWallId = opening.wallId;
+    appState.selectedRackLayoutId = '';
+    closeStackMenu();
+    appState.editor.dragging = { type:'opening', openingId:opening.id, mode, start:p, original:clone(opening) };
+    if(svg) svg.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
+    renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+  }
   function findNearestWallProjection(point, threshold = 22){
     ensureLayoutDecorations();
     let best = null;
@@ -9736,7 +9823,8 @@ function getSheetBranchOpenMap(){
     ensureLayoutDecorations();
     const nearest = findNearestWallProjection(point, 28);
     if(!nearest || !nearest.wall) return null;
-    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:type==='window' ? 120 : 90, height:type==='window' ? 100 : 210, sill:type==='window' ? 90 : 0, type, swing:1 };
+    const def = openingDefaultForType(type);
+    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:def.width, height:def.height, sill:def.sill, type:normalizeOpeningType(type), swing:1 };
     opening.t = openingClampT(nearest.wall, opening.width, opening.t);
     appState.layout.openings.push(opening);
     appState.selectedOpeningId = opening.id;
@@ -9749,7 +9837,8 @@ function getSheetBranchOpenMap(){
     ensureLayoutDecorations();
     const wall = findWallById(wallId);
     if(!wall) return null;
-    const opening = { id:nextOpeningId(), wallId:wall.id, t:.5, width:type==='window' ? 120 : 90, height:type==='window' ? 100 : 210, sill:type==='window' ? 90 : 0, type, swing:1 };
+    const def = openingDefaultForType(type);
+    const opening = { id:nextOpeningId(), wallId:wall.id, t:.5, width:def.width, height:def.height, sill:def.sill, type:normalizeOpeningType(type), swing:1 };
     opening.t = openingClampT(wall, opening.width, opening.t);
     appState.layout.openings.push(opening);
     appState.selectedOpeningId = opening.id;
@@ -10009,20 +10098,24 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="tiny muted" style="margin-top:8px">La pared puede ir por fuera o por dentro de la zona. Los vanos se recortan también en 3D.</div>
         </section>` : ''}
-        ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Abertura</div>
+        ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card opening-editor-card">
+          <div class="layout-prop-title">Vano seleccionado</div>
+          ${(() => { const op=findOpeningById(appState.selectedOpeningId); const wall=findWallById(op?.wallId); const info=getOpeningPositionInfo(op, wall); const type=normalizeOpeningType(op.type); return `<div class="tiny muted" style="margin-bottom:10px">Arrastra el vano sobre el muro o ajusta su posición exacta. ${wall ? `Pared ${escapeHtml(wall.id)}` : ''}</div>
           <div class="layout-prop-grid two">
-            <label>ID<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).id)}" disabled></label>
-            <label>Tipo<select id="rpOpeningType"><option value="door" ${findOpeningById(appState.selectedOpeningId).type!=='window'?'selected':''}>Puerta / vano</option><option value="window" ${findOpeningById(appState.selectedOpeningId).type==='window'?'selected':''}>Ventana</option></select></label>
-            <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="260" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).width||90)}"></label>
-            <label>Alto<input id="rpOpeningHeight" type="number" min="40" max="290" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).height || (findOpeningById(appState.selectedOpeningId).type==='window'?100:210))}"></label>
-            <label>Altura piso<input id="rpOpeningSill" type="number" min="0" max="240" step="5" value="${formatUnitNumber(findOpeningById(appState.selectedOpeningId).sill || 0)}"></label>
-            <label>Posición %<input id="rpOpeningT" type="number" min="1" max="99" step="1" value="${Math.round((findOpeningById(appState.selectedOpeningId).t || .5)*100)}"></label>
-            <label>Pared<input value="${escapeHtml(findOpeningById(appState.selectedOpeningId).wallId||'') }" disabled></label>
+            <label>ID<input value="${escapeHtml(op.id)}" disabled></label>
+            <label>Tipo<select id="rpOpeningType"><option value="door" ${type==='door'?'selected':''}>Puerta</option><option value="window" ${type==='window'?'selected':''}>Ventana</option><option value="free" ${type==='free'?'selected':''}>Vano libre</option><option value="gate" ${type==='gate'?'selected':''}>Portón</option></select></label>
+            <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="360" step="5" value="${formatUnitNumber(op.width||90)}"></label>
+            <label>Alto<input id="rpOpeningHeight" type="number" min="40" max="320" step="5" value="${formatUnitNumber(op.height || openingDefaultForType(type).height)}"></label>
+            <label>Altura piso<input id="rpOpeningSill" type="number" min="0" max="260" step="5" value="${formatUnitNumber(op.sill || 0)}"></label>
+            <label>Posición %<input id="rpOpeningT" type="number" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}"></label>
+            <label>Desde inicio<input id="rpOpeningLeft" type="number" min="0" step="5" value="${info ? formatUnitNumber(info.left) : 0}"></label>
+            <label>Hasta final<input value="${info ? formatUnitNumber(info.right) : 0}" disabled></label>
           </div>
-          <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((findOpeningById(appState.selectedOpeningId).t || .5)*100)}" style="width:100%;margin-top:10px">
-          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpeningCenter">Centrar vano</button><button class="seg-btn" id="rpOpeningDelete">Eliminar vano</button></div>
-          <div class="tiny muted" style="margin-top:8px">La puerta corta desde el piso. La ventana usa altura desde piso y crea antepecho/dintel en 3D.</div>
+          <div class="opening-position-control">
+            <div class="opening-position-line"><span style="left:${Math.max(1,Math.min(99,Math.round((op.t||.5)*100)))}%"></span></div>
+            <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}" style="width:100%;margin-top:10px">
+          </div>
+          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpeningCenter">Centrar</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>` })()}
         </section>` : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
@@ -10135,14 +10228,17 @@ function getSheetBranchOpenMap(){
     if($('#rpWallAddDoor')) $('#rpWallAddDoor').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'door'); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpWallAddWindow')) $('#rpWallAddWindow').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'window'); persistActiveLayout(); renderLayoutEditor(); };
     const persistOpeningUpdate = () => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; selectedOpening.type = e.target.value === 'window' ? 'window' : 'door'; if(selectedOpening.type === 'window'){ if(Number(selectedOpening.width || 0) < 100) selectedOpening.width = 120; if(!Number(selectedOpening.height)) selectedOpening.height = 100; if(Number(selectedOpening.sill || 0) < 80) selectedOpening.sill = 90; } else { selectedOpening.sill = 0; if(!Number(selectedOpening.height)) selectedOpening.height = 210; } persistOpeningUpdate(); };
-    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(260, Number(e.target.value || 90) || 90)); persistOpeningUpdate(); };
-    if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(290, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
-    if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = selectedOpening.type === 'window' ? Math.max(0, Math.min(240, Number(e.target.value || 0) || 0)) : 0; persistOpeningUpdate(); };
+    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; selectedOpening.height = def.height; selectedOpening.sill = def.sill; persistOpeningUpdate(); };
+    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(360, Number(e.target.value || 90) || 90)); persistOpeningUpdate(); };
+    if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(320, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
+    if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = (normalizeOpeningType(selectedOpening.type) === 'window') ? Math.max(0, Math.min(260, Number(e.target.value || 0) || 0)) : Math.max(0, Math.min(80, Number(e.target.value || 0) || 0)); persistOpeningUpdate(); };
     const setOpeningPositionPct = value => { if(!selectedOpening) return; selectedOpening.t = Math.max(.01, Math.min(.99, (Number(value || 50) || 50) / 100)); persistOpeningUpdate(); };
     if($('#rpOpeningT')) $('#rpOpeningT').onchange = e => setOpeningPositionPct(e.target.value);
     if($('#rpOpeningSlider')) $('#rpOpeningSlider').oninput = e => { if($('#rpOpeningT')) $('#rpOpeningT').value = e.target.value; setOpeningPositionPct(e.target.value); };
+    if($('#rpOpeningLeft')) $('#rpOpeningLeft').onchange = e => { if(!selectedOpening) return; const wall=findWallById(selectedOpening.wallId); if(!wall) return; const len=Math.max(1, wallLength(wall)); const width=Math.max(40, Number(selectedOpening.width||90)||90); const left=Math.max(0, Math.min(len-width, Number(e.target.value||0)||0)); selectedOpening.t = openingClampT(wall, width, (left + width/2) / len); persistOpeningUpdate(); };
     if($('#rpOpeningCenter')) $('#rpOpeningCenter').onclick = () => setOpeningPositionPct(50);
+    if($('#rpOpeningDuplicate')) $('#rpOpeningDuplicate').onclick = () => { if(!selectedOpening) return; duplicateOpening(selectedOpening); persistActiveLayout(); renderLayoutEditor(); };
+    if($('#rpOpeningFlip')) $('#rpOpeningFlip').onclick = () => { if(!selectedOpening) return; selectedOpening.swing = Number(selectedOpening.swing || 1) * -1; persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningDelete')) $('#rpOpeningDelete').onclick = () => { if(!selectedOpening) return; appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== selectedOpening.id); appState.selectedOpeningId = ''; persistActiveLayout(); renderLayoutEditor(); };
 
     if($('#tplZoneRack')) $('#tplZoneRack').onclick = addZoneWithRackTemplate;
@@ -10713,47 +10809,71 @@ function getSheetBranchOpenMap(){
       const seg = getOpeningSegment(opening, wall);
       if(!wall || !seg) return;
       const selected = appState.selectedOpeningId === opening.id;
-      const footprint = getOpeningFootprint(opening, wall, 1.42);
-      const cutFill = selected ? 'rgba(10,25,38,.98)' : 'rgba(7,19,31,.96)';
-      const accentColor = selected ? '#7dffaf' : (opening.type === 'window' ? '#53e7ff' : '#ffd66f');
-      const selectOpening = evt => {
-        evt.stopPropagation();
-        appState.selectedOpeningId = opening.id;
-        appState.selectedWallId = opening.wallId;
-        appState.selectedRackLayoutId = '';
-        renderLayoutEditor();
-      };
+      const footprint = getOpeningFootprint(opening, wall, selected ? 1.68 : 1.42);
+      const type = normalizeOpeningType(opening.type);
+      const cutFill = selected ? 'rgba(9,28,42,.99)' : 'rgba(7,19,31,.96)';
+      const accentColor = selected ? '#7dffaf' : (type === 'window' ? '#53e7ff' : type === 'free' ? '#c7fff0' : '#ffd66f');
+      const normal = getWallOpeningNormal(wall);
+      const dir = wallDirection(wall);
+      const thickness = Math.max(8, Number(wall.thickness || 14) || 14);
       if(footprint?.poly){
         const d = wallPolygonPath(footprint.poly);
-        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.4':'1.8',opacity:'1',style:'cursor:pointer'});
-        cut.addEventListener('pointerdown', selectOpening);
+        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.8':'1.8',opacity:'1',style:'cursor:grab'});
+        cut.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(cut);
       }
-      const normal = getWallOpeningNormal(wall);
-      const thickness = Math.max(8, Number(wall.thickness || 14) || 14);
-      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(4, thickness * .36)),'stroke-linecap':'round',opacity:'.98',style:'cursor:pointer'});
-      accent.addEventListener('pointerdown', selectOpening);
+      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(4, thickness * .36)),'stroke-linecap':'round',opacity:'.98',style:'cursor:grab'});
+      accent.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
       openingLayer.appendChild(accent);
-      if(opening.type === 'window'){
+      if(type === 'window'){
         const off = Math.max(5, thickness * .46);
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95'}));
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95'}));
-      } else {
-        const dir = wallDirection(wall);
+        const l1 = svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95',style:'cursor:grab'});
+        const l2 = svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95',style:'cursor:grab'});
+        [l1,l2].forEach(el => el.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move')));
+        openingLayer.append(l1,l2);
+      } else if(type !== 'free'){
+        const side = Number(opening.swing || 1) >= 0 ? 1 : -1;
         const doorLen = Math.max(18, Math.min(Number(opening.width || 90) * .55, 56));
-        const leafEnd = { x:seg.a.x + normal.x * doorLen, y:seg.a.y + normal.y * doorLen };
-        const arcMid = { x:seg.a.x + dir.x * (doorLen*.82) + normal.x * (doorLen*.82), y:seg.a.y + dir.y * (doorLen*.82) + normal.y * (doorLen*.82) };
-        openingLayer.appendChild(svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.4',opacity:'.95'}));
-        openingLayer.appendChild(svgEl('path',{d:`M ${seg.a.x} ${seg.a.y} Q ${arcMid.x} ${arcMid.y} ${seg.b.x} ${seg.b.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.9','stroke-dasharray':'4 4',opacity:'.9'}));
+        const hinge = side >= 0 ? seg.a : seg.b;
+        const swingDir = side >= 0 ? 1 : -1;
+        const leafEnd = { x:hinge.x + normal.x * doorLen, y:hinge.y + normal.y * doorLen };
+        const arcEnd = side >= 0 ? seg.b : seg.a;
+        const arcMid = { x:hinge.x + dir.x * doorLen * .82 * swingDir + normal.x * (doorLen*.82), y:hinge.y + dir.y * doorLen * .82 * swingDir + normal.y * (doorLen*.82) };
+        openingLayer.appendChild(svgEl('line',{x1:hinge.x,y1:hinge.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.4',opacity:'.95'}));
+        openingLayer.appendChild(svgEl('path',{d:`M ${hinge.x} ${hinge.y} Q ${arcMid.x} ${arcMid.y} ${arcEnd.x} ${arcEnd.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.9','stroke-dasharray':'4 4',opacity:'.9'}));
       }
-      const tagW = opening.type === 'window' ? 58 : 48;
+      if(selected){
+        const handleR = 7;
+        const center = svgEl('circle',{cx:seg.center.x,cy:seg.center.y,r:'8',fill:'#7dffaf',stroke:'#05251c','stroke-width':'2.2',style:'cursor:grab'});
+        center.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        const hA = svgEl('rect',{x:seg.a.x-handleR,y:seg.a.y-handleR,width:handleR*2,height:handleR*2,rx:'4',fill:'#071a27',stroke:'#7dffaf','stroke-width':'2.2',transform:`rotate(45 ${seg.a.x} ${seg.a.y})`,style:'cursor:ew-resize'});
+        const hB = svgEl('rect',{x:seg.b.x-handleR,y:seg.b.y-handleR,width:handleR*2,height:handleR*2,rx:'4',fill:'#071a27',stroke:'#7dffaf','stroke-width':'2.2',transform:`rotate(45 ${seg.b.x} ${seg.b.y})`,style:'cursor:ew-resize'});
+        hA.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-start'));
+        hB.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'resize-end'));
+        openingLayer.append(hA,hB,center);
+        const info = getOpeningPositionInfo(opening, wall);
+        if(info){
+          const dimOff = thickness + 38;
+          const yA = { x:seg.a.x + normal.x*dimOff, y:seg.a.y + normal.y*dimOff };
+          const yB = { x:seg.b.x + normal.x*dimOff, y:seg.b.y + normal.y*dimOff };
+          openingLayer.appendChild(svgEl('line',{x1:yA.x,y1:yA.y,x2:yB.x,y2:yB.y,stroke:'#7dffaf','stroke-width':'1.4','stroke-dasharray':'5 4',opacity:'.95'}));
+          const label = svgEl('text',{x:(yA.x+yB.x)/2,y:(yA.y+yB.y)/2 - 8,class:'ortho-dim-text','text-anchor':'middle',style:'font-size:12px;fill:#7dffaf;font-weight:900;paint-order:stroke;stroke:#06131e;stroke-width:3px'});
+          label.textContent = formatDistanceShort(info.width);
+          openingLayer.appendChild(label);
+          const leftLabel = svgEl('text',{x:seg.a.x - dir.x*24 + normal.x*(dimOff+8),y:seg.a.y - dir.y*24 + normal.y*(dimOff+8),class:'ortho-dim-text','text-anchor':'middle',style:'font-size:10px;fill:#b8ffe6'});
+          leftLabel.textContent = `${formatDistanceShort(info.left)} inicio`;
+          openingLayer.appendChild(leftLabel);
+        }
+      }
+      const tagW = type === 'window' ? 58 : type === 'free' ? 62 : type === 'gate' ? 56 : 48;
       const labelX = seg.center.x + normal.x * (thickness + 20) - tagW/2;
       const labelY = seg.center.y + normal.y * (thickness + 20) - 10;
-      const tag = svgEl('g',{transform:`translate(${labelX} ${labelY})`,style:'pointer-events:none'});
+      const tag = svgEl('g',{transform:`translate(${labelX} ${labelY})`,style:selected?'cursor:grab':'pointer-events:none'});
       tag.appendChild(svgEl('rect',{x:0,y:0,width:tagW,height:20,rx:10,fill:selected?'rgba(125,255,175,.96)':'rgba(6,18,30,.94)',stroke:accentColor,'stroke-width':'1.2'}));
       const t = svgEl('text',{x:tagW/2,y:13,'text-anchor':'middle',style:`font-size:9px;font-weight:900;fill:${selected?'#062016':'#eafff9'};pointer-events:none`});
-      t.textContent = opening.type === 'window' ? 'VENTANA' : 'PUERTA';
+      t.textContent = type === 'window' ? 'VENTANA' : type === 'free' ? 'VANO' : type === 'gate' ? 'PORTÓN' : 'PUERTA';
       tag.appendChild(t);
+      if(selected) tag.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
       openingLayer.appendChild(tag);
     });
 
@@ -11416,6 +11536,14 @@ function zoomLayout(factor, center){
         d.moved = true;
         renderLayoutSvg(svg); renderLayoutSection();
       }
+    } else if(d.type === 'opening'){
+      const opening = findOpeningById(d.openingId);
+      if(!opening) return;
+      if(d.mode === 'resize-start') resizeOpeningFromPoint(opening, p, 'start');
+      else if(d.mode === 'resize-end') resizeOpeningFromPoint(opening, p, 'end');
+      else setOpeningPositionFromPoint(opening, p);
+      clearRackSnapPreview();
+      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'rack'){
       const rack = findRackById(d.rackId);
       const rawDX = p.x - d.start.x;

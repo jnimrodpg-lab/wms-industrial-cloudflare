@@ -5435,3 +5435,17 @@ body.theme-light .brand-box{
   .layout-cad-v80 .v80-right-panel{max-height:420px}
   .layout-cad-v80 .v80-section-floating{position:relative;left:auto;bottom:auto;transform:none;width:auto;margin-top:12px}
 }
+/* v81 - vanos CAD interactivos */
+.opening-editor-card{border-color:rgba(125,255,175,.28)!important;box-shadow:0 0 0 1px rgba(125,255,175,.08),0 16px 40px rgba(0,0,0,.22)}
+.opening-position-control{margin-top:12px;padding:10px 12px;border:1px solid rgba(125,255,175,.18);border-radius:14px;background:rgba(5,18,28,.45)}
+.opening-position-line{height:8px;border-radius:999px;background:linear-gradient(90deg,rgba(125,255,175,.18),rgba(83,231,255,.12));position:relative;overflow:visible}
+.opening-position-line span{position:absolute;top:50%;width:14px;height:14px;border-radius:999px;background:#7dffaf;border:2px solid #062016;transform:translate(-50%,-50%);box-shadow:0 0 16px rgba(125,255,175,.55)}
+#layoutSvg [style*="cursor:grab"], #layoutSvg [style*="cursor:ew-resize"]{transition:opacity .12s ease, filter .12s ease}
+#layoutSvg [style*="cursor:grab"]:hover, #layoutSvg [style*="cursor:ew-resize"]:hover{filter:drop-shadow(0 0 6px rgba(125,255,175,.6))}
+/* v81 - vanos CAD interactivos */
+.opening-editor-card{border-color:rgba(125,255,175,.28)!important;box-shadow:0 0 0 1px rgba(125,255,175,.08),0 16px 40px rgba(0,0,0,.22)}
+.opening-position-control{margin-top:12px;padding:10px 12px;border:1px solid rgba(125,255,175,.18);border-radius:14px;background:rgba(5,18,28,.45)}
+.opening-position-line{height:8px;border-radius:999px;background:linear-gradient(90deg,rgba(125,255,175,.18),rgba(83,231,255,.12));position:relative;overflow:visible}
+.opening-position-line span{position:absolute;top:50%;width:14px;height:14px;border-radius:999px;background:#7dffaf;border:2px solid #062016;transform:translate(-50%,-50%);box-shadow:0 0 16px rgba(125,255,175,.55)}
+#layoutSvg [style*="cursor:grab"], #layoutSvg [style*="cursor:ew-resize"]{transition:opacity .12s ease, filter .12s ease}
+#layoutSvg [style*="cursor:grab"]:hover, #layoutSvg [style*="cursor:ew-resize"]:hover{filter:drop-shadow(0 0 6px rgba(125,255,175,.6))}
