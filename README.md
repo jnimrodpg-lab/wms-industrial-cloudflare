@@ -18,3 +18,9 @@ Mejoras v85:
 Actualización v86:
 - Visualización de vanos actualizada a diseño Opción 2.
 - Se agregó cache-busting en CSS/JS para evitar que el navegador cargue la versión anterior.
+
+
+Actualización v87:
+- Las puertas ya no se grafican como vano delgado embebido.
+- Ahora se renderizan con el modelo visual de la imagen 2: panel técnico rectangular, callout lateral, ancho superior y altura lateral.
+- Se actualizó el versionado de assets para forzar recarga correcta del navegador.
