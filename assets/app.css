@@ -5335,3 +5335,103 @@ body.theme-light .brand-box{
   .nav3d-webgl-mode .nav3d-product-card{width:min(228px,calc(100% - 32px))}
   .nav3d-webgl-mode .nav3d-minimap{width:210px}
 }
+
+/* ===== V80: Layout CAD focus organization (based on selected Option 4) ===== */
+.layout-cad-v80{
+  --v80-bg:#071019;
+  --v80-panel:rgba(10,18,28,.86);
+  --v80-panel-2:rgba(11,22,34,.94);
+  --v80-line:rgba(155,205,230,.10);
+  --v80-green:#55df92;
+  --v80-green-soft:rgba(85,223,146,.13);
+  --v80-text:#edf7ff;
+  --v80-muted:#91a8ba;
+}
+.layout-cad-v80 .layout-cad-shell-v80{
+  height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;
+  padding:12px 14px 14px;background:linear-gradient(180deg,rgba(8,14,22,.42),rgba(7,12,18,.18));
+}
+.layout-cad-v80 .layout-cad-localbar-v80{
+  min-height:54px;display:flex;align-items:center;gap:12px;padding:0 2px;
+}
+.layout-cad-v80 .v80-zone-btn{min-width:100px;height:44px;border-radius:14px;font-weight:850;background:linear-gradient(180deg,#42a572,#2c835f)!important;border-color:rgba(117,255,169,.22)!important;box-shadow:0 12px 26px rgba(44,131,95,.25)}
+.layout-cad-v80 .v80-branch-select{min-width:178px;height:44px;border-radius:14px;padding:0 16px;background:rgba(13,25,38,.86)}
+.layout-cad-v80 .v80-unit-select{width:72px;height:44px;border-radius:14px;background:rgba(13,25,38,.86)}
+.layout-cad-v80 .v80-icon-btn{width:46px;height:44px;border-radius:14px;font-size:16px;display:grid;place-items:center;padding:0!important;background:rgba(13,25,38,.72)}
+.layout-cad-v80 .layout-cad-workspace-v80{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,350px);gap:16px;align-items:stretch;}
+.layout-cad-v80 .v80-main-stage{min-height:0;display:block;position:relative;}
+.layout-cad-v80 .v80-canvas-wrap{position:relative;height:100%;min-height:0;}
+.layout-cad-v80 .v80-canvas-card{
+  height:100%;min-height:0;border-radius:24px!important;overflow:hidden!important;
+  background:linear-gradient(180deg,#0b1621,#080f17)!important;border:1px solid rgba(127,177,205,.11)!important;
+  box-shadow:0 24px 56px rgba(0,0,0,.32), inset 0 0 0 1px rgba(255,255,255,.024);
+}
+.layout-cad-v80 .v80-canvas-card::before{
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.018),rgba(255,255,255,0)),
+    radial-gradient(circle at 55% 36%,rgba(85,223,146,.05),transparent 28%),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 1px,transparent 1px 18px),
+    repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 18px),
+    linear-gradient(180deg,#0f1a23,#09121a)!important;
+  opacity:1!important;
+}
+.layout-cad-v80 .v80-canvas-card::after{display:none!important}
+.layout-cad-v80 #layoutSvg{width:100%;height:100%;position:relative;z-index:1;}
+.layout-cad-v80 .v80-tool-rail{
+  position:absolute;left:18px;top:22px;z-index:5;width:94px;padding:12px 8px;display:grid;gap:8px;
+  border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,rgba(10,19,30,.92),rgba(6,12,20,.96));
+  box-shadow:0 22px 42px rgba(0,0,0,.36),inset 0 0 0 1px rgba(255,255,255,.025);backdrop-filter:blur(14px);
+}
+.layout-cad-v80 .v80-tool-btn.seg-btn{
+  width:100%;min-height:72px;border-radius:16px;border:0!important;background:transparent!important;box-shadow:none!important;color:#e7f2fb!important;
+  display:grid;place-items:center;gap:5px;text-align:center;padding:8px 4px!important;font-size:11px;line-height:1.08;font-weight:800;
+}
+.layout-cad-v80 .v80-tool-btn:hover,.layout-cad-v80 .v80-tool-btn.active{background:rgba(85,223,146,.10)!important;color:#dffff0!important}
+.layout-cad-v80 .v80-tool-ico{width:32px;height:32px;border:1px solid rgba(130,255,183,.55);border-radius:8px;display:grid;place-items:center;color:#55df92;font-size:19px;line-height:1}
+.layout-cad-v80 .v80-minimap-card{
+  position:absolute;right:18px;top:18px;z-index:4;width:154px;border-radius:16px;padding:10px;background:rgba(8,17,27,.78);border:1px solid rgba(255,255,255,.08);box-shadow:0 18px 34px rgba(0,0,0,.28);backdrop-filter:blur(12px)
+}
+.layout-cad-v80 .v80-minimap-title{font-size:11px;font-weight:850;letter-spacing:.04em;margin-bottom:8px;color:#c8d7e4}
+.layout-cad-v80 .v80-minimap-card .layout-mini-svg{height:92px!important;min-height:92px!important;border-radius:10px;background:rgba(3,9,15,.45)}
+.layout-cad-v80 .v80-minimap-card .layout-prop-title{display:none}
+.layout-cad-v80 .v80-canvas-footer{
+  position:absolute;left:18px;right:18px;bottom:12px;z-index:4;height:42px;display:flex;align-items:center;gap:10px;color:#b8ccd9;font-size:12px;
+  pointer-events:none;
+}
+.layout-cad-v80 .v80-canvas-footer span,.layout-cad-v80 .v80-canvas-footer .zoom-chip,.layout-cad-v80 .v80-canvas-footer .seg-btn{
+  pointer-events:auto;border:1px solid rgba(255,255,255,.07);background:rgba(7,16,25,.72);border-radius:12px;padding:8px 12px;min-height:auto;color:#dcebf5;
+}
+.layout-cad-v80 .v80-canvas-footer .seg-btn{width:36px;padding:8px 0;text-align:center}
+.layout-cad-v80 .v80-canvas-footer .zoom-chip{font-weight:800;min-width:70px;text-align:center}
+.layout-cad-v80 .v80-right-panel{
+  border-radius:24px;overflow:hidden;border:1px solid rgba(129,185,213,.10);background:linear-gradient(180deg,rgba(10,20,31,.92),rgba(7,13,21,.98));box-shadow:0 24px 54px rgba(0,0,0,.30);
+}
+.layout-cad-v80 .v80-right-panel .layout-right-head{padding:16px 18px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.01));}
+.layout-cad-v80 .v80-right-panel .layout-right-head b{font-size:14px;text-transform:uppercase;letter-spacing:.08em}
+.layout-cad-v80 .v80-right-panel .layout-right-scroll{padding:14px;display:grid;gap:12px;overflow:auto}
+.layout-cad-v80 .v80-right-panel .layout-prop-card{border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));border:1px solid rgba(255,255,255,.065);box-shadow:none}
+.layout-cad-v80 .v80-right-panel .layout-prop-title{font-size:11px;color:#c4d4e1;letter-spacing:.09em;text-transform:uppercase}
+.layout-cad-v80 .v80-section-floating{
+  position:absolute;left:50%;bottom:24px;z-index:6;width:min(640px,58vw);transform:translateX(-50%);
+  pointer-events:auto;
+}
+.layout-cad-v80 .v80-section-floating .layout-section-wrap{
+  margin:0;border-radius:22px;border:1px solid rgba(94,230,146,.25);background:linear-gradient(180deg,rgba(12,25,35,.9),rgba(6,13,21,.96));box-shadow:0 26px 64px rgba(0,0,0,.42),0 0 0 1px rgba(255,255,255,.02);backdrop-filter:blur(16px)
+}
+.layout-cad-v80 .v80-section-floating .layout-section-head{padding:13px 16px;border-bottom:0;background:transparent;cursor:grab}
+.layout-cad-v80 .v80-section-floating .layout-section-title{font-size:13px;text-transform:uppercase;letter-spacing:.08em}
+.layout-cad-v80 .v80-section-floating .layout-section-sub{font-size:11px}
+.layout-cad-v80 .v80-section-floating .layout-section-body{padding:0 14px 14px}
+.layout-cad-v80 .v80-section-floating .layout-section-grid{grid-template-columns:1fr 1fr;gap:12px}
+.layout-cad-v80 .v80-section-floating .layout-section-card svg{min-height:118px;height:126px}
+.layout-cad-v80 .v80-hidden-actions{position:absolute!important;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;left:-9999px;top:-9999px}
+.layout-cad-v80 #layoutStackMenu{z-index:12}
+@media (max-width: 1300px){
+  .layout-cad-v80 .layout-cad-workspace-v80{grid-template-columns:minmax(0,1fr) minmax(280px,320px)}
+  .layout-cad-v80 .v80-section-floating{width:min(560px,62vw)}
+}
+@media (max-width: 980px){
+  .layout-cad-v80 .layout-cad-workspace-v80{grid-template-columns:1fr;grid-template-rows:minmax(520px,1fr) auto}
+  .layout-cad-v80 .v80-right-panel{max-height:420px}
+  .layout-cad-v80 .v80-section-floating{position:relative;left:auto;bottom:auto;transform:none;width:auto;margin-top:12px}
+}

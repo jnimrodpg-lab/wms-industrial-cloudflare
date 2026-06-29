@@ -10170,93 +10170,68 @@ function getSheetBranchOpenMap(){
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = 'Vista ortogonal editable: selecciona aristas de zona y conviértelas en paredes.';
+    contentSubtitle.textContent = 'Vista ortogonal editable · Modo CAD';
     detailTitle.textContent = 'Edición de layout';
     detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
     setTags([
       { label:'↶ Undo', active: true, action:'history-undo-layout', extraClass:'history-chip' },
       { label:'↷ Redo', active: true, action:'history-redo-layout', extraClass:'history-chip' },
-      { label:'Seleccionar', active: appState.editor.mode === 'select', action:'toggle-select' },
       { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
-      { label:'Bloquear zonas', active: !!appState.editor.zonesLocked, action:'toggle-lock-zones' },
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
-      { label:'Paredes 3D', active: appState.editor.wallsVisible !== false, action:'toggle-walls' },
-      { label:'Vanos', active: appState.editor.openingsVisible !== false, action:'toggle-openings' },
-      { label:'Racks', active: appState.editor.racksVisible !== false, action:'toggle-racks' },
-      { label:'Capas', active: true, action:'noop-layers' },
-      { label:'Propiedades', active: appState.editor.rightPanelOpen !== false, action:'toggle-right-props' }
+      { label:'Opción 4', active: true, action:'toggle-right-props' }
     ]);
 
     contentWrap.innerHTML = `
-      <div class="stage layout-premium-render" style="position:relative;height:100%">
-        <div id="layoutHeaderCards" class="layout-header-cards"></div>
-        <div class="layout-shell layout-shell-with-right ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''}">
-          <aside class="layout-inner-sidebar">
-            <div class="layout-tool-top">
-              <div class="save-strip" style="display:grid;gap:8px"><button class="btn primary" id="btnSaveLayoutTop">Guardar layout</button></div>
-              <select id="layoutBranchSelect" class="seg-btn" style="width:100%;padding-right:28px">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
-            </div>
-            <div class="layout-tool-list">
-              <div class="layout-tool-group">
-                <div class="layout-tool-group-title">Edición de layout</div>
-                <button class="seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlus">Agregar zona</button>
-                <button class="seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus">Agregar puerta / ventana</button>
-                <button class="seg-btn" id="btnDuplicateZone">Duplicar zona</button>
-                <button class="seg-btn" id="btnVertexPlus">Agregar vértice</button>
-                <button class="seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack">Agregar rack</button>
-                <button class="seg-btn" id="btnDuplicateRack">Duplicar rack</button>
-                <button class="seg-btn" id="btnDeleteSelected">Eliminar selección</button>
-                <button class="seg-btn" id="btnSaveLayoutRemote">Guardar layout</button>
-                ${selectedRack ? `
-                <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
-                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido rack</div>
-                <div class="tag-row">
-                  <button class="seg-btn quick-angle" data-angle="45">45°</button>
-                  <button class="seg-btn quick-angle" data-angle="90">90°</button>
-                </div>` : ''}
-                ${(!selectedRack && appState.selectedZoneId) ? `
-                <div style="height:1px;background:rgba(255,255,255,.08);margin:4px 0"></div>
-                <div class="layout-tool-group-title" style="margin-top:2px">Giro rápido zona</div>
-                <div class="tag-row">
-                  <button class="seg-btn quick-zone-angle" data-angle="-15">-15°</button>
-                  <button class="seg-btn quick-zone-angle" data-angle="15">15°</button>
-                  <button class="seg-btn quick-zone-angle" data-angle="90">90°</button>
-                </div>` : ''}
-              </div>
-              <div id="layoutSidebarInspector"></div>
-              <div class="layout-tool-group" style="margin-top:2px">
-                <div class="layout-tool-group-title">Snap / precisión</div>
-                <label class="layout-check-row"><input type="checkbox" id="layoutSnapEnabled" ${isSnapEnabled()?'checked':''}> Snap activo</label>
-                <div class="layout-inline-2">
-                  <label class="layout-mini-field">Snap<input id="layoutSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
-                  <label class="layout-mini-field">Cotas<input id="layoutDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
-                </div>
-                <div class="tiny muted">Usa 1–2 para máxima precisión.</div>
-              </div>
-              <div class="layout-tool-group" style="margin-top:2px">
-                <div class="layout-tool-group-title">Zoom</div>
-                <div class="layout-inline-3">
-                  <button class="seg-btn" id="btnZoomOut">−</button>
-                  <div class="zoom-chip" id="zoomLabel">100%</div>
-                  <button class="seg-btn" id="btnZoomIn">+</button>
-                </div>
-                <button class="seg-btn" id="btnZoomFit">Ajustar</button>
-              </div>
-            </div>
-          </aside>
-          <div class="layout-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
-            <div class="layout-canvas-wrap">
-              <div class="layout-canvas-card detail-stage"><svg id="layoutSvg"></svg></div>
-              <div id="layoutStackMenu" class="layout-stack-overlay"></div>
-            </div>
-            <div id="layoutSectionWrap"></div>
+      <div class="stage layout-premium-render layout-cad-v80" style="position:relative;height:100%">
+        <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''}">
+          <div class="layout-cad-localbar-v80">
+            <button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>
+            <select id="layoutBranchSelect" class="seg-btn v80-branch-select">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
+            <select class="seg-btn v80-unit-select" aria-label="Unidades"><option>m</option><option>cm</option></select>
+            <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
+            <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
+            <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
           </div>
-          <aside id="layoutRightPanel" class="layout-right-panel">${renderLayoutRightPanelMarkup()}</aside>
+          <div class="layout-cad-workspace-v80">
+            <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
+              <div class="layout-canvas-wrap v80-canvas-wrap">
+                <div class="layout-canvas-card detail-stage v80-canvas-card">
+                  <svg id="layoutSvg"></svg>
+                  <div class="v80-tool-rail" aria-label="Herramientas de layout">
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlusRail" data-tool-proxy="btnZonePlus"><span class="v80-tool-ico">□</span><b>Agregar<br>zona</b></button>
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack"><span class="v80-tool-ico">▤</span><b>Agregar<br>rack</b></button>
+                    <button class="v80-tool-btn seg-btn" data-layout-tag-action="toggle-walls"><span class="v80-tool-ico">▱</span><b>Paredes</b></button>
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus"><span class="v80-tool-ico">▭</span><b>Vanos</b></button>
+                    <button class="v80-tool-btn seg-btn" data-layout-tag-action="toggle-dims"><span class="v80-tool-ico">↔</span><b>Cotas</b></button>
+                  </div>
+                  ${appState.editor.showMiniMap !== false ? `<div class="v80-minimap-card"><div class="v80-minimap-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</div>` : ''}
+                  <div class="v80-canvas-footer">
+                    <span>X: 8.60 m</span><span>Y: 10.20 m</span>
+                    <span>Rejilla: <b>${formatUnitNumber(getSnapSize() / Math.max(1, getSnapSize()) * 0.25)} m</b></span>
+                    <button class="seg-btn" id="btnZoomOut">−</button><span class="zoom-chip" id="zoomLabel">100%</span><button class="seg-btn" id="btnZoomIn">+</button>
+                  </div>
+                  <div id="layoutStackMenu" class="layout-stack-overlay"></div>
+                </div>
+                <div id="layoutSectionWrap" class="v80-section-floating"></div>
+              </div>
+            </main>
+            <aside id="layoutRightPanel" class="layout-right-panel v80-right-panel">${renderLayoutRightPanelMarkup()}</aside>
+          </div>
+          <div class="v80-hidden-actions" aria-hidden="true">
+            <button class="seg-btn" id="btnDuplicateZone">Duplicar zona</button>
+            <button class="seg-btn" id="btnVertexPlus">Agregar vértice</button>
+            <button class="seg-btn" id="btnDuplicateRack">Duplicar rack</button>
+            <button class="seg-btn" id="btnDeleteSelected">Eliminar selección</button>
+            <button class="seg-btn" id="btnSaveLayoutTop">Guardar layout</button>
+            <button class="seg-btn" id="btnSaveLayoutRemote">Guardar layout</button>
+            <label><input type="checkbox" id="layoutSnapEnabled" ${isSnapEnabled()?'checked':''}></label>
+            <input id="layoutSnapSize" value="${formatUnitNumber(getSnapSize())}">
+            <input id="layoutDimFontSize" value="${formatUnitNumber(getDimFontSize())}">
+          </div>
         </div>
-      </div>`;
-
+      </div>`
     const svg = $('#layoutSvg');
     const currentBox = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
     if(!appState.editor.viewBoxCustomized || (currentBox.x===0 && currentBox.y===0 && currentBox.w===900 && currentBox.h===620)) fitLayoutViewBox();
@@ -10266,6 +10241,9 @@ function getSheetBranchOpenMap(){
     renderLayoutInspector();
     renderLayoutStackMenu();
     bindLayoutToolbar();
+    document.querySelectorAll('[data-tool-proxy]').forEach(btn => {
+      btn.onclick = () => { const target = document.getElementById(btn.getAttribute('data-tool-proxy')); if(target) target.click(); };
+    });
     bindLayoutRightPanel();
     bindLayoutAutoFit();
     const undoBtn = document.querySelector('[data-history-undo="layout"]'); if(undoBtn) undoBtn.onclick = () => undoHistory('layout');
