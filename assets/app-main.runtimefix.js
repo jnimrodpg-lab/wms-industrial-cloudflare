@@ -9706,7 +9706,7 @@ function getSheetBranchOpenMap(){
     return wallNormal(wall);
   }
 
-  function getOpeningFootprint(opening, wall=findWallById(opening?.wallId), inflate=1.15){
+  function getOpeningFootprint(opening, wall=findWallById(opening?.wallId), inflate=1){
     const seg = getOpeningSegment(opening, wall);
     if(!seg || !wall) return null;
     const n = getWallOpeningNormal(wall);
@@ -10127,7 +10127,8 @@ function getSheetBranchOpenMap(){
             <div class="opening-position-line"><span style="left:${Math.max(1,Math.min(99,Math.round((op.t||.5)*100)))}%"></span></div>
             <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}" style="width:100%;margin-top:10px">
           </div>
-          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpeningCenter">Centrar</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>` })()}
+          <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpening25">25%</button><button class="seg-btn" id="rpOpeningCenter">50%</button><button class="seg-btn" id="rpOpening75">75%</button><button class="seg-btn" id="rpOpeningNudgeLeft">◀ 0.25 m</button><button class="seg-btn" id="rpOpeningNudgeRight">0.25 m ▶</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>
+          <div class="tiny muted" style="margin-top:8px">Tip: arrastra el vano desde el corte oscuro. Usa los rombos para cambiar el ancho sin que salga del muro.</div>` })()}
         </section>` : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
@@ -10248,7 +10249,12 @@ function getSheetBranchOpenMap(){
     if($('#rpOpeningT')) $('#rpOpeningT').onchange = e => setOpeningPositionPct(e.target.value);
     if($('#rpOpeningSlider')) $('#rpOpeningSlider').oninput = e => { if($('#rpOpeningT')) $('#rpOpeningT').value = e.target.value; setOpeningPositionPct(e.target.value); };
     if($('#rpOpeningLeft')) $('#rpOpeningLeft').onchange = e => { if(!selectedOpening) return; const wall=findWallById(selectedOpening.wallId); if(!wall) return; const len=Math.max(1, wallLength(wall)); const width=Math.max(40, Number(selectedOpening.width||90)||90); const left=Math.max(0, Math.min(len-width, Number(e.target.value||0)||0)); selectedOpening.t = openingClampT(wall, width, (left + width/2) / len); persistOpeningUpdate(); };
+    if($('#rpOpening25')) $('#rpOpening25').onclick = () => setOpeningPositionPct(25);
     if($('#rpOpeningCenter')) $('#rpOpeningCenter').onclick = () => setOpeningPositionPct(50);
+    if($('#rpOpening75')) $('#rpOpening75').onclick = () => setOpeningPositionPct(75);
+    const nudgeOpening = delta => { if(!selectedOpening) return; const wall=findWallById(selectedOpening.wallId); if(!wall) return; const len=Math.max(1, wallLength(wall)); const info=getOpeningPositionInfo(selectedOpening, wall); if(!info) return; selectedOpening.t = openingClampT(wall, info.width, (info.center + delta) / len); persistOpeningUpdate(); };
+    if($('#rpOpeningNudgeLeft')) $('#rpOpeningNudgeLeft').onclick = () => nudgeOpening(-25);
+    if($('#rpOpeningNudgeRight')) $('#rpOpeningNudgeRight').onclick = () => nudgeOpening(25);
     if($('#rpOpeningDuplicate')) $('#rpOpeningDuplicate').onclick = () => { if(!selectedOpening) return; duplicateOpening(selectedOpening); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningFlip')) $('#rpOpeningFlip').onclick = () => { if(!selectedOpening) return; selectedOpening.swing = Number(selectedOpening.swing || 1) * -1; persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningDelete')) $('#rpOpeningDelete').onclick = () => { if(!selectedOpening) return; appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== selectedOpening.id); appState.selectedOpeningId = ''; persistActiveLayout(); renderLayoutEditor(); };
@@ -10821,7 +10827,7 @@ function getSheetBranchOpenMap(){
       const seg = getOpeningSegment(opening, wall);
       if(!wall || !seg) return;
       const selected = appState.selectedOpeningId === opening.id;
-      const footprint = getOpeningFootprint(opening, wall, selected ? 1.68 : 1.42);
+      const footprint = getOpeningFootprint(opening, wall, selected ? 1.04 : 1); // v83: el vano queda embebido dentro del espesor real del muro
       const type = normalizeOpeningType(opening.type);
       const cutFill = selected ? 'rgba(9,28,42,.99)' : 'rgba(7,19,31,.96)';
       const accentColor = selected ? '#7dffaf' : (type === 'window' ? '#53e7ff' : type === 'free' ? '#c7fff0' : '#ffd66f');
@@ -10830,11 +10836,11 @@ function getSheetBranchOpenMap(){
       const thickness = Math.max(8, Number(wall.thickness || 14) || 14);
       if(footprint?.poly){
         const d = wallPolygonPath(footprint.poly);
-        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.8':'1.8',opacity:'1',style:'cursor:grab'});
+        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.2':'1.2',opacity:'1',style:'cursor:grab'});
         cut.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
         openingLayer.appendChild(cut);
       }
-      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(4, thickness * .36)),'stroke-linecap':'round',opacity:'.98',style:'cursor:grab'});
+      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(2.2, Math.min(3.4, thickness * .18))),'stroke-linecap':'round',opacity:selected?'.98':'.82',style:'cursor:grab'});
       accent.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
       openingLayer.appendChild(accent);
       const halfTh = Math.max(4, thickness * .5 - 1.2);
@@ -11759,10 +11765,10 @@ function zoomLayout(factor, center){
             <label class="layout-mini-field">Altura 3D<input id="edgeWallHeight" type="number" min="120" max="600" step="10" value="${Math.round(Number(edgeWallCtx.wall?.height || appState.layout?.meta?.defaultWallHeight || 290))}"></label>
           </div>
           <div class="two">
-            <button class="seg-btn" id="btnEdgeAddDoor" ${edgeWallCtx.isWall ? '' : 'disabled'}>Agregar puerta</button>
-            <button class="seg-btn" id="btnEdgeAddWindow" ${edgeWallCtx.isWall ? '' : 'disabled'}>Agregar ventana</button>
+            <button class="seg-btn" id="btnEdgeAddDoor">${edgeWallCtx.isWall ? 'Agregar puerta' : 'Crear pared + puerta'}</button>
+            <button class="seg-btn" id="btnEdgeAddWindow">${edgeWallCtx.isWall ? 'Agregar ventana' : 'Crear pared + ventana'}</button>
           </div>
-          <div class="tiny muted">Selecciona una arista convertida en pared y agrega puertas/ventanas sin tener que buscar el muro manualmente.</div>
+          <div class="tiny muted">Selecciona una arista y agrega el vano directamente. Si todavía no es pared, se convierte automáticamente.</div>
         </div>
       </div>` : ''}
       ${stackOpen ? `
