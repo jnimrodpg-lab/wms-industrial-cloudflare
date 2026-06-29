@@ -7054,7 +7054,7 @@ function getSheetBranchOpenMap(){
         geo.computeBoundingSphere();
         return geo;
       };
-      const makeWallBandGeometry = (seg, t0, t1, y0, y1, thicknessUnits) => {
+      const makeWallBandGeometry = (seg, t0, t1, y0, y1, thicknessUnits, offsetUnits=0) => {
         const height = Math.max(.02, Number(y1 || 0) - Number(y0 || 0));
         if(t1 - t0 <= .002 || height <= .02) return null;
         const ax = Number(seg.a?.x || 0), ay = Number(seg.a?.y || 0);
@@ -7062,7 +7062,13 @@ function getSheetBranchOpenMap(){
         const n = getSegmentNormal(seg);
         const a = { x:ax + (bx-ax)*t0, y:ay + (by-ay)*t0 };
         const b = { x:ax + (bx-ax)*t1, y:ay + (by-ay)*t1 };
-        const footprint = [a, b, { x:b.x + n.x*thicknessUnits, y:b.y + n.y*thicknessUnits }, { x:a.x + n.x*thicknessUnits, y:a.y + n.y*thicknessUnits }];
+        const offset = Number(offsetUnits || 0);
+        const footprint = [
+          { x:a.x + n.x*offset, y:a.y + n.y*offset },
+          { x:b.x + n.x*offset, y:b.y + n.y*offset },
+          { x:b.x + n.x*(offset + thicknessUnits), y:b.y + n.y*(offset + thicknessUnits) },
+          { x:a.x + n.x*(offset + thicknessUnits), y:a.y + n.y*(offset + thicknessUnits) }
+        ];
         const basePts = footprint.map(pt => ({ x:(Number(pt.x || 0)-bounds.cx)*scale, z:(Number(pt.y || 0)-bounds.cy)*scale }));
         const positions = [];
         basePts.forEach(pt => positions.push(pt.x, y0, pt.z));
@@ -7164,17 +7170,23 @@ function getSheetBranchOpenMap(){
                 addWallMesh(group, makeWallBandGeometry(seg, safeT0, safeT1, openingTop, height, thicknessUnits), wallMat, isActive, seg.id);
               }
               if(normalizeOpeningType(o.type) === 'window'){
-                const midY = Math.min(height - .05, Math.max(.08, (sill + openingTop) / 2));
-                const panelH = Math.max(.12, Math.min(openingTop - sill, height) * .86);
-                const geo = makeWallBandGeometry(seg, safeT0+.015, safeT1-.015, midY - panelH/2, midY + panelH/2, Math.max(4, thicknessUnits * .28));
-                addWallMesh(group, geo, glassMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.018, safeT1), sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.018, safeT0), safeT1, sill, openingTop, Math.max(6, thicknessUnits*.55)), glassMat, true, o.id);
+                const frameThickness = Math.max(4, thicknessUnits * .16);
+                const frameOffset = Math.max(0, (thicknessUnits - frameThickness) / 2);
+                const glassThickness = Math.max(2.4, thicknessUnits * .08);
+                const glassOffset = Math.max(0, (thicknessUnits - glassThickness) / 2);
+                const glassY0 = Math.max(sill + .04, sill);
+                const glassY1 = Math.max(glassY0 + .12, openingTop - .04);
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0+.016, safeT1-.016, glassY0, glassY1, glassThickness, glassOffset), glassMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.016, safeT1), sill, openingTop, frameThickness, frameOffset), leafMat, true, o.id);
+                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.016, safeT0), safeT1, sill, openingTop, frameThickness, frameOffset), leafMat, true, o.id);
               } else if(normalizeOpeningType(o.type) !== 'free'){
-                const leafGeo = makeWallBandGeometry(seg, safeT0+.025, Math.min(safeT1, safeT0+.06), 0, Math.min(openingTop, height), Math.max(4, thicknessUnits * .20));
-                addWallMesh(group, leafGeo, leafMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.016, safeT1), 0, openingTop, Math.max(6, thicknessUnits*.58)), leafMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.016, safeT0), safeT1, 0, openingTop, Math.max(6, thicknessUnits*.58)), leafMat, true, o.id);
+                const leafThickness = Math.max(3.2, thicknessUnits * .11);
+                const leafOffset = Math.max(0, (thicknessUnits - leafThickness) / 2);
+                const leafEndT = Math.min(safeT1 - .01, safeT0 + (normalizeOpeningType(o.type) === 'gate' ? .10 : .055));
+                if(leafEndT > safeT0 + .01){
+                  const leafGeo = makeWallBandGeometry(seg, safeT0+.012, leafEndT, 0, Math.min(openingTop, height), leafThickness, leafOffset);
+                  addWallMesh(group, leafGeo, leafMat, true, o.id);
+                }
               }
               cursor = Math.max(cursor, safeT1);
             });
@@ -10825,22 +10837,33 @@ function getSheetBranchOpenMap(){
       const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(4, thickness * .36)),'stroke-linecap':'round',opacity:'.98',style:'cursor:grab'});
       accent.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
       openingLayer.appendChild(accent);
+      const halfTh = Math.max(4, thickness * .5 - 1.2);
+      const detailOff = Math.max(2, Math.min(halfTh - 1.1, thickness * .22));
+      const innerA1 = { x:seg.a.x + normal.x * (-halfTh + detailOff), y:seg.a.y + normal.y * (-halfTh + detailOff) };
+      const innerA2 = { x:seg.a.x + normal.x * (halfTh - detailOff), y:seg.a.y + normal.y * (halfTh - detailOff) };
+      const innerB1 = { x:seg.b.x + normal.x * (-halfTh + detailOff), y:seg.b.y + normal.y * (-halfTh + detailOff) };
+      const innerB2 = { x:seg.b.x + normal.x * (halfTh - detailOff), y:seg.b.y + normal.y * (halfTh - detailOff) };
+      [
+        svgEl('line',{x1:innerA1.x,y1:innerA1.y,x2:innerA2.x,y2:innerA2.y,stroke:accentColor,'stroke-width':'1.6',opacity:selected?'.98':'.80',style:'cursor:grab'}),
+        svgEl('line',{x1:innerB1.x,y1:innerB1.y,x2:innerB2.x,y2:innerB2.y,stroke:accentColor,'stroke-width':'1.6',opacity:selected?'.98':'.80',style:'cursor:grab'})
+      ].forEach(el => { el.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move')); openingLayer.appendChild(el); });
       if(type === 'window'){
-        const off = Math.max(5, thickness * .46);
-        const l1 = svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95',style:'cursor:grab'});
-        const l2 = svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.2',opacity:'.95',style:'cursor:grab'});
+        const off = Math.max(2.2, Math.min(halfTh - .8, thickness * .22));
+        const l1 = svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.1',opacity:'.95',style:'cursor:grab'});
+        const l2 = svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.1',opacity:'.95',style:'cursor:grab'});
         [l1,l2].forEach(el => el.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move')));
         openingLayer.append(l1,l2);
       } else if(type !== 'free'){
         const side = Number(opening.swing || 1) >= 0 ? 1 : -1;
-        const doorLen = Math.max(18, Math.min(Number(opening.width || 90) * .55, 56));
         const hinge = side >= 0 ? seg.a : seg.b;
         const swingDir = side >= 0 ? 1 : -1;
-        const leafEnd = { x:hinge.x + normal.x * doorLen, y:hinge.y + normal.y * doorLen };
-        const arcEnd = side >= 0 ? seg.b : seg.a;
-        const arcMid = { x:hinge.x + dir.x * doorLen * .82 * swingDir + normal.x * (doorLen*.82), y:hinge.y + dir.y * doorLen * .82 * swingDir + normal.y * (doorLen*.82) };
-        openingLayer.appendChild(svgEl('line',{x1:hinge.x,y1:hinge.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.4',opacity:'.95'}));
-        openingLayer.appendChild(svgEl('path',{d:`M ${hinge.x} ${hinge.y} Q ${arcMid.x} ${arcMid.y} ${arcEnd.x} ${arcEnd.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.9','stroke-dasharray':'4 4',opacity:'.9'}));
+        const leafAlong = Math.max(16, Math.min(Number(opening.width || 90) * .72, Math.max(18, seg.width - 10)));
+        const leafAcross = Math.max(4, Math.min(halfTh - .8, thickness * .32));
+        const leafEnd = { x:hinge.x + dir.x * leafAlong * swingDir + normal.x * leafAcross, y:hinge.y + dir.y * leafAlong * swingDir + normal.y * leafAcross };
+        const arcEnd = { x:hinge.x + dir.x * leafAlong * swingDir + normal.x * leafAcross * .18, y:hinge.y + dir.y * leafAlong * swingDir + normal.y * leafAcross * .18 };
+        const arcMid = { x:hinge.x + dir.x * leafAlong * .58 * swingDir + normal.x * leafAcross * 1.08, y:hinge.y + dir.y * leafAlong * .58 * swingDir + normal.y * leafAcross * 1.08 };
+        openingLayer.appendChild(svgEl('line',{x1:hinge.x,y1:hinge.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.2',opacity:'.96'}));
+        openingLayer.appendChild(svgEl('path',{d:`M ${hinge.x} ${hinge.y} Q ${arcMid.x} ${arcMid.y} ${arcEnd.x} ${arcEnd.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.7','stroke-dasharray':'4 4',opacity:'.88'}));
       }
       if(selected){
         const handleR = 7;
@@ -10865,16 +10888,18 @@ function getSheetBranchOpenMap(){
           openingLayer.appendChild(leftLabel);
         }
       }
-      const tagW = type === 'window' ? 58 : type === 'free' ? 62 : type === 'gate' ? 56 : 48;
-      const labelX = seg.center.x + normal.x * (thickness + 20) - tagW/2;
-      const labelY = seg.center.y + normal.y * (thickness + 20) - 10;
-      const tag = svgEl('g',{transform:`translate(${labelX} ${labelY})`,style:selected?'cursor:grab':'pointer-events:none'});
-      tag.appendChild(svgEl('rect',{x:0,y:0,width:tagW,height:20,rx:10,fill:selected?'rgba(125,255,175,.96)':'rgba(6,18,30,.94)',stroke:accentColor,'stroke-width':'1.2'}));
-      const t = svgEl('text',{x:tagW/2,y:13,'text-anchor':'middle',style:`font-size:9px;font-weight:900;fill:${selected?'#062016':'#eafff9'};pointer-events:none`});
-      t.textContent = type === 'window' ? 'VENTANA' : type === 'free' ? 'VANO' : type === 'gate' ? 'PORTÓN' : 'PUERTA';
-      tag.appendChild(t);
-      if(selected) tag.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
-      openingLayer.appendChild(tag);
+      if(selected){
+        const tipX = seg.center.x + normal.x * (thickness + 24);
+        const tipY = seg.center.y + normal.y * (thickness + 24);
+        const tagW = type === 'window' ? 64 : type === 'free' ? 52 : type === 'gate' ? 58 : 54;
+        const tag = svgEl('g',{transform:`translate(${tipX - tagW/2} ${tipY - 10})`,style:'cursor:grab'});
+        tag.appendChild(svgEl('rect',{x:0,y:0,width:tagW,height:20,rx:10,fill:'rgba(6,18,30,.96)',stroke:accentColor,'stroke-width':'1.2'}));
+        const t = svgEl('text',{x:tagW/2,y:13,'text-anchor':'middle',style:'font-size:9px;font-weight:900;fill:#effff8;pointer-events:none'});
+        t.textContent = type === 'window' ? 'VENTANA' : type === 'free' ? 'VANO' : type === 'gate' ? 'PORTÓN' : 'PUERTA';
+        tag.appendChild(t);
+        tag.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(tag);
+      }
     });
 
     if(appState.editor.pendingWallPoint){
