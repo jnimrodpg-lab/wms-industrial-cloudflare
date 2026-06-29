@@ -1,11 +1,8 @@
-# WMS Industrial – v72
+WMS Industrial v84
 
-Mejoras aplicadas:
-
-- Flujo de paredes simplificado: ahora se seleccionan aristas de zona y se convierten en pared.
-- Se quitó el botón manual de “Agregar pared” del panel principal para evitar trabajo innecesario.
-- Cada arista de la zona muestra un botón rápido “+ PARED” / “PARED”.
-- Acciones rápidas por zona: convertir todas las aristas en pared o quitar paredes de la zona.
-- Muros 3D más visibles en el visor WebGL.
-- Nuevo botón “Vista corte” en el 3D para bajar la altura visual de muros y ver los racks.
-- Se mantiene “Agregar vano” para colocar puerta/ventana sobre paredes ya convertidas.
+Mejoras aplicadas en vanos:
+- Vanos representados como hueco real en 3D, sin sólido fantasma.
+- En layout 2D la abertura queda embebida en el muro y el muro se dibuja con corte real.
+- Selección y movimiento del vano mejorados con hit area sobre la abertura.
+- Inspector actualizado con ancho, alto, alféizar, profundidad y posición.
+- ZIP limpio con solo archivos necesarios de la app.

@@ -7169,25 +7169,8 @@ function getSheetBranchOpenMap(){
               if(openingTop < height - .035){
                 addWallMesh(group, makeWallBandGeometry(seg, safeT0, safeT1, openingTop, height, thicknessUnits), wallMat, isActive, seg.id);
               }
-              if(normalizeOpeningType(o.type) === 'window'){
-                const frameThickness = Math.max(4, thicknessUnits * .16);
-                const frameOffset = Math.max(0, (thicknessUnits - frameThickness) / 2);
-                const glassThickness = Math.max(2.4, thicknessUnits * .08);
-                const glassOffset = Math.max(0, (thicknessUnits - glassThickness) / 2);
-                const glassY0 = Math.max(sill + .04, sill);
-                const glassY1 = Math.max(glassY0 + .12, openingTop - .04);
-                addWallMesh(group, makeWallBandGeometry(seg, safeT0+.016, safeT1-.016, glassY0, glassY1, glassThickness, glassOffset), glassMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, safeT0, Math.min(safeT0+.016, safeT1), sill, openingTop, frameThickness, frameOffset), leafMat, true, o.id);
-                addWallMesh(group, makeWallBandGeometry(seg, Math.max(safeT1-.016, safeT0), safeT1, sill, openingTop, frameThickness, frameOffset), leafMat, true, o.id);
-              } else if(normalizeOpeningType(o.type) !== 'free'){
-                const leafThickness = Math.max(3.2, thicknessUnits * .11);
-                const leafOffset = Math.max(0, (thicknessUnits - leafThickness) / 2);
-                const leafEndT = Math.min(safeT1 - .01, safeT0 + (normalizeOpeningType(o.type) === 'gate' ? .10 : .055));
-                if(leafEndT > safeT0 + .01){
-                  const leafGeo = makeWallBandGeometry(seg, safeT0+.012, leafEndT, 0, Math.min(openingTop, height), leafThickness, leafOffset);
-                  addWallMesh(group, leafGeo, leafMat, true, o.id);
-                }
-              }
+              // v84: el vano se representa como vacío real en 3D.
+              // No añadimos hojas, marcos sólidos ni vidrios fantasma dentro del hueco.
               cursor = Math.max(cursor, safeT1);
             });
             if(cursor < .996){
@@ -9706,22 +9689,61 @@ function getSheetBranchOpenMap(){
     return wallNormal(wall);
   }
 
+  function getWallSlicePolygon(wall, t0=0, t1=1, inflate=1){
+    if(!wall) return null;
+    const len = Math.max(1, wallLength(wall));
+    const start = Math.max(0, Math.min(1, Number(t0) || 0));
+    const end = Math.max(start, Math.min(1, Number(t1) || 1));
+    if((end - start) * len < 1) return null;
+    const ax = Number(wall.x1 || 0), ay = Number(wall.y1 || 0);
+    const bx = Number(wall.x2 || 0), by = Number(wall.y2 || 0);
+    const dir = { x:(bx-ax) / len, y:(by-ay) / len };
+    const p0 = { x:ax + (bx-ax) * start, y:ay + (by-ay) * start };
+    const p1 = { x:ax + (bx-ax) * end, y:ay + (by-ay) * end };
+    const normal = getWallOpeningNormal(wall);
+    const rawThickness = Math.max(8, Number(wall.thickness || 14) || 14) * Math.max(.1, Number(inflate || 1));
+    if(wall.autoZoneEdge){
+      return {
+        normal,
+        poly:[
+          { x:p0.x, y:p0.y },
+          { x:p1.x, y:p1.y },
+          { x:p1.x + normal.x * rawThickness, y:p1.y + normal.y * rawThickness },
+          { x:p0.x + normal.x * rawThickness, y:p0.y + normal.y * rawThickness }
+        ],
+        center:{ x:(p0.x+p1.x)/2 + normal.x * rawThickness * .5, y:(p0.y+p1.y)/2 + normal.y * rawThickness * .5 },
+        thickness:rawThickness,
+        dir,
+        a:p0,
+        b:p1
+      };
+    }
+    const half = rawThickness / 2;
+    return {
+      normal,
+      poly:[
+        { x:p0.x - normal.x * half, y:p0.y - normal.y * half },
+        { x:p1.x - normal.x * half, y:p1.y - normal.y * half },
+        { x:p1.x + normal.x * half, y:p1.y + normal.y * half },
+        { x:p0.x + normal.x * half, y:p0.y + normal.y * half }
+      ],
+      center:{ x:(p0.x+p1.x)/2, y:(p0.y+p1.y)/2 },
+      thickness:rawThickness,
+      dir,
+      a:p0,
+      b:p1
+    };
+  }
+
   function getOpeningFootprint(opening, wall=findWallById(opening?.wallId), inflate=1){
     const seg = getOpeningSegment(opening, wall);
     if(!seg || !wall) return null;
-    const n = getWallOpeningNormal(wall);
-    const t = Math.max(10, Number(wall.thickness || 14) || 14) * inflate;
-    const h = t / 2;
-    return {
-      seg,
-      normal:n,
-      poly:[
-        { x:seg.a.x - n.x*h, y:seg.a.y - n.y*h },
-        { x:seg.b.x - n.x*h, y:seg.b.y - n.y*h },
-        { x:seg.b.x + n.x*h, y:seg.b.y + n.y*h },
-        { x:seg.a.x + n.x*h, y:seg.a.y + n.y*h }
-      ]
-    };
+    const len = Math.max(1, wallLength(wall));
+    const width = Math.max(40, Number(opening.width || 90) || 90);
+    const start = Math.max(0, (seg.t * len - width / 2) / len);
+    const end = Math.min(1, (seg.t * len + width / 2) / len);
+    const slice = getWallSlicePolygon(wall, start, end, inflate);
+    return slice ? { seg, normal:slice.normal, poly:slice.poly } : null;
   }
 
   function normalizeOpeningType(type){
@@ -9836,7 +9858,8 @@ function getSheetBranchOpenMap(){
     const nearest = findNearestWallProjection(point, 28);
     if(!nearest || !nearest.wall) return null;
     const def = openingDefaultForType(type);
-    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:def.width, height:def.height, sill:def.sill, type:normalizeOpeningType(type), swing:1 };
+    const hostDepth = Math.max(8, Number(nearest.wall.thickness || 14) || 14);
+    const opening = { id:nextOpeningId(), wallId:nearest.wall.id, t:nearest.proj.t, width:def.width, height:def.height, sill:def.sill, depth:hostDepth, type:normalizeOpeningType(type), swing:1 };
     opening.t = openingClampT(nearest.wall, opening.width, opening.t);
     appState.layout.openings.push(opening);
     appState.selectedOpeningId = opening.id;
@@ -9850,7 +9873,8 @@ function getSheetBranchOpenMap(){
     const wall = findWallById(wallId);
     if(!wall) return null;
     const def = openingDefaultForType(type);
-    const opening = { id:nextOpeningId(), wallId:wall.id, t:.5, width:def.width, height:def.height, sill:def.sill, type:normalizeOpeningType(type), swing:1 };
+    const hostDepth = Math.max(8, Number(wall.thickness || 14) || 14);
+    const opening = { id:nextOpeningId(), wallId:wall.id, t:.5, width:def.width, height:def.height, sill:def.sill, depth:hostDepth, type:normalizeOpeningType(type), swing:1 };
     opening.t = openingClampT(wall, opening.width, opening.t);
     appState.layout.openings.push(opening);
     appState.selectedOpeningId = opening.id;
@@ -10118,17 +10142,19 @@ function getSheetBranchOpenMap(){
             <label>Tipo<select id="rpOpeningType"><option value="door" ${type==='door'?'selected':''}>Puerta</option><option value="window" ${type==='window'?'selected':''}>Ventana</option><option value="free" ${type==='free'?'selected':''}>Vano libre</option><option value="gate" ${type==='gate'?'selected':''}>Portón</option></select></label>
             <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="360" step="5" value="${formatUnitNumber(op.width||90)}"></label>
             <label>Alto<input id="rpOpeningHeight" type="number" min="40" max="320" step="5" value="${formatUnitNumber(op.height || openingDefaultForType(type).height)}"></label>
-            <label>Altura piso<input id="rpOpeningSill" type="number" min="0" max="260" step="5" value="${formatUnitNumber(op.sill || 0)}"></label>
+            <label>Alféizar<input id="rpOpeningSill" type="number" min="0" max="260" step="5" value="${formatUnitNumber(op.sill || 0)}"></label>
+            <label>Profundidad<input id="rpOpeningDepth" type="number" min="4" max="120" step="1" value="${formatUnitNumber(op.depth || wall?.thickness || 14)}"></label>
             <label>Posición %<input id="rpOpeningT" type="number" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}"></label>
             <label>Desde inicio<input id="rpOpeningLeft" type="number" min="0" step="5" value="${info ? formatUnitNumber(info.left) : 0}"></label>
             <label>Hasta final<input value="${info ? formatUnitNumber(info.right) : 0}" disabled></label>
+            <label>Muro<input value="${wall ? formatUnitNumber(wall.thickness || 14) : 14}" disabled></label>
           </div>
           <div class="opening-position-control">
             <div class="opening-position-line"><span style="left:${Math.max(1,Math.min(99,Math.round((op.t||.5)*100)))}%"></span></div>
             <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}" style="width:100%;margin-top:10px">
           </div>
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpening25">25%</button><button class="seg-btn" id="rpOpeningCenter">50%</button><button class="seg-btn" id="rpOpening75">75%</button><button class="seg-btn" id="rpOpeningNudgeLeft">◀ 0.25 m</button><button class="seg-btn" id="rpOpeningNudgeRight">0.25 m ▶</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>
-          <div class="tiny muted" style="margin-top:8px">Tip: arrastra el vano desde el corte oscuro. Usa los rombos para cambiar el ancho sin que salga del muro.</div>` })()}
+          <div class="tiny muted" style="margin-top:8px">Tip: arrastra el vano a lo largo del muro. La abertura queda embebida y el 3D se recorta como hueco real.</div>` })()}
         </section>` : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
@@ -10241,10 +10267,11 @@ function getSheetBranchOpenMap(){
     if($('#rpWallAddDoor')) $('#rpWallAddDoor').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'door'); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpWallAddWindow')) $('#rpWallAddWindow').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'window'); persistActiveLayout(); renderLayoutEditor(); };
     const persistOpeningUpdate = () => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; selectedOpening.height = def.height; selectedOpening.sill = def.sill; persistOpeningUpdate(); };
+    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); const host=findWallById(selectedOpening.wallId); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; selectedOpening.height = def.height; selectedOpening.sill = def.sill; selectedOpening.depth = Math.max(4, Math.min(120, Number(selectedOpening.depth || host?.thickness || 14) || 14)); persistOpeningUpdate(); };
     if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(360, Number(e.target.value || 90) || 90)); persistOpeningUpdate(); };
     if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(320, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
     if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = (normalizeOpeningType(selectedOpening.type) === 'window') ? Math.max(0, Math.min(260, Number(e.target.value || 0) || 0)) : Math.max(0, Math.min(80, Number(e.target.value || 0) || 0)); persistOpeningUpdate(); };
+    if($('#rpOpeningDepth')) $('#rpOpeningDepth').onchange = e => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); const maxDepth=Math.max(4, Math.min(120, Number(host?.thickness || 14) || 14)); selectedOpening.depth = Math.max(4, Math.min(maxDepth, Number(e.target.value || maxDepth) || maxDepth)); persistOpeningUpdate(); };
     const setOpeningPositionPct = value => { if(!selectedOpening) return; selectedOpening.t = Math.max(.01, Math.min(.99, (Number(value || 50) || 50) / 100)); persistOpeningUpdate(); };
     if($('#rpOpeningT')) $('#rpOpeningT').onchange = e => setOpeningPositionPct(e.target.value);
     if($('#rpOpeningSlider')) $('#rpOpeningSlider').oninput = e => { if($('#rpOpeningT')) $('#rpOpeningT').value = e.target.value; setOpeningPositionPct(e.target.value); };
@@ -10790,16 +10817,28 @@ function getSheetBranchOpenMap(){
 
     ensureLayoutDecorations();
     cleanupDetachedOpenings();
-    (appState.layout.walls || []).forEach(wall => {
-      const selected = appState.selectedWallId === wall.id;
+
+    const getRenderableWallOpenings = wall => {
+      const len = Math.max(1, wallLength(wall));
+      return (appState.layout.openings || []).filter(o => o.wallId === wall.id).map(o => {
+        const width = Math.max(40, Math.min(len * .86, Number(o.width || openingDefaultForType(o.type).width) || 90));
+        const half = width / 2 / len;
+        const t = openingClampT(wall, width, o.t);
+        return { opening:o, width, t0:Math.max(0, t - half), t1:Math.min(1, t + half) };
+      }).sort((a,b) => a.t0 - b.t0);
+    };
+
+    const renderWallSlice = (wall, t0, t1, selected) => {
+      if(t1 - t0 <= .002) return;
       const isAutoZoneEdge = !!wall.autoZoneEdge;
-      const strokeW = Math.max(isAutoZoneEdge ? 10 : 6, Number(wall.thickness || 12) || 12);
-      const cap = isAutoZoneEdge ? 'square' : 'round';
       const outerStroke = selected ? '#ffe08a' : (isAutoZoneEdge ? 'rgba(231,239,247,.98)' : '#dce8f5');
       const innerStroke = selected ? 'rgba(255,190,80,.95)' : (isAutoZoneEdge ? 'rgba(43,58,78,.76)' : 'rgba(34,48,66,.55)');
-      const poly = isAutoZoneEdge ? getAutoWallPolygon(wall) : null;
-      const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:(appState.editor.showLabels===false || isAutoZoneEdge)?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
-      label.textContent = wall.id;
+      const slice = getWallSlicePolygon(wall, t0, t1, 1);
+      if(!slice?.poly) return;
+      const d = wallPolygonPath(slice.poly);
+      const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:'cursor:pointer' });
+      const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.4', opacity:selected ? '.99' : '.98', style:'cursor:pointer' });
+      const accent = svgEl('line',{ x1:slice.a.x, y1:slice.a.y, x2:slice.b.x, y2:slice.b.y, stroke:innerStroke, 'stroke-width':'1.8', 'stroke-linecap':'round', opacity:'.92', style:'pointer-events:none' });
       const selectWall = evt => {
         evt.stopPropagation();
         appState.selectedWallId = wall.id;
@@ -10807,71 +10846,68 @@ function getSheetBranchOpenMap(){
         appState.selectedRackLayoutId = '';
         renderLayoutEditor();
       };
-      if(poly){
-        const d = wallPolygonPath(poly);
-        const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.5', opacity:selected?'.99':'.98', style:'cursor:pointer' });
-        const accent = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':'1.8','stroke-linecap':'round',opacity:'.92'});
-        const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:'cursor:pointer' });
-        [fill, hit].forEach(el => el.addEventListener('pointerdown', selectWall));
-        wallLayer.append(fill, accent, hit, label);
+      [fill, hit].forEach(el => el.addEventListener('pointerdown', selectWall));
+      wallLayer.append(fill, accent, hit);
+    };
+
+    (appState.layout.walls || []).forEach(wall => {
+      const selected = appState.selectedWallId === wall.id;
+      const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:(appState.editor.showLabels===false || wall.autoZoneEdge)?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
+      label.textContent = wall.id;
+      const openings = getRenderableWallOpenings(wall);
+      if(openings.length){
+        let cursor = 0;
+        openings.forEach(item => {
+          const t0 = Math.max(cursor, item.t0);
+          const t1 = Math.max(t0, item.t1);
+          if(t0 > cursor + .002) renderWallSlice(wall, cursor, t0, selected);
+          cursor = Math.max(cursor, t1);
+        });
+        if(cursor < .998) renderWallSlice(wall, cursor, 1, selected);
       } else {
-        const hit = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:'transparent','stroke-width':String(strokeW + (isAutoZoneEdge ? 10 : 16)),'stroke-linecap':cap,style:'cursor:pointer'});
-        const line = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:outerStroke,'stroke-width':String(strokeW),'stroke-linecap':cap,opacity:selected?'.99':(isAutoZoneEdge ? '.96' : '.9')});
-        const inner = svgEl('line',{x1:wall.x1,y1:wall.y1,x2:wall.x2,y2:wall.y2,stroke:innerStroke,'stroke-width':String(Math.max(1.25, strokeW * (isAutoZoneEdge ? .48 : .16))),'stroke-linecap':cap,opacity:isAutoZoneEdge ? '.92' : '.8'});
-        [hit, line].forEach(el => el.addEventListener('pointerdown', selectWall));
-        wallLayer.append(hit, line, inner, label);
+        renderWallSlice(wall, 0, 1, selected);
       }
+      wallLayer.appendChild(label);
     });
+
     (appState.layout.openings || []).forEach(opening => {
       const wall = findWallById(opening.wallId);
       const seg = getOpeningSegment(opening, wall);
       if(!wall || !seg) return;
       const selected = appState.selectedOpeningId === opening.id;
-      const footprint = getOpeningFootprint(opening, wall, selected ? 1.04 : 1); // v83: el vano queda embebido dentro del espesor real del muro
+      const footprint = getOpeningFootprint(opening, wall, 1);
       const type = normalizeOpeningType(opening.type);
-      const cutFill = selected ? 'rgba(9,28,42,.99)' : 'rgba(7,19,31,.96)';
       const accentColor = selected ? '#7dffaf' : (type === 'window' ? '#53e7ff' : type === 'free' ? '#c7fff0' : '#ffd66f');
-      const normal = getWallOpeningNormal(wall);
       const dir = wallDirection(wall);
-      const thickness = Math.max(8, Number(wall.thickness || 14) || 14);
-      if(footprint?.poly){
-        const d = wallPolygonPath(footprint.poly);
-        const cut = svgEl('path',{d,fill:cutFill,stroke:accentColor,'stroke-width':selected?'2.2':'1.2',opacity:'1',style:'cursor:grab'});
-        cut.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
-        openingLayer.appendChild(cut);
+      const poly = footprint?.poly || [];
+      const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
+      const hitPath = poly.length >= 4 ? svgEl('path',{ d:wallPolygonPath(poly), fill:'rgba(0,0,0,.001)', stroke:'transparent', 'stroke-width':'8', style:'cursor:grab' }) : null;
+      if(hitPath){
+        hitPath.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(hitPath);
       }
-      const accent = svgEl('line',{x1:seg.a.x,y1:seg.a.y,x2:seg.b.x,y2:seg.b.y,stroke:accentColor,'stroke-width':String(Math.max(2.2, Math.min(3.4, thickness * .18))),'stroke-linecap':'round',opacity:selected?'.98':'.82',style:'cursor:grab'});
-      accent.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
-      openingLayer.appendChild(accent);
-      const halfTh = Math.max(4, thickness * .5 - 1.2);
-      const detailOff = Math.max(2, Math.min(halfTh - 1.1, thickness * .22));
-      const innerA1 = { x:seg.a.x + normal.x * (-halfTh + detailOff), y:seg.a.y + normal.y * (-halfTh + detailOff) };
-      const innerA2 = { x:seg.a.x + normal.x * (halfTh - detailOff), y:seg.a.y + normal.y * (halfTh - detailOff) };
-      const innerB1 = { x:seg.b.x + normal.x * (-halfTh + detailOff), y:seg.b.y + normal.y * (-halfTh + detailOff) };
-      const innerB2 = { x:seg.b.x + normal.x * (halfTh - detailOff), y:seg.b.y + normal.y * (halfTh - detailOff) };
-      [
-        svgEl('line',{x1:innerA1.x,y1:innerA1.y,x2:innerA2.x,y2:innerA2.y,stroke:accentColor,'stroke-width':'1.6',opacity:selected?'.98':'.80',style:'cursor:grab'}),
-        svgEl('line',{x1:innerB1.x,y1:innerB1.y,x2:innerB2.x,y2:innerB2.y,stroke:accentColor,'stroke-width':'1.6',opacity:selected?'.98':'.80',style:'cursor:grab'})
-      ].forEach(el => { el.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move')); openingLayer.appendChild(el); });
-      if(type === 'window'){
-        const off = Math.max(2.2, Math.min(halfTh - .8, thickness * .22));
-        const l1 = svgEl('line',{x1:seg.a.x + normal.x*off,y1:seg.a.y + normal.y*off,x2:seg.b.x + normal.x*off,y2:seg.b.y + normal.y*off,stroke:accentColor,'stroke-width':'2.1',opacity:'.95',style:'cursor:grab'});
-        const l2 = svgEl('line',{x1:seg.a.x - normal.x*off,y1:seg.a.y - normal.y*off,x2:seg.b.x - normal.x*off,y2:seg.b.y - normal.y*off,stroke:accentColor,'stroke-width':'2.1',opacity:'.95',style:'cursor:grab'});
-        [l1,l2].forEach(el => el.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move')));
-        openingLayer.append(l1,l2);
-      } else if(type !== 'free'){
-        const side = Number(opening.swing || 1) >= 0 ? 1 : -1;
-        const hinge = side >= 0 ? seg.a : seg.b;
-        const swingDir = side >= 0 ? 1 : -1;
-        const leafAlong = Math.max(16, Math.min(Number(opening.width || 90) * .72, Math.max(18, seg.width - 10)));
-        const leafAcross = Math.max(4, Math.min(halfTh - .8, thickness * .32));
-        const leafEnd = { x:hinge.x + dir.x * leafAlong * swingDir + normal.x * leafAcross, y:hinge.y + dir.y * leafAlong * swingDir + normal.y * leafAcross };
-        const arcEnd = { x:hinge.x + dir.x * leafAlong * swingDir + normal.x * leafAcross * .18, y:hinge.y + dir.y * leafAlong * swingDir + normal.y * leafAcross * .18 };
-        const arcMid = { x:hinge.x + dir.x * leafAlong * .58 * swingDir + normal.x * leafAcross * 1.08, y:hinge.y + dir.y * leafAlong * .58 * swingDir + normal.y * leafAcross * 1.08 };
-        openingLayer.appendChild(svgEl('line',{x1:hinge.x,y1:hinge.y,x2:leafEnd.x,y2:leafEnd.y,stroke:accentColor,'stroke-width':'2.2',opacity:'.96'}));
-        openingLayer.appendChild(svgEl('path',{d:`M ${hinge.x} ${hinge.y} Q ${arcMid.x} ${arcMid.y} ${arcEnd.x} ${arcEnd.y}`,fill:'none',stroke:accentColor,'stroke-width':'1.7','stroke-dasharray':'4 4',opacity:'.88'}));
+      const jambStyle = `cursor:grab`;
+      if(p0 && p3){
+        const jambA = svgEl('line',{x1:p0.x,y1:p0.y,x2:p3.x,y2:p3.y,stroke:accentColor,'stroke-width':selected?'2.6':'1.8',opacity:selected?'.98':'.86',style:jambStyle});
+        jambA.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(jambA);
+      }
+      if(p1 && p2){
+        const jambB = svgEl('line',{x1:p1.x,y1:p1.y,x2:p2.x,y2:p2.y,stroke:accentColor,'stroke-width':selected?'2.6':'1.8',opacity:selected?'.98':'.86',style:jambStyle});
+        jambB.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(jambB);
+      }
+      if(type === 'window' && p0 && p1 && p2 && p3){
+        const midA = { x:(p0.x + p3.x) / 2, y:(p0.y + p3.y) / 2 };
+        const midB = { x:(p1.x + p2.x) / 2, y:(p1.y + p2.y) / 2 };
+        const glass = svgEl('line',{x1:midA.x,y1:midA.y,x2:midB.x,y2:midB.y,stroke:accentColor,'stroke-width':'1.2','stroke-dasharray':'5 3',opacity:selected?'.9':'.65',style:jambStyle});
+        glass.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
+        openingLayer.appendChild(glass);
       }
       if(selected){
+        if(poly.length >= 4){
+          openingLayer.appendChild(svgEl('path',{ d:wallPolygonPath(poly), fill:'none', stroke:accentColor, 'stroke-width':'1.5', 'stroke-dasharray':'5 4', opacity:'.92' }));
+        }
         const handleR = 7;
         const center = svgEl('circle',{cx:seg.center.x,cy:seg.center.y,r:'8',fill:'#7dffaf',stroke:'#05251c','stroke-width':'2.2',style:'cursor:grab'});
         center.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
@@ -10882,29 +10918,18 @@ function getSheetBranchOpenMap(){
         openingLayer.append(hA,hB,center);
         const info = getOpeningPositionInfo(opening, wall);
         if(info){
-          const dimOff = thickness + 38;
-          const yA = { x:seg.a.x + normal.x*dimOff, y:seg.a.y + normal.y*dimOff };
-          const yB = { x:seg.b.x + normal.x*dimOff, y:seg.b.y + normal.y*dimOff };
+          const normal = footprint?.normal || getWallOpeningNormal(wall);
+          const offsetBase = Math.max(18, Number(wall.thickness || 14) + 24);
+          const yA = { x:seg.a.x + normal.x*offsetBase, y:seg.a.y + normal.y*offsetBase };
+          const yB = { x:seg.b.x + normal.x*offsetBase, y:seg.b.y + normal.y*offsetBase };
           openingLayer.appendChild(svgEl('line',{x1:yA.x,y1:yA.y,x2:yB.x,y2:yB.y,stroke:'#7dffaf','stroke-width':'1.4','stroke-dasharray':'5 4',opacity:'.95'}));
           const label = svgEl('text',{x:(yA.x+yB.x)/2,y:(yA.y+yB.y)/2 - 8,class:'ortho-dim-text','text-anchor':'middle',style:'font-size:12px;fill:#7dffaf;font-weight:900;paint-order:stroke;stroke:#06131e;stroke-width:3px'});
-          label.textContent = formatDistanceShort(info.width);
+          label.textContent = `${formatDistanceShort(info.width)} · ${type === 'window' ? 'ventana' : type === 'gate' ? 'portón' : type === 'free' ? 'vano' : 'puerta'}`;
           openingLayer.appendChild(label);
-          const leftLabel = svgEl('text',{x:seg.a.x - dir.x*24 + normal.x*(dimOff+8),y:seg.a.y - dir.y*24 + normal.y*(dimOff+8),class:'ortho-dim-text','text-anchor':'middle',style:'font-size:10px;fill:#b8ffe6'});
+          const leftLabel = svgEl('text',{x:seg.a.x - dir.x*24 + normal.x*(offsetBase+8),y:seg.a.y - dir.y*24 + normal.y*(offsetBase+8),class:'ortho-dim-text','text-anchor':'middle',style:'font-size:10px;fill:#b8ffe6'});
           leftLabel.textContent = `${formatDistanceShort(info.left)} inicio`;
           openingLayer.appendChild(leftLabel);
         }
-      }
-      if(selected){
-        const tipX = seg.center.x + normal.x * (thickness + 24);
-        const tipY = seg.center.y + normal.y * (thickness + 24);
-        const tagW = type === 'window' ? 64 : type === 'free' ? 52 : type === 'gate' ? 58 : 54;
-        const tag = svgEl('g',{transform:`translate(${tipX - tagW/2} ${tipY - 10})`,style:'cursor:grab'});
-        tag.appendChild(svgEl('rect',{x:0,y:0,width:tagW,height:20,rx:10,fill:'rgba(6,18,30,.96)',stroke:accentColor,'stroke-width':'1.2'}));
-        const t = svgEl('text',{x:tagW/2,y:13,'text-anchor':'middle',style:'font-size:9px;font-weight:900;fill:#effff8;pointer-events:none'});
-        t.textContent = type === 'window' ? 'VENTANA' : type === 'free' ? 'VANO' : type === 'gate' ? 'PORTÓN' : 'PUERTA';
-        tag.appendChild(t);
-        tag.addEventListener('pointerdown', evt => startOpeningDrag(evt, opening.id, 'move'));
-        openingLayer.appendChild(tag);
       }
     });
 
