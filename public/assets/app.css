@@ -5635,3 +5635,76 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 .layout-wall-corner-closure{
   shape-rendering:geometricPrecision;
 }
+
+
+/* WMS v103 - modo usuario / principiante */
+.layout-cad-shell-v80.beginner-ui{
+  grid-template-columns: 1fr 340px !important;
+}
+.layout-cad-shell-v80.beginner-ui .layout-right-panel{
+  width: 340px;
+}
+.layout-cad-shell-v80.beginner-ui .layout-right-scroll{
+  padding-bottom: 18px;
+}
+.layout-cad-shell-v80.beginner-ui .layout-right-scroll > section:nth-of-type(4),
+.layout-cad-shell-v80.beginner-ui .layout-right-scroll > section:nth-of-type(5),
+.layout-cad-shell-v80.beginner-ui .layout-right-scroll > section:nth-of-type(6){
+  display:none !important;
+}
+.layout-cad-shell-v80.beginner-ui #layoutSectionWrap.v80-section-floating{
+  position: static !important;
+  inset: auto !important;
+  margin-top: 12px;
+  width: 100%;
+  max-width: none;
+}
+.layout-cad-shell-v80.beginner-ui .layout-section-wrap{
+  border-radius: 18px;
+  max-height: 240px;
+  overflow: auto;
+}
+.layout-cad-shell-v80.beginner-ui .v80-canvas-card{
+  min-height: 560px;
+}
+.layout-cad-shell-v80.beginner-ui .v80-minimap-card{
+  transform: scale(.92);
+  transform-origin: top right;
+}
+.layout-cad-shell-v80.beginner-ui .v80-tool-rail{
+  gap: 10px;
+}
+.layout-cad-shell-v80.beginner-ui .v80-tool-btn{
+  min-width: 78px;
+}
+.layout-user-badge{
+  display:inline-flex;
+  align-items:center;
+  padding:6px 10px;
+  min-height:30px;
+  border-radius:999px;
+  background:rgba(84,215,154,.14);
+  color:#dfffee;
+  border:1px solid rgba(84,215,154,.34);
+  font-size:12px;
+  font-weight:900;
+}
+.beginner-guide-card{
+  background:linear-gradient(180deg, rgba(16,35,52,.92), rgba(7,20,33,.96));
+}
+.beginner-guide-list{
+  margin:8px 0 0 18px;
+  padding:0;
+  color:#dce9f4;
+}
+.beginner-guide-list li{
+  margin:0 0 7px 0;
+  line-height:1.35;
+}
+.layout-cad-shell-v80.beginner-ui .v90-floating-save-layout{
+  display:none;
+}
+.layout-cad-shell-v80.beginner-ui .layout-right-head small{
+  display:block;
+  max-width:240px;
+}

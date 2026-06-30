@@ -1,4 +1,4 @@
-/* WMS_V102_ESQUINA_L_CERRADA */
+/* WMS_V103_MODO_USUARIO */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -9034,6 +9034,8 @@ function getSheetBranchOpenMap(){
     if(appState.editor.showDims === undefined) appState.editor.showDims = true;
     if(appState.editor.showMiniMap === undefined) appState.editor.showMiniMap = true;
     if(appState.editor.snapEnabled === undefined) appState.editor.snapEnabled = true;
+    if(appState.editor.beginnerMode === undefined) appState.editor.beginnerMode = true;
+    if(appState.editor.sectionVisible === undefined) appState.editor.sectionVisible = false;
     if(appState.editor.pendingWallPoint === undefined) appState.editor.pendingWallPoint = null;
     // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
     if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
@@ -9728,12 +9730,21 @@ function getSheetBranchOpenMap(){
         <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
         <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Pared' : summary.type === 'opening' ? 'Vano' : 'Plano'}</span>
       </div>
-      <div class="layout-right-scroll">
+      <div class="layout-right-scroll ${appState.editor.beginnerMode ? 'beginner-scroll' : ''}">
         <section class="layout-prop-card selected-summary">
           <div class="layout-prop-title">Selección activa</div>
           <div class="layout-selected-title">${escapeHtml(summary.title)}</div>
           <div class="tiny muted">Modo actual: ${escapeHtml(appState.editor.mode || 'select')}</div>
         </section>
+        ${appState.editor.beginnerMode ? `<section class="layout-prop-card beginner-guide-card">
+          <div class="layout-prop-title">Guía rápida</div>
+          <ol class="beginner-guide-list">
+            <li>Elige una herramienta a la izquierda.</li>
+            <li>Haz clic en el plano para dibujar o seleccionar.</li>
+            <li>Edita solo el objeto seleccionado en este panel.</li>
+            <li>Guarda al terminar.</li>
+          </ol>
+        </section>` : ''}
         <section class="layout-prop-card">
           <div class="layout-prop-title">Capas</div>
           <div class="layout-layer-grid">
@@ -10024,12 +10035,12 @@ function getSheetBranchOpenMap(){
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
-      { label:'Opción 4', active: true, action:'toggle-right-props' }
+      { label: appState.editor.beginnerMode ? 'Modo fácil' : 'Modo pro', active: !!appState.editor.beginnerMode, action:'toggle-beginner-mode' }
     ]);
 
     contentWrap.innerHTML = `
       <div class="stage layout-premium-render layout-cad-v80" style="position:relative;height:100%">
-        <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''}">
+        <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''} ${appState.editor.beginnerMode ? 'beginner-ui' : 'advanced-ui'}">
           <div class="layout-cad-localbar-v80">
             <button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>
             <select id="layoutBranchSelect" class="seg-btn v80-branch-select">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
@@ -10040,7 +10051,8 @@ function getSheetBranchOpenMap(){
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
-            <span class="v90-version-badge">v102 esquina L cerrada</span>
+            <span class="layout-user-badge">${appState.editor.beginnerMode ? 'Modo usuario' : 'Modo avanzado'}</span>
+            <span class="v90-version-badge">v103</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -11077,8 +11089,8 @@ function getSheetBranchOpenMap(){
       <div class="layout-section-wrap layout-section-panel">
         <div class="layout-section-head">
           <div>
-            <div class="layout-section-title">Vistas de sección</div>
-            <div class="layout-section-sub">Lectura vertical tipo arquitectura en ambos ejes para revisar apilado y distribución de racks. Muestran solo lo que queda dentro del área delimitada por las 2 líneas de corte.</div>
+            <div class="layout-section-title">Vista de sección</div>
+            <div class="layout-section-sub">Revisa cortes X e Y sin tapar el plano principal.</div>
           </div>
           <div class="section-stack-chip">${zone ? zone.id : 'Sin zona'} • ${racks.length} racks</div>
         </div>
@@ -13565,7 +13577,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v102',
+      version: 'v103',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13624,7 +13636,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v102',
+        version: 'v103',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13684,7 +13696,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v102</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v103</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">
