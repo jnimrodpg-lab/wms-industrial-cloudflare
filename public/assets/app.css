@@ -5576,3 +5576,58 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
   padding:8px 12px;
   font-weight:900;
 }
+
+
+/* WMS v99 - estabilidad y panel de estado */
+.v99-save-status,
+.v99-quality-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:30px;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+  border:1px solid rgba(255,255,255,.14);
+}
+.v99-save-status.local{
+  background:rgba(78,166,255,.12);
+  color:#d9ecff;
+  border-color:rgba(78,166,255,.34);
+}
+.v99-save-status.saving{
+  background:rgba(255,184,77,.14);
+  color:#ffe7b8;
+  border-color:rgba(255,184,77,.38);
+}
+.v99-save-status.remote{
+  background:rgba(54,245,141,.14);
+  color:#d9ffe8;
+  border-color:rgba(54,245,141,.38);
+}
+.v99-save-status.error,
+.v99-quality-badge.warn{
+  background:rgba(255,91,91,.14);
+  color:#ffd6d6;
+  border-color:rgba(255,91,91,.42);
+}
+.v99-quality-badge.ok{
+  background:rgba(54,245,141,.10);
+  color:#d9ffe8;
+  border-color:rgba(54,245,141,.32);
+}
+.layout-cad-localbar-v80{
+  gap:8px;
+}
+
+
+/* WMS v100 - fusión de esquinas */
+.layout-wall-corner-fusion{
+  filter:drop-shadow(0 1px 1px rgba(255,255,255,.18));
+  shape-rendering:geometricPrecision;
+}
+.v90-version-badge{
+  border-color:rgba(54,245,141,.62)!important;
+}

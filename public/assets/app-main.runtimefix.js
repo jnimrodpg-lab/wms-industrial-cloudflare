@@ -1,4 +1,4 @@
-/* WMS_V98_ERRORS_FIXED_DIAGNOSTICS */
+/* WMS_V100_FUSION_ESQUINAS_LAYOUT_3D */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -2213,8 +2213,8 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     list = Array.isArray(list) ? list : [];
     const frag = document.createDocumentFragment();
     const forceIndividual = shouldForceIndividualView(list);
-    const groupedMode = true; // V25: el listado del viewer siempre trabaja por producto/familia
-    const maxRows = groupedMode ? 220 : 450;
+    const groupedMode = true; // V99: listado agrupado más amplio para catálogos grandes
+    const maxRows = groupedMode ? 800 : 1200;
     const items = [];
     const sortedList = (Array.isArray(list) ? list.slice() : []).sort(compareProductsAZ);
     if(groupedMode){
@@ -2264,6 +2264,13 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       frag.appendChild(row);
     });
     productList.appendChild(frag);
+    try{
+      const totalRows = Array.isArray(list) ? list.length : 0;
+      const shownRows = items.length;
+      const foot = document.getElementById('contentFootLeft') || document.getElementById('contentStatus');
+      if(foot && totalRows > shownRows) foot.textContent = `Mostrando ${shownRows.toLocaleString('es-PE')} de ${totalRows.toLocaleString('es-PE')} resultados. Usa búsqueda/filtros para afinar.`;
+    }catch(_err){}
+    /* v99RenderProductsStatus */
     countProducts.textContent = getCurrentProductsTotal().toLocaleString('es-PE');
     const shown = items.length;
     const modeLabel = groupedMode ? 'familias' : 'resultados';
@@ -3330,6 +3337,93 @@ const DEFAULT_GRID_SIZE = 2;
   function normalizeLayoutSectionState(){
     (appState.layout?.zones || []).forEach(zone => ensureZoneSectionCuts(zone));
   }
+
+  // WMS v99 - estabilidad, guardado y validación
+  function setLayoutSaveState(state='local', message=''){
+    try{
+      appState.ui = appState.ui || {};
+      appState.ui.layoutSaveState = state;
+      appState.ui.layoutSaveMessage = message || (state === 'remote' ? 'Guardado en servidor' : state === 'saving' ? 'Guardando…' : state === 'error' ? 'Error al guardar' : 'Guardado local');
+      appState.ui.layoutSaveAt = new Date().toISOString();
+      updateLayoutSaveStatus();
+    }catch(_err){}
+  }
+  function updateLayoutSaveStatus(){
+    try{
+      const el = document.getElementById('layoutSaveStatus');
+      if(!el) return;
+      const state = appState.ui?.layoutSaveState || 'local';
+      const msg = appState.ui?.layoutSaveMessage || 'Guardado local';
+      el.className = `v99-save-status ${state}`;
+      el.textContent = msg;
+      el.title = appState.ui?.layoutSaveAt ? `Última actualización: ${new Date(appState.ui.layoutSaveAt).toLocaleString('es-PE')}` : msg;
+    }catch(_err){}
+  }
+  function markLayoutDirty(reason='layout'){
+    try{
+      appState.ui = appState.ui || {};
+      appState.ui.layoutDirty = true;
+      setLayoutSaveState('local', reason ? `Guardado local · ${reason}` : 'Guardado local');
+      if(window.__wmsDiagPush) window.__wmsDiagPush('layout', `Cambio local: ${reason || 'layout'}`);
+    }catch(_err){}
+  }
+  function getLayoutQualityWarnings(){
+    const warnings = [];
+    try{
+      const layout = appState.layout || {};
+      const zones = Array.isArray(layout.zones) ? layout.zones : [];
+      const racks = Array.isArray(layout.racks) ? layout.racks : [];
+      const walls = Array.isArray(layout.walls) ? layout.walls : [];
+      const openings = Array.isArray(layout.openings) ? layout.openings : [];
+      const zoneIds = new Set(zones.map(z => String(z.id || '')));
+      const rackIds = new Set(racks.map(r => String(r.id || '')));
+      const wallIds = new Set(walls.map(w => String(w.id || '')));
+      zones.forEach(z => {
+        if(!z.id) warnings.push('Zona sin ID.');
+        if(!Array.isArray(z.pts) || z.pts.length < 3) warnings.push(`Zona ${z.id || 'sin ID'} no tiene polígono válido.`);
+      });
+      racks.forEach(r => {
+        if(!r.id) warnings.push('Rack sin ID.');
+        if(r.zoneId && !zoneIds.has(String(r.zoneId))) warnings.push(`Rack ${r.id || 'sin ID'} apunta a zona inexistente: ${r.zoneId}`);
+        if(!Number.isFinite(Number(r.x)) || !Number.isFinite(Number(r.y))) warnings.push(`Rack ${r.id || 'sin ID'} tiene coordenadas inválidas.`);
+      });
+      walls.forEach(w => {
+        if(!w.id) warnings.push('Pared sin ID.');
+        if(w.autoZoneEdge && w.zoneId && !zoneIds.has(String(w.zoneId))) warnings.push(`Pared ${w.id || 'sin ID'} apunta a zona inexistente: ${w.zoneId}`);
+      });
+      openings.forEach(o => {
+        if(!o.id) warnings.push('Vano sin ID.');
+        if(o.wallId && !wallIds.has(String(o.wallId))) warnings.push(`Vano ${o.id || 'sin ID'} apunta a pared inexistente: ${o.wallId}`);
+        const width = Number(o.width || 0);
+        if(!Number.isFinite(width) || width <= 0) warnings.push(`Vano ${o.id || 'sin ID'} tiene ancho inválido.`);
+      });
+      const products = Array.isArray(appState.products) ? appState.products : [];
+      const locationProducts = products.slice(0, 15000);
+      let invalidLocations = 0;
+      locationProducts.forEach(p => {
+        const rack = String(p.rack || p.Rack || '').trim();
+        const rackStore = String(p.rackStore || '').trim();
+        if(rack && !rackIds.has(rack)) invalidLocations += 1;
+        if(rackStore && !rackIds.has(rackStore)) invalidLocations += 1;
+      });
+      if(invalidLocations) warnings.push(`${invalidLocations} referencia(s) de producto apuntan a racks no encontrados en el layout activo.`);
+    }catch(err){
+      warnings.push(`No se pudo validar layout: ${err.message || err}`);
+    }
+    return warnings.slice(0, 80);
+  }
+  function updateLayoutQualityBadge(){
+    try{
+      const el = document.getElementById('layoutQualityBadge');
+      if(!el) return;
+      const warnings = getLayoutQualityWarnings();
+      el.className = `v99-quality-badge ${warnings.length ? 'warn' : 'ok'}`;
+      el.textContent = warnings.length ? `${warnings.length} alertas` : 'Sin alertas';
+      el.title = warnings.length ? warnings.join('\n') : 'Layout sin alertas detectadas';
+    }catch(_err){}
+  }
+
+
   function persistActiveLayout(){
     if(!(appState.history?.layout?.isApplying)) recordHistorySnapshot('layout');
     const idx = getActiveLayoutBranchIndex();
@@ -3338,6 +3432,7 @@ const DEFAULT_GRID_SIZE = 2;
     ensureLayoutMeta();
     appState.branchLayouts[idx] = clone(appState.layout);
     saveBranchLayouts();
+    markLayoutDirty(`sucursal ${idx + 1}`);
   }
   function loadLayoutForBranch(branchIndex){
     ensureBranchLayouts();
@@ -4325,17 +4420,23 @@ const DEFAULT_GRID_SIZE = 2;
   }
   async function saveRemoteAppState(reason=''){
     try{
+      setLayoutSaveState('saving', reason ? `Guardando ${reason}…` : 'Guardando…');
       persistActiveLayout();
       await httpJson('/api/app-state', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
         body: JSON.stringify({ admin: sanitizedAdminState(), models: appState.models, branchLayouts: appState.branchLayouts })
       });
+      appState.ui = appState.ui || {};
+      appState.ui.layoutDirty = false;
+      setLayoutSaveState('remote', reason ? `Guardado remoto · ${reason}` : 'Guardado remoto');
       contentStatus.textContent = reason ? `Guardado: ${reason}` : 'Cambios guardados en el servidor.';
+      if(window.__wmsDiagPush) window.__wmsDiagPush('save', `Guardado remoto correcto: ${reason || 'app-state'}`);
       return true;
     }catch(err){
       console.error(err);
-      alert(err.message || 'No se pudo guardar en el servidor.');
+      setLayoutSaveState('error', err.message || 'No se pudo guardar en el servidor');
+      if(window.__wmsDiagPush) window.__wmsDiagPush('save-error', err.message || 'No se pudo guardar en el servidor');
       return false;
     }
   }
@@ -6697,6 +6798,24 @@ function getSheetBranchOpenMap(){
           edges.scale.copy(wall.scale);
           group.add(edges);
         });
+
+        // v100: agrega piezas de fusión en las esquinas para evitar solapes/grietas visibles en 3D.
+        getAllWallCornerFusionPolygons().forEach(joint => {
+          if(!Array.isArray(joint.poly) || joint.poly.length < 3) return;
+          const isActive = joint.selected || activeZoneIds.has(joint.zoneId);
+          const height = Math.max(2.8, (Number(joint.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
+          const jointMat = new THREE.MeshStandardMaterial({
+            color:isActive ? 0xf2f7fb : 0xb8c8d8,
+            transparent:true,
+            opacity:appState.ui?.nav3DArchitectural ? (isActive ? .98 : .88) : (isActive ? .96 : .72),
+            roughness:.78,
+            metalness:.03,
+            side:THREE.DoubleSide
+          });
+          const geo = makeWallPrismGeometry(joint.poly, height);
+          const mesh = addWallMesh(group, geo, jointMat, isActive, `${joint.prevWallId || ''}+${joint.currWallId || ''}`);
+          if(mesh) mesh.userData.cornerFusion = true;
+        });
         return group;
       };
       const makeZoneMaterials = (active=false) => ({
@@ -9035,6 +9154,84 @@ function getSheetBranchOpenMap(){
     ];
   }
 
+
+  function normalizeVec2D(v){
+    const len = Math.hypot(Number(v?.x || 0), Number(v?.y || 0)) || 1;
+    return { x:Number(v?.x || 0) / len, y:Number(v?.y || 0) / len };
+  }
+  function pointDist2D(a,b){ return Math.hypot(Number(a?.x||0)-Number(b?.x||0), Number(a?.y||0)-Number(b?.y||0)); }
+  function convexHull2D(points=[]){
+    const pts = (points || [])
+      .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+      .map(p => ({ x:Number(p.x), y:Number(p.y) }))
+      .sort((a,b) => a.x === b.x ? a.y - b.y : a.x - b.x);
+    const uniq = [];
+    pts.forEach(p => { if(!uniq.length || pointDist2D(uniq[uniq.length-1], p) > .01) uniq.push(p); });
+    if(uniq.length <= 2) return uniq;
+    const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
+    const lower = [];
+    uniq.forEach(p => {
+      while(lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
+      lower.push(p);
+    });
+    const upper = [];
+    [...uniq].reverse().forEach(p => {
+      while(upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
+      upper.push(p);
+    });
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+  function getZoneWallCornerFusionPolygons(zone){
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return [];
+    const count = zone.pts.length;
+    const out = [];
+    for(let idx=0; idx<count; idx+=1){
+      const prevIdx = (idx - 1 + count) % count;
+      const currIdx = idx;
+      const prevWall = getZoneEdgeWall(zone, prevIdx);
+      const currWall = getZoneEdgeWall(zone, currIdx);
+      if(!prevWall?.enabled || !currWall?.enabled) continue;
+      const side = getWallSideSign(prevWall.side);
+      if(getWallSideSign(currWall.side) !== side) continue;
+      const vertex = zone.pts[idx];
+      const prevPt = zone.pts[prevIdx];
+      const nextPt = zone.pts[(idx + 1) % count];
+      if(!vertex || !prevPt || !nextPt) continue;
+      const prevPoly = getZoneEdgeWallPolygon(zone, prevIdx, prevWall);
+      const currPoly = getZoneEdgeWallPolygon(zone, currIdx, currWall);
+      if(!Array.isArray(prevPoly) || !Array.isArray(currPoly) || prevPoly.length < 4 || currPoly.length < 4) continue;
+      const prevTh = Math.max(8, Number(prevWall.thickness || getZoneWallThickness(zone) || 14));
+      const currTh = Math.max(8, Number(currWall.thickness || getZoneWallThickness(zone) || 14));
+      const th = Math.max(prevTh, currTh);
+      const pad = Math.max(4, Math.min(18, th * .55));
+      const dirPrev = normalizeVec2D({ x:Number(prevPt.x||0) - Number(vertex.x||0), y:Number(prevPt.y||0) - Number(vertex.y||0) });
+      const dirNext = normalizeVec2D({ x:Number(nextPt.x||0) - Number(vertex.x||0), y:Number(nextPt.y||0) - Number(vertex.y||0) });
+      const innerPrev = { x:Number(vertex.x||0) + dirPrev.x * pad, y:Number(vertex.y||0) + dirPrev.y * pad };
+      const innerNext = { x:Number(vertex.x||0) + dirNext.x * pad, y:Number(vertex.y||0) + dirNext.y * pad };
+      const prevOuter = prevPoly[2];
+      const currOuter = currPoly[3];
+      const hull = convexHull2D([vertex, innerPrev, innerNext, prevOuter, currOuter]);
+      if(hull.length >= 3){
+        out.push({
+          poly:hull,
+          zoneId:zone.id,
+          vertexIndex:idx,
+          prevWallId:zoneEdgeWallId(zone.id, prevIdx),
+          currWallId:zoneEdgeWallId(zone.id, currIdx),
+          height:Math.max(120, Number(prevWall.height || currWall.height || appState.layout?.meta?.defaultWallHeight || 290)),
+          selected: appState.selectedWallId === zoneEdgeWallId(zone.id, prevIdx) || appState.selectedWallId === zoneEdgeWallId(zone.id, currIdx)
+        });
+      }
+    }
+    return out;
+  }
+  function getAllWallCornerFusionPolygons(){
+    ensureLayoutDecorations();
+    return (appState.layout?.zones || []).flatMap(zone => getZoneWallCornerFusionPolygons(zone));
+  }
+
+
   function wallPolygonPath(poly){
     if(!Array.isArray(poly) || poly.length < 3) return '';
     return poly.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${Number(pt.x||0)} ${Number(pt.y||0)}`).join(' ') + ' Z';
@@ -9841,7 +10038,9 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
-            <span class="v90-version-badge">v98 diagnostics</span>
+            <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
+            <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
+            <span class="v90-version-badge">v100 esquinas fusionadas</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -9913,6 +10112,8 @@ function getSheetBranchOpenMap(){
     const redoBtn = document.querySelector('[data-history-redo="layout"]'); if(redoBtn) redoBtn.onclick = () => redoHistory('layout');
     updateUndoRedoUi();
     const zl = $('#zoomLabel'); if(zl){ const vb = appState.editor.viewBox || {w:900}; zl.textContent = `${Math.round((900 / vb.w) * 100)}%`; }
+    updateLayoutSaveStatus();
+    updateLayoutQualityBadge();
   }
 
   function renderLayoutStackMenu(){
@@ -10401,6 +10602,21 @@ function getSheetBranchOpenMap(){
       wallLayer.appendChild(label);
     });
 
+    getAllWallCornerFusionPolygons().forEach(joint => {
+      if(!Array.isArray(joint.poly) || joint.poly.length < 3) return;
+      const d = wallPolygonPath(joint.poly);
+      const fill = svgEl('path',{
+        d,
+        class:'layout-wall-corner-fusion',
+        fill:joint.selected ? 'rgba(255,224,138,.98)' : 'rgba(231,239,247,.99)',
+        stroke:joint.selected ? 'rgba(255,190,80,.92)' : 'rgba(231,239,247,.78)',
+        'stroke-width':'1',
+        style:'pointer-events:none'
+      });
+      wallLayer.appendChild(fill);
+    });
+
+    // v100: fusiones limpias de esquinas para layout y 3D.
     // v89 FORCE: puertas con modelo de imagen 2; reemplaza definitivamente el modelo viejo de rombos.
     const openingTypeName = type => {
       const kind = normalizeOpeningType(type);
@@ -11032,13 +11248,24 @@ function getSheetBranchOpenMap(){
       const c=iso(-1200,i,0), d=iso(1200,i,0); grid.appendChild(svgEl('line',{x1:c.x,y1:c.y,x2:d.x,y2:d.y,stroke:'rgba(86,124,170,.28)','stroke-width':'1'}));
     }
     svg.appendChild(grid);
-    const zoneLayer=svgEl('g'), rackLayer=svgEl('g'), textLayer=svgEl('g');
-    svg.append(zoneLayer,rackLayer,textLayer);
+    const zoneLayer=svgEl('g'), wallLayer=svgEl('g'), rackLayer=svgEl('g'), textLayer=svgEl('g');
+    svg.append(zoneLayer,wallLayer,rackLayer,textLayer);
     zones.forEach(zone=>{
       const base=(zone.pts||[]).map(p=>iso(p.x,p.y,0));
       zoneLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:hexToRgba(zone.color||'#ffd84d', .22), stroke:hexToRgba(zone.color||'#ffd84d', .96), 'stroke-width':'2'}));
       const c=centroid(zone.pts||[]); const ci=iso(c.x,c.y,0);
       const t=svgEl('text',{x:ci.x,y:ci.y,class:'ortho-label','text-anchor':'middle'}); t.textContent=zone.id; textLayer.appendChild(t);
+    });
+    ensureLayoutDecorations();
+    (appState.layout.walls || []).forEach(wall => {
+      const poly = wall.autoZoneEdge ? getAutoWallPolygon(wall) : null;
+      if(!Array.isArray(poly) || poly.length < 4) return;
+      const base = poly.map(p => iso(p.x, p.y, 0));
+      wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.72)', stroke:'rgba(255,255,255,.55)', 'stroke-width':'1.6'}));
+    });
+    getAllWallCornerFusionPolygons().forEach(joint => {
+      const base = joint.poly.map(p => iso(p.x, p.y, 0));
+      wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.90)', stroke:'rgba(255,255,255,.62)', 'stroke-width':'1.4'}));
     });
     racks.forEach(r=>{
       const h = Math.max(48, Math.round((getModelById(r.modelId)?.height || 220) * (ISO_Z_SCALE * 0.6666667)));
@@ -13333,13 +13560,13 @@ function getSheetBranchOpenMap(){
   }
 
 
-  // WMS v98 - Diagnóstico en tiempo real
+  // WMS v99 - Diagnóstico en tiempo real
   function ensureRuntimeDiagnostics(){
     if(window.__wmsDiagnosticsInstalled) return;
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v98',
+      version: 'v100',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13388,10 +13615,17 @@ function getSheetBranchOpenMap(){
         }
       };
     }
+    document.addEventListener('click', evt => {
+      const target = evt.target?.closest?.('button, [data-screen], [data-layout-tag-action], .menu-item');
+      if(!target) return;
+      const label = String(target.textContent || target.id || target.dataset?.screen || target.dataset?.layoutTagAction || 'click').replace(/\s+/g,' ').trim().slice(0,80);
+      push('acción', label || 'click');
+    }, { capture:true });
+
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v98',
+        version: 'v100',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13429,8 +13663,9 @@ function getSheetBranchOpenMap(){
         (layout.racks || []).forEach(r => {
           if(!(layout.zones || []).some(z => z.id === r.zoneId)) warnings.push(`Rack ${r.id} apunta a zona inexistente ${r.zoneId}`);
         });
+        if(typeof getLayoutQualityWarnings === 'function') warnings.push(...getLayoutQualityWarnings());
       }
-      return warnings;
+      return [...new Set(warnings)].slice(0, 120);
     };
   }
 
@@ -13450,7 +13685,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v98</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v100</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">
@@ -13609,6 +13844,15 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
   if(btnContinueViewer){ btnContinueViewer.onclick = continueAsViewer; }
   if(loginPassword) loginPassword.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
   if(loginUsername) loginUsername.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') doLogin(); });
+  document.addEventListener('keydown', async (e) => {
+    if((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 's'){
+      e.preventDefault();
+      if(appState.screen === 'layout'){
+        persistActiveLayout();
+        await saveRemoteAppState('layout');
+      }
+    }
+  });
 
 
 
