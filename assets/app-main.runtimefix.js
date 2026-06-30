@@ -1,3 +1,4 @@
+/* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
 /* v94: centro real del muro */
@@ -10378,7 +10379,7 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
-            <span class="v90-version-badge">v96 zoom fix</span>
+            <span class="v90-version-badge">v97 buttons fix</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10421,12 +10422,21 @@ function getSheetBranchOpenMap(){
       </div>`
     const svg = $('#layoutSvg');
     const currentBox = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
-    if(!appState.editor.viewBoxCustomized || (currentBox.x===0 && currentBox.y===0 && currentBox.w===900 && currentBox.h===620)) fitLayoutViewBox();
+    if(!appState.editor.viewBoxInitialized){
+      fitLayoutViewBox();
+      appState.editor.viewBoxInitialized = true;
+    }else if(!appState.editor.viewBoxCustomized && (currentBox.x===0 && currentBox.y===0 && currentBox.w===900 && currentBox.h===620)){
+      fitLayoutViewBox();
+    }
     svg.setAttribute('preserveAspectRatio','xMidYMid meet');
     renderLayoutSvg(svg);
     renderLayoutSection();
     renderLayoutInspector();
     renderLayoutStackMenu();
+    const layoutStageRoot = document.querySelector('.layout-cad-v80');
+    if(layoutStageRoot) layoutStageRoot.addEventListener('pointerdown', evt => {
+      if(evt.target && evt.target.closest('button, select, input, .seg-btn')) markLayoutManualInteraction();
+    }, { capture:true });
     bindLayoutToolbar();
     document.querySelectorAll('[data-tool-proxy]').forEach(btn => {
       btn.onclick = () => { const target = document.getElementById(btn.getAttribute('data-tool-proxy')); if(target) target.click(); };
@@ -10565,15 +10575,20 @@ function getSheetBranchOpenMap(){
   function scheduleLayoutAutoFit(force=false){
     if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if(!force && appState.editor?.suppressAutoFitUntil && now < appState.editor.suppressAutoFitUntil) return;
     if(!force && appState.editor?.viewBoxCustomized && appState.editor?.lastZoomAt && (now - appState.editor.lastZoomAt) < 520) return;
+    if(!force && appState.editor?.viewBoxInitialized) return;
     window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
     const run = () => {
       if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
       const svg = document.getElementById('layoutSvg');
       if(!svg) return;
       const nowRun = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if(!force && appState.editor?.suppressAutoFitUntil && nowRun < appState.editor.suppressAutoFitUntil) return;
       if(!force && appState.editor?.viewBoxCustomized && appState.editor?.lastZoomAt && (nowRun - appState.editor.lastZoomAt) < 520) return;
+      if(!force && appState.editor?.viewBoxInitialized) return;
       if(force || !appState.editor.viewBoxCustomized) fitLayoutViewBox();
+      if(force) appState.editor.viewBoxInitialized = true;
       renderLayoutSvg(svg);
       renderLayoutSection();
     };
@@ -11447,9 +11462,18 @@ function getSheetBranchOpenMap(){
     renderLayoutViewportOnly();
   }
 
+  function markLayoutManualInteraction(){
+    if(!appState.editor) return;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    appState.editor.viewBoxInitialized = true;
+    appState.editor.lastLayoutButtonAt = now;
+    appState.editor.suppressAutoFitUntil = now + 850;
+  }
+
   function bindLayoutToolbar(){
-    $$('.seg-btn[data-emode]').forEach(btn => btn.onclick = () => { appState.editor.mode = btn.dataset.emode; renderLayoutEditor(); });
+    $$('.seg-btn[data-emode]').forEach(btn => btn.onclick = () => { markLayoutManualInteraction(); appState.editor.mode = btn.dataset.emode; renderLayoutEditor(); });
     $$('[data-layout-tag-action]').forEach(btn => btn.onclick = () => {
+      markLayoutManualInteraction();
       const action = btn.getAttribute('data-layout-tag-action');
       if(action === 'toggle-select') appState.editor.mode = appState.editor.mode === 'select' ? 'navigate' : 'select';
       else if(action === 'toggle-nav') appState.editor.mode = appState.editor.mode === 'navigate' ? 'select' : 'navigate';
@@ -11470,13 +11494,14 @@ function getSheetBranchOpenMap(){
       else if(action === 'history-redo-racks'){ redoHistory('racks'); return; }
       renderLayoutEditor();
     });
-    if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
-    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
-    if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
-    if($('#btnVertexPlus')) $('#btnVertexPlus').onclick = () => insertVertexOnSelectedEdge();
-    if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => duplicateSelectedRack();
-    if($('#btnDuplicateZone')) $('#btnDuplicateZone').onclick = () => duplicateSelectedZone();
+    if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { markLayoutManualInteraction(); setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
+    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { markLayoutManualInteraction(); appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { markLayoutManualInteraction(); appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnVertexPlus')) $('#btnVertexPlus').onclick = () => { markLayoutManualInteraction(); insertVertexOnSelectedEdge(); };
+    if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => { markLayoutManualInteraction(); duplicateSelectedRack(); };
+    if($('#btnDuplicateZone')) $('#btnDuplicateZone').onclick = () => { markLayoutManualInteraction(); duplicateSelectedZone(); };
     if($('#btnDeleteSelected')) $('#btnDeleteSelected').onclick = () => {
+      markLayoutManualInteraction();
       const selectedIds = getSelectedRackIds();
       const rid = appState.selectedRackLayoutId; const zid = appState.selectedZoneId;
       const oid = appState.selectedOpeningId; const wid = appState.selectedWallId;
@@ -11496,19 +11521,28 @@ function getSheetBranchOpenMap(){
     if($('#btnSaveLayoutTop')) $('#btnSaveLayoutTop').onclick = runSaveLayout;
     if($('#btnSaveLayoutVisible')) $('#btnSaveLayoutVisible').onclick = runSaveLayout;
     if($('#btnSaveLayoutFloat')) $('#btnSaveLayoutFloat').onclick = runSaveLayout;
-    if($('#btnZoomIn')) $('#btnZoomIn').onclick = () => zoomLayout(0.86);
-    if($('#btnZoomOut')) $('#btnZoomOut').onclick = () => zoomLayout(1.16);
-    if($('#btnZoomFit')) $('#btnZoomFit').onclick = () => { fitLayoutViewBox(); renderLayoutEditor(); };
+    if($('#btnZoomIn')) $('#btnZoomIn').onclick = () => { markLayoutManualInteraction(); zoomLayout(0.86); };
+    if($('#btnZoomOut')) $('#btnZoomOut').onclick = () => { markLayoutManualInteraction(); zoomLayout(1.16); };
+    if($('#btnZoomFit')) $('#btnZoomFit').onclick = () => { 
+      markLayoutManualInteraction();
+      fitLayoutViewBox();
+      appState.editor.viewBoxInitialized = true;
+      renderLayoutViewportOnly();
+    };
     window.requestAnimationFrame(() => {
       const stageSvg = document.getElementById('layoutSvg');
       if(!stageSvg) return;
-      if(!appState.editor.viewBoxCustomized) fitLayoutViewBox();
+      if(!appState.editor.viewBoxInitialized){
+        fitLayoutViewBox();
+        appState.editor.viewBoxInitialized = true;
+      }
       renderLayoutSvg(stageSvg);
       renderLayoutSection();
     });
     const svg = $('#layoutSvg');
     svg.onwheel = e => {
       e.preventDefault();
+      markLayoutManualInteraction();
       const factor = e.deltaY > 0 ? 1.10 : 0.90;
       zoomLayout(factor, svgPoint(e, svg));
     };

@@ -57,3 +57,8 @@ Actualización v96:
 - El zoom ya no reconstruye toda la vista de layout en cada paso.
 - El zoom actualiza solo el viewport SVG, evitando el rebote de acercar/alejar.
 - Se bloqueó el auto-fit durante unos milisegundos después de cada zoom para que no compita con el zoom manual.
+
+Actualización v97:
+- Se bloqueó el auto-fit al hacer clic en botones del layout.
+- Los botones de zoom ya no reconstruyen la pantalla ni disparan reajuste automático.
+- La vista se ajusta automáticamente solo al primer render o al usar el botón de ajustar vista.

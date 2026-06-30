@@ -5546,3 +5546,10 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 .zoom-chip{
   user-select:none;
 }
+
+
+/* WMS v97 - botones sin rebote/autofit */
+.layout-cad-v80 button,
+.layout-cad-v80 .seg-btn{
+  -webkit-tap-highlight-color:transparent;
+}
