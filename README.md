@@ -34,3 +34,15 @@ Actualización v92:
 - El ancho visual de la abertura ahora usa el espesor del muro como máximo.
 - El ancho visual mínimo es la mitad del espesor del muro.
 - La cota superior del vano muestra ese ancho visual corregido.
+
+
+Actualización v93:
+- La puerta ahora se alinea a los extremos reales de la pared usando las caras del muro ya dibujadas.
+- Ya no debe sobresalir por fuera del espesor visible del muro.
+- El ancho visual y la cota superior siguen limitados por el espesor del muro.
+
+
+Actualización v94:
+- La puerta ahora toma como centro el centro real del muro.
+- En muros automáticos, el centro se calcula desde la línea base más la mitad del espesor.
+- Ya no debe quedar corrida por fuera del muro.

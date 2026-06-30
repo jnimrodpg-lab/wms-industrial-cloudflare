@@ -1,3 +1,4 @@
+/* v94: centro real del muro */
 /* v93: alineado a extremos reales del muro */
 /* WMS_V91_FIX_PUBLIC_RENDERER_SAVE_LAYOUT */
 /* WMS_V89_FORCE_FROM_V84: reemplazo real del renderer v84 de vanos/puertas */
@@ -10972,20 +10973,16 @@ function getSheetBranchOpenMap(){
       const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const isDoor = true; // v93: todos los vanos usan el render rectangular modelo 2
+      const isDoor = true; // v94: todos los vanos usan el render rectangular modelo 2
       const wallThickness = Math.max(8, Number(wall?.thickness || opening.depth || 14) || 14);
-      const wallFaceA = (p0 && p1) ? ptMid(p0, p1) : null;
-      const wallFaceB = (p3 && p2) ? ptMid(p3, p2) : null;
-      const shortDirAligned = (wallFaceA && wallFaceB) ? ptNorm({ x: wallFaceB.x - wallFaceA.x, y: wallFaceB.y - wallFaceA.y }) : normal;
       const doorCardWidthMin = Math.max(8, wallThickness / 2);
       const doorCardWidthMax = Math.max(doorCardWidthMin, wallThickness);
-      const alignedWallWidth = (wallFaceA && wallFaceB) ? ptDist(wallFaceA, wallFaceB) : wallThickness;
-      const doorCardWidth = clampOpeningCardSize(alignedWallWidth, wallThickness, doorCardWidthMin, doorCardWidthMax);
-      const cardCenter = (wallFaceA && wallFaceB) ? ptMid(wallFaceA, wallFaceB) : seg.center;
+      const doorCardWidth = clampOpeningCardSize(opening.depth || wallThickness, wallThickness, doorCardWidthMin, doorCardWidthMax);
+      const wallCardCenter = wall?.autoZoneEdge ? ptAdd(seg.center, normal, wallThickness / 2) : seg.center;
       const card = isDoor ? doorCardRect(
-        cardCenter,
+        wallCardCenter,
         dir,
-        shortDirAligned,
+        normal,
         clampOpeningCardSize(opening.visualHeight || 148, 148, 120, 260),
         doorCardWidth
       ) : null;

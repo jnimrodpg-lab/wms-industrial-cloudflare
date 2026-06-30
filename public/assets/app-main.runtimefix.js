@@ -1,3 +1,5 @@
+/* v94: centro real del muro */
+/* v93: alineado a extremos reales del muro */
 /* WMS_V91_FIX_PUBLIC_RENDERER_SAVE_LAYOUT */
 /* WMS_V89_FORCE_FROM_V84: reemplazo real del renderer v84 de vanos/puertas */
 (() => {
@@ -10887,6 +10889,9 @@ function getSheetBranchOpenMap(){
     const openingAccentForType = (type, selected=false) => selected ? '#36f58d' : (normalizeOpeningType(type) === 'window' ? '#53e7ff' : normalizeOpeningType(type) === 'free' ? '#c7fff0' : '#36f58d');
     const clampOpeningCardSize = (value, fallback, min, max) => Math.max(min, Math.min(max, Number(value || fallback) || fallback));
     const ptAdd = (p, v, scale=1) => ({ x:p.x + v.x * scale, y:p.y + v.y * scale });
+    const ptMid = (a,b) => ({ x:(a.x+b.x)/2, y:(a.y+b.y)/2 });
+    const ptDist = (a,b) => Math.hypot((b.x-a.x),(b.y-a.y));
+    const ptNorm = v => { const len = Math.hypot(v.x||0, v.y||0) || 1; return { x:(v.x||0)/len, y:(v.y||0)/len }; };
     const doorCardRect = (center, longDir, shortDir, cardHeight, cardWidth) => {
       const halfH = Math.max(8, cardHeight) / 2;
       const halfW = Math.max(8, cardWidth) / 2;
@@ -10968,13 +10973,14 @@ function getSheetBranchOpenMap(){
       const normal = footprint?.normal || getWallOpeningNormal(wall);
       const poly = footprint?.poly || [];
       const p0 = poly[0], p1 = poly[1], p2 = poly[2], p3 = poly[3];
-      const isDoor = true; // v92: todos los vanos usan el render rectangular modelo 2
+      const isDoor = true; // v94: todos los vanos usan el render rectangular modelo 2
       const wallThickness = Math.max(8, Number(wall?.thickness || opening.depth || 14) || 14);
       const doorCardWidthMin = Math.max(8, wallThickness / 2);
       const doorCardWidthMax = Math.max(doorCardWidthMin, wallThickness);
       const doorCardWidth = clampOpeningCardSize(opening.depth || wallThickness, wallThickness, doorCardWidthMin, doorCardWidthMax);
+      const wallCardCenter = wall?.autoZoneEdge ? ptAdd(seg.center, normal, wallThickness / 2) : seg.center;
       const card = isDoor ? doorCardRect(
-        seg.center,
+        wallCardCenter,
         dir,
         normal,
         clampOpeningCardSize(opening.visualHeight || 148, 148, 120, 260),
