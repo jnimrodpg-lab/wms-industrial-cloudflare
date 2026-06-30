@@ -1,4 +1,4 @@
-/* WMS_V103_MODO_USUARIO */
+/* WMS_V104_MODO_USUARIO_CORREGIDO */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -9049,6 +9049,12 @@ function getSheetBranchOpenMap(){
     appState.editor.snapSize = getSnapSize();
     appState.editor.dimFontSize = getDimFontSize();
     if(appState.editor.rightPanelOpen === undefined) appState.editor.rightPanelOpen = true;
+    const vb = appState.editor.viewBox || {};
+    if(!Number.isFinite(Number(vb.w)) || !Number.isFinite(Number(vb.h)) || Number(vb.w) > 14000 || Number(vb.h) > 10000){
+      appState.editor.viewBox = { x:0, y:0, w:900, h:620 };
+      appState.editor.viewBoxInitialized = false;
+      appState.editor.viewBoxCustomized = false;
+    }
   }
 
 
@@ -10211,31 +10217,53 @@ function getSheetBranchOpenMap(){
   function fitLayoutViewBox(){
     const bounds = getLayoutContentBounds();
     const svg = document.getElementById('layoutSvg');
-    const width = Math.max(1, svg?.clientWidth || 0);
-    const height = Math.max(1, svg?.clientHeight || 0);
-    const viewportRatio = width && height ? width / height : 1.65;
+    const rawWidth = Number(svg?.clientWidth || 0);
+    const rawHeight = Number(svg?.clientHeight || 0);
+    const viewportRatioRaw = (rawWidth >= 220 && rawHeight >= 160) ? (rawWidth / rawHeight) : 1.65;
+    const viewportRatio = Math.max(.45, Math.min(3.2, viewportRatioRaw || 1.65));
     const padX = Math.max(52, bounds.w * 0.08);
     const padY = Math.max(46, bounds.h * 0.08);
     let box = {
       x: bounds.x - padX,
       y: bounds.y - padY,
-      w: bounds.w + padX * 2,
-      h: bounds.h + padY * 2
+      w: Math.max(240, bounds.w + padX * 2),
+      h: Math.max(180, bounds.h + padY * 2)
     };
-    const targetRatio = viewportRatio > 0 ? viewportRatio : (box.w / box.h);
-    const currentRatio = box.w / box.h;
-    if(currentRatio < targetRatio){
-      const targetW = box.h * targetRatio;
+    const currentRatio = box.w / Math.max(1, box.h);
+    if(currentRatio < viewportRatio){
+      const targetW = box.h * viewportRatio;
       box.x -= (targetW - box.w) / 2;
       box.w = targetW;
-    } else if(currentRatio > targetRatio){
-      const targetH = box.w / targetRatio;
+    } else if(currentRatio > viewportRatio){
+      const targetH = box.w / viewportRatio;
       box.y -= (targetH - box.h) / 2;
       box.h = targetH;
+    }
+    const maxW = Math.max(12000, bounds.w * 8);
+    const maxH = Math.max(9000, bounds.h * 8);
+    if(!Number.isFinite(box.x) || !Number.isFinite(box.y) || !Number.isFinite(box.w) || !Number.isFinite(box.h) || box.w > maxW || box.h > maxH){
+      box = {
+        x: bounds.x - padX,
+        y: bounds.y - padY,
+        w: Math.max(900, bounds.w + padX * 2),
+        h: Math.max(620, (bounds.w + padX * 2) / 1.65, bounds.h + padY * 2)
+      };
     }
     appState.editor.viewBox = box;
     appState.editor.viewBoxCustomized = false;
     return box;
+  }
+
+  function sanitizeLayoutViewBox(vb){
+    const bounds = getLayoutContentBounds();
+    const maxW = Math.max(14000, bounds.w * 10);
+    const maxH = Math.max(10000, bounds.h * 10);
+    if(!vb || !Number.isFinite(Number(vb.x)) || !Number.isFinite(Number(vb.y)) || !Number.isFinite(Number(vb.w)) || !Number.isFinite(Number(vb.h)) || Number(vb.w) <= 0 || Number(vb.h) <= 0 || Number(vb.w) > maxW || Number(vb.h) > maxH){
+      appState.editor.viewBoxInitialized = false;
+      appState.editor.viewBoxCustomized = false;
+      return fitLayoutViewBox();
+    }
+    return vb;
   }
 
 
@@ -10297,11 +10325,11 @@ function getSheetBranchOpenMap(){
   }
 
   function getLayoutRenderViewBox(svg, vb){
-    const width = Math.max(1, svg?.clientWidth || 0);
-    const height = Math.max(1, svg?.clientHeight || 0);
-    if(!width || !height) return vb;
-    const viewportRatio = width / height;
-    const viewRatio = vb.w / vb.h;
+    const width = Number(svg?.clientWidth || 0);
+    const height = Number(svg?.clientHeight || 0);
+    if(width < 220 || height < 160) return vb;
+    const viewportRatio = Math.max(.45, Math.min(3.2, width / height));
+    const viewRatio = vb.w / Math.max(1, vb.h);
     if(Math.abs(viewportRatio - viewRatio) < 0.01) return vb;
     if(viewportRatio > viewRatio){
       const targetW = vb.h * viewportRatio;
@@ -10317,7 +10345,7 @@ function getSheetBranchOpenMap(){
     appState.editor.view = 'ortho';
     svg.innerHTML = '';
     svg.style.setProperty('--layout-dim-font-size', `${getDimFontSize()}px`);
-    const vb = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
+    const vb = sanitizeLayoutViewBox(appState.editor.viewBox || { x:0, y:0, w:900, h:620 });
     const renderVb = getLayoutRenderViewBox(svg, vb);
     svg.setAttribute('viewBox', `${renderVb.x} ${renderVb.y} ${renderVb.w} ${renderVb.h}`);
     const panSurface = svgEl('rect',{x:vb.x-1400,y:vb.y-1400,width:vb.w+2800,height:vb.h+2800,fill:'transparent',class:'layout-pan-surface',style:'cursor:grab'});
@@ -13577,7 +13605,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v103',
+      version: 'v104',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13636,7 +13664,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v103',
+        version: 'v104',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13696,7 +13724,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v103</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v104</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">
