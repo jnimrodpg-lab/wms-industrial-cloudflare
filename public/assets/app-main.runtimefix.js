@@ -1,4 +1,4 @@
-/* WMS_V100_FUSION_ESQUINAS_LAYOUT_3D */
+/* WMS_V101_UNION_REVIT_SKETCHUP */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -6799,23 +6799,7 @@ function getSheetBranchOpenMap(){
           group.add(edges);
         });
 
-        // v100: agrega piezas de fusión en las esquinas para evitar solapes/grietas visibles en 3D.
-        getAllWallCornerFusionPolygons().forEach(joint => {
-          if(!Array.isArray(joint.poly) || joint.poly.length < 3) return;
-          const isActive = joint.selected || activeZoneIds.has(joint.zoneId);
-          const height = Math.max(2.8, (Number(joint.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
-          const jointMat = new THREE.MeshStandardMaterial({
-            color:isActive ? 0xf2f7fb : 0xb8c8d8,
-            transparent:true,
-            opacity:appState.ui?.nav3DArchitectural ? (isActive ? .98 : .88) : (isActive ? .96 : .72),
-            roughness:.78,
-            metalness:.03,
-            side:THREE.DoubleSide
-          });
-          const geo = makeWallPrismGeometry(joint.poly, height);
-          const mesh = addWallMesh(group, geo, jointMat, isActive, `${joint.prevWallId || ''}+${joint.currWallId || ''}`);
-          if(mesh) mesh.userData.cornerFusion = true;
-        });
+        // v101: el 3D conserva uniones limpias por miter en cada wall prism, sin tapas triangulares extra.
         return group;
       };
       const makeZoneMaterials = (active=false) => ({
@@ -9109,8 +9093,16 @@ function getSheetBranchOpenMap(){
     const side = getWallSideSign(wall.side);
     const baseN = getZoneOutwardEdgeNormal(zone, a, b);
     const n = { x:baseN.x * side, y:baseN.y * side };
-    let outerA = { x:Number(a.x||0) + n.x * thickness, y:Number(a.y||0) + n.y * thickness };
-    let outerB = { x:Number(b.x||0) + n.x * thickness, y:Number(b.y||0) + n.y * thickness };
+    const innerA = { x:Number(a.x || 0), y:Number(a.y || 0) };
+    const innerB = { x:Number(b.x || 0), y:Number(b.y || 0) };
+    let outerA = { x:innerA.x + n.x * thickness, y:innerA.y + n.y * thickness };
+    let outerB = { x:innerB.x + n.x * thickness, y:innerB.y + n.y * thickness };
+
+    const safeMiter = (hit, vertex, fallback) => {
+      if(!hit) return fallback;
+      const maxLen = Math.max(thickness * 3.2, 42);
+      return pointDist2D(hit, vertex) <= maxLen ? hit : fallback;
+    };
 
     const prevIdx = (edgeIndex - 1 + count) % count;
     const prevWall = getZoneEdgeWall(zone, prevIdx);
@@ -9126,7 +9118,7 @@ function getSheetBranchOpenMap(){
         outerA,
         outerB
       );
-      if(hit) outerA = hit;
+      outerA = safeMiter(hit, innerA, outerA);
     }
 
     const nextIdx = (edgeIndex + 1) % count;
@@ -9143,94 +9135,11 @@ function getSheetBranchOpenMap(){
         { x:Number(na.x||0) + nextN.x * nextTh, y:Number(na.y||0) + nextN.y * nextTh },
         { x:Number(nb.x||0) + nextN.x * nextTh, y:Number(nb.y||0) + nextN.y * nextTh }
       );
-      if(hit) outerB = hit;
+      outerB = safeMiter(hit, innerB, outerB);
     }
 
-    return [
-      { x:Number(a.x || 0), y:Number(a.y || 0) },
-      { x:Number(b.x || 0), y:Number(b.y || 0) },
-      outerB,
-      outerA
-    ];
+    return [innerA, innerB, outerB, outerA];
   }
-
-
-  function normalizeVec2D(v){
-    const len = Math.hypot(Number(v?.x || 0), Number(v?.y || 0)) || 1;
-    return { x:Number(v?.x || 0) / len, y:Number(v?.y || 0) / len };
-  }
-  function pointDist2D(a,b){ return Math.hypot(Number(a?.x||0)-Number(b?.x||0), Number(a?.y||0)-Number(b?.y||0)); }
-  function convexHull2D(points=[]){
-    const pts = (points || [])
-      .filter(p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
-      .map(p => ({ x:Number(p.x), y:Number(p.y) }))
-      .sort((a,b) => a.x === b.x ? a.y - b.y : a.x - b.x);
-    const uniq = [];
-    pts.forEach(p => { if(!uniq.length || pointDist2D(uniq[uniq.length-1], p) > .01) uniq.push(p); });
-    if(uniq.length <= 2) return uniq;
-    const cross = (o,a,b) => (a.x-o.x)*(b.y-o.y) - (a.y-o.y)*(b.x-o.x);
-    const lower = [];
-    uniq.forEach(p => {
-      while(lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-      lower.push(p);
-    });
-    const upper = [];
-    [...uniq].reverse().forEach(p => {
-      while(upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-      upper.push(p);
-    });
-    upper.pop(); lower.pop();
-    return lower.concat(upper);
-  }
-  function getZoneWallCornerFusionPolygons(zone){
-    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return [];
-    const count = zone.pts.length;
-    const out = [];
-    for(let idx=0; idx<count; idx+=1){
-      const prevIdx = (idx - 1 + count) % count;
-      const currIdx = idx;
-      const prevWall = getZoneEdgeWall(zone, prevIdx);
-      const currWall = getZoneEdgeWall(zone, currIdx);
-      if(!prevWall?.enabled || !currWall?.enabled) continue;
-      const side = getWallSideSign(prevWall.side);
-      if(getWallSideSign(currWall.side) !== side) continue;
-      const vertex = zone.pts[idx];
-      const prevPt = zone.pts[prevIdx];
-      const nextPt = zone.pts[(idx + 1) % count];
-      if(!vertex || !prevPt || !nextPt) continue;
-      const prevPoly = getZoneEdgeWallPolygon(zone, prevIdx, prevWall);
-      const currPoly = getZoneEdgeWallPolygon(zone, currIdx, currWall);
-      if(!Array.isArray(prevPoly) || !Array.isArray(currPoly) || prevPoly.length < 4 || currPoly.length < 4) continue;
-      const prevTh = Math.max(8, Number(prevWall.thickness || getZoneWallThickness(zone) || 14));
-      const currTh = Math.max(8, Number(currWall.thickness || getZoneWallThickness(zone) || 14));
-      const th = Math.max(prevTh, currTh);
-      const pad = Math.max(4, Math.min(18, th * .55));
-      const dirPrev = normalizeVec2D({ x:Number(prevPt.x||0) - Number(vertex.x||0), y:Number(prevPt.y||0) - Number(vertex.y||0) });
-      const dirNext = normalizeVec2D({ x:Number(nextPt.x||0) - Number(vertex.x||0), y:Number(nextPt.y||0) - Number(vertex.y||0) });
-      const innerPrev = { x:Number(vertex.x||0) + dirPrev.x * pad, y:Number(vertex.y||0) + dirPrev.y * pad };
-      const innerNext = { x:Number(vertex.x||0) + dirNext.x * pad, y:Number(vertex.y||0) + dirNext.y * pad };
-      const prevOuter = prevPoly[2];
-      const currOuter = currPoly[3];
-      const hull = convexHull2D([vertex, innerPrev, innerNext, prevOuter, currOuter]);
-      if(hull.length >= 3){
-        out.push({
-          poly:hull,
-          zoneId:zone.id,
-          vertexIndex:idx,
-          prevWallId:zoneEdgeWallId(zone.id, prevIdx),
-          currWallId:zoneEdgeWallId(zone.id, currIdx),
-          height:Math.max(120, Number(prevWall.height || currWall.height || appState.layout?.meta?.defaultWallHeight || 290)),
-          selected: appState.selectedWallId === zoneEdgeWallId(zone.id, prevIdx) || appState.selectedWallId === zoneEdgeWallId(zone.id, currIdx)
-        });
-      }
-    }
-    return out;
-  }
-  function getAllWallCornerFusionPolygons(){
-    ensureLayoutDecorations();
-    return (appState.layout?.zones || []).flatMap(zone => getZoneWallCornerFusionPolygons(zone));
-  }
-
 
   function wallPolygonPath(poly){
     if(!Array.isArray(poly) || poly.length < 3) return '';
@@ -10040,7 +9949,7 @@ function getSheetBranchOpenMap(){
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
-            <span class="v90-version-badge">v100 esquinas fusionadas</span>
+            <span class="v90-version-badge">v101 unión Revit/SketchUp</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10602,21 +10511,8 @@ function getSheetBranchOpenMap(){
       wallLayer.appendChild(label);
     });
 
-    getAllWallCornerFusionPolygons().forEach(joint => {
-      if(!Array.isArray(joint.poly) || joint.poly.length < 3) return;
-      const d = wallPolygonPath(joint.poly);
-      const fill = svgEl('path',{
-        d,
-        class:'layout-wall-corner-fusion',
-        fill:joint.selected ? 'rgba(255,224,138,.98)' : 'rgba(231,239,247,.99)',
-        stroke:joint.selected ? 'rgba(255,190,80,.92)' : 'rgba(231,239,247,.78)',
-        'stroke-width':'1',
-        style:'pointer-events:none'
-      });
-      wallLayer.appendChild(fill);
-    });
-
-    // v100: fusiones limpias de esquinas para layout y 3D.
+    // v101: unión tipo Revit/SketchUp. No se dibuja una pieza triangular extra;
+    // las paredes contiguas se encuentran con miter limpio desde su propia geometría.
     // v89 FORCE: puertas con modelo de imagen 2; reemplaza definitivamente el modelo viejo de rombos.
     const openingTypeName = type => {
       const kind = normalizeOpeningType(type);
@@ -11262,10 +11158,6 @@ function getSheetBranchOpenMap(){
       if(!Array.isArray(poly) || poly.length < 4) return;
       const base = poly.map(p => iso(p.x, p.y, 0));
       wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.72)', stroke:'rgba(255,255,255,.55)', 'stroke-width':'1.6'}));
-    });
-    getAllWallCornerFusionPolygons().forEach(joint => {
-      const base = joint.poly.map(p => iso(p.x, p.y, 0));
-      wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.90)', stroke:'rgba(255,255,255,.62)', 'stroke-width':'1.4'}));
     });
     racks.forEach(r=>{
       const h = Math.max(48, Math.round((getModelById(r.modelId)?.height || 220) * (ISO_Z_SCALE * 0.6666667)));
@@ -13566,7 +13458,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v100',
+      version: 'v101',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13625,7 +13517,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v100',
+        version: 'v101',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13685,7 +13577,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v100</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v101</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">

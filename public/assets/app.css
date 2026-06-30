@@ -5623,11 +5623,9 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 }
 
 
-/* WMS v100 - fusión de esquinas */
-.layout-wall-corner-fusion{
-  filter:drop-shadow(0 1px 1px rgba(255,255,255,.18));
-  shape-rendering:geometricPrecision;
-}
+
+
+/* WMS v101 - unión de paredes tipo Revit/SketchUp */
 .v90-version-badge{
   border-color:rgba(54,245,141,.62)!important;
 }
