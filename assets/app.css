@@ -5524,3 +5524,16 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 #layoutSvg .edge-hit{fill:rgba(0,0,0,.001);stroke:transparent;cursor:ew-resize;}
 #layoutSvg .edge-handle{vector-effect:non-scaling-stroke;fill:#172434;stroke:#ffb462;stroke-width:2.4;cursor:ew-resize;filter:drop-shadow(0 1px 4px rgba(0,0,0,.45));}
 #layoutSvg .edge-handle.active{fill:#ffd27d;stroke:#fff2c4;}
+
+
+/* WMS v95 - layout panel scroll / screen state / opening width */
+.layout-right-scroll{
+  scroll-behavior:auto;
+}
+.v90-save-layout-btn,
+.v90-floating-save-layout{
+  pointer-events:auto!important;
+}
+.v90-version-badge{
+  border-color:rgba(54,245,141,.55)!important;
+}

@@ -46,3 +46,9 @@ Actualización v94:
 - La puerta ahora toma como centro el centro real del muro.
 - En muros automáticos, el centro se calcula desde la línea base más la mitad del espesor.
 - Ya no debe quedar corrida por fuera del muro.
+
+Actualización v95:
+- El panel derecho de edición de layout conserva su scroll al cambiar propiedades.
+- La pantalla activa se guarda en localStorage para no volver a Empresa/Admin al cambiar o recargar.
+- El campo Ancho del vano/puerta ahora cambia la dimensión visible de la puerta sobre el muro.
+- Se mantiene el ancho transversal de la abertura limitado por el espesor del muro.

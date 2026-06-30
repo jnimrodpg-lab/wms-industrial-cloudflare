@@ -1,3 +1,4 @@
+/* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
 /* v94: centro real del muro */
 /* v93: alineado a extremos reales del muro */
 /* WMS_V91_FIX_PUBLIC_RENDERER_SAVE_LAYOUT */
@@ -1405,8 +1406,28 @@
     });
   }
 
+  function normalizeAppScreenName(screen){
+    const value = String(screen || '').trim();
+    const allowed = ['admin','sheet','layout','racks','dashboard','viewer'];
+    if(value === 'card' || value === 'products') return 'sheet';
+    return allowed.includes(value) ? value : 'viewer';
+  }
+  function getLastAppScreen(){
+    try{
+      const saved = normalizeAppScreenName(localStorage.getItem('wms_last_screen_v95') || '');
+      return ['admin','sheet','layout','racks','dashboard','viewer'].includes(saved) ? saved : 'admin';
+    }catch(_err){ return 'admin'; }
+  }
+  function persistLastAppScreen(screen){
+    try{
+      const normalized = normalizeAppScreenName(screen);
+      if(['admin','sheet','layout','racks','dashboard','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
+    }catch(_err){}
+  }
+
   function setScreen(screen){
     ensureAppRuntimeState();
+    screen = normalizeAppScreenName(screen);
     if(screen === 'card') screen = 'sheet';
     if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){
       appState.ui = appState.ui || {};
@@ -1417,6 +1438,7 @@
     if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer'){ screen = 'viewer'; }
     cleanupLayoutAutoFit();
     appState.screen = screen;
+    persistLastAppScreen(screen);
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     renderViewerMenu();
     const showSearch = ['sheet','viewer'].includes(screen);
@@ -10165,6 +10187,11 @@ function getSheetBranchOpenMap(){
   }
 
   function bindLayoutRightPanel(){
+    const rightScroller = document.querySelector('#layoutRightPanel .layout-right-scroll');
+    if(rightScroller){
+      rightScroller.scrollTop = appState.editor?.rightPanelScrollTop || 0;
+      rightScroller.onscroll = () => { appState.editor.rightPanelScrollTop = rightScroller.scrollTop || 0; };
+    }
     const bindCheck = (id, key, rerender=true) => {
       const el = document.getElementById(id);
       if(!el) return;
@@ -10272,7 +10299,15 @@ function getSheetBranchOpenMap(){
     if($('#rpWallAddWindow')) $('#rpWallAddWindow').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'window'); persistActiveLayout(); renderLayoutEditor(); };
     const persistOpeningUpdate = () => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); if(host) selectedOpening.t = openingClampT(host, selectedOpening.width, selectedOpening.t); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); const host=findWallById(selectedOpening.wallId); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; selectedOpening.height = def.height; selectedOpening.sill = def.sill; selectedOpening.depth = Math.max(4, Math.min(120, Number(selectedOpening.depth || host?.thickness || 14) || 14)); persistOpeningUpdate(); };
-    if($('#rpOpeningWidth')) $('#rpOpeningWidth').onchange = e => { if(!selectedOpening) return; selectedOpening.width = Math.max(40, Math.min(360, Number(e.target.value || 90) || 90)); persistOpeningUpdate(); };
+    if($('#rpOpeningWidth')) {
+      const commitOpeningWidth = e => {
+        if(!selectedOpening) return;
+        selectedOpening.width = Math.max(40, Math.min(360, Number(e.target.value || selectedOpening.width || 90) || 90));
+        persistOpeningUpdate();
+      };
+      $('#rpOpeningWidth').onchange = commitOpeningWidth;
+      $('#rpOpeningWidth').onblur = commitOpeningWidth;
+    }
     if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(320, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
     if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = (normalizeOpeningType(selectedOpening.type) === 'window') ? Math.max(0, Math.min(260, Number(e.target.value || 0) || 0)) : Math.max(0, Math.min(80, Number(e.target.value || 0) || 0)); persistOpeningUpdate(); };
     if($('#rpOpeningDepth')) $('#rpOpeningDepth').onchange = e => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); const maxDepth=Math.max(4, Math.min(120, Number(host?.thickness || 14) || 14)); selectedOpening.depth = Math.max(4, Math.min(maxDepth, Number(e.target.value || maxDepth) || maxDepth)); persistOpeningUpdate(); };
@@ -10306,8 +10341,10 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v91-puertas-modelo-2';
+    document.body.dataset.wmsLayoutVersion = 'v95-layout-fixes';
+    const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
+    appState.editor.rightPanelScrollTop = __layoutRightScrollBefore;
     if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
     ensureRackProps();
     contentTitle.textContent = 'Edición de Layout';
@@ -10340,7 +10377,7 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
-            <span class="v90-version-badge">v91 puertas modelo 2</span>
+            <span class="v90-version-badge">v95 layout fixes</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10394,6 +10431,10 @@ function getSheetBranchOpenMap(){
       btn.onclick = () => { const target = document.getElementById(btn.getAttribute('data-tool-proxy')); if(target) target.click(); };
     });
     bindLayoutRightPanel();
+    requestAnimationFrame(() => {
+      const scroller = document.querySelector('#layoutRightPanel .layout-right-scroll');
+      if(scroller) scroller.scrollTop = appState.editor?.rightPanelScrollTop || __layoutRightScrollBefore || 0;
+    });
     bindLayoutAutoFit();
     const undoBtn = document.querySelector('[data-history-undo="layout"]'); if(undoBtn) undoBtn.onclick = () => undoHistory('layout');
     const redoBtn = document.querySelector('[data-history-redo="layout"]'); if(redoBtn) redoBtn.onclick = () => redoHistory('layout');
@@ -10983,7 +11024,7 @@ function getSheetBranchOpenMap(){
         wallCardCenter,
         dir,
         normal,
-        clampOpeningCardSize(opening.visualHeight || 148, 148, 120, 260),
+        clampOpeningCardSize(opening.width || 90, 90, 40, Math.max(40, Math.min(wallLength(wall) * .86, 360))),
         doorCardWidth
       ) : null;
       const hitPoly = card?.poly?.length ? card.poly : poly;
@@ -11040,7 +11081,7 @@ function getSheetBranchOpenMap(){
           appendOpeningPill(opening, labelAnchor, labelDir, type, accentColor);
           appendOpeningMeasure(card.topLeft, card.topRight, normal, { x:-dir.x, y:-dir.y }, doorCardWidth, '', true, 18);
           const hSide = Math.abs(dir.y) > Math.abs(dir.x) ? {x:1,y:0} : {x:0,y:-1};
-          appendOpeningMeasure(card.topRight, card.bottomRight, dir, hSide, Number(opening.visualHeight || 148) || 148, 'ALTURA', true, 22);
+          appendOpeningMeasure(card.topRight, card.bottomRight, dir, hSide, Number(opening.width || 90) || 90, 'ANCHO', true, 22);
           const handleR = 6.8;
           const hA = svgEl('circle',{cx:card.topCenter.x,cy:card.topCenter.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});
           const hB = svgEl('circle',{cx:card.bottomCenter.x,cy:card.bottomCenter.y,r:handleR,fill:'#4cff9b',stroke:'#06251a','stroke-width':'2',class:'opening-resize-handle',style:'cursor:ew-resize'});
@@ -13275,7 +13316,8 @@ function zoomLayout(factor, center){
   function renderCurrentScreen(){
     if(appState.screen === 'admin') return renderAdminScreen();
     if(appState.screen === 'viewer') return renderMapView();
-    if(appState.screen === 'dashboard' || appState.screen === 'products') { appState.screen = 'viewer'; setActiveMenu('viewer'); return renderMapView(); }
+    if(appState.screen === 'dashboard') return renderDashboard();
+    if(appState.screen === 'products') { appState.screen = 'viewer'; setActiveMenu && setActiveMenu('viewer'); return renderMapView(); }
     setUnifiedMapLayout(false);
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
     else if(appState.screen === 'layout') renderLayoutEditor();
@@ -13861,7 +13903,8 @@ console.info('*** REHYDRATION + SESSION RETRY FIX ACTIVE ***');
       setScreen('viewer');
       closeAuthModal(true);
     }else if(appState.auth?.loggedIn){
-      setScreen(appState.auth?.role === 'viewer' ? 'viewer' : 'admin');
+      const preferredScreen = appState.auth?.role === 'viewer' ? 'viewer' : getLastAppScreen();
+      setScreen(preferredScreen);
       closeAuthModal(true);
     }else if(appState.auth?.transientUnavailable){
       setScreen('viewer');
