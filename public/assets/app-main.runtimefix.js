@@ -1,4 +1,4 @@
-/* WMS_V104_MODO_USUARIO_CORREGIDO */
+/* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -6346,7 +6346,12 @@ function getSheetBranchOpenMap(){
       getVirtualRacks().forEach(r => { if(!realIds.has(r.id)) real.push(r); });
       return real;
     };
-    const findNav3DRackById = (id) => findRackById(id) || getVirtualRacks().find(r => r.id === id) || null;
+    const nav3dRackKey = value => norm(String(value || '')).replace(/\s+/g,'');
+    const findNav3DRackById = (id) => {
+      const key = nav3dRackKey(id);
+      if(!key) return null;
+      return findRackById(id) || (appState.layout?.racks || []).find(r => nav3dRackKey(r.id) === key) || getVirtualRacks().find(r => nav3dRackKey(r.id) === key) || null;
+    };
     const getTargetRackId = () => {
       const liveCtx = getViewerProductLocationContext(prod);
       if(ui.target === 'store') return liveCtx.storeRackId || prod?.rackStore || '';
@@ -6799,15 +6804,22 @@ function getSheetBranchOpenMap(){
           group.add(edges);
         });
 
-        // v102: cierre completo de esquinas tipo L en 3D.
+        // v105: cierre completo de esquinas tipo L en 3D sin usar variables fuera de scope.
         getAllWallCornerClosurePolygons().forEach(joint => {
           if(!Array.isArray(joint.poly) || joint.poly.length < 4) return;
           const isActive = joint.selected || activeZoneIds.has(joint.zoneId);
           const height = Math.max(2.8, (Number(joint.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
           const geo = makeWallPrismGeometry(joint.poly, height);
           if(!geo) return;
-          const wall = new THREE.Mesh(geo, wallMat.clone());
-          wall.material.opacity = isActive ? wallMat.opacity : wallMat.opacity;
+          const jointMat = new THREE.MeshStandardMaterial({
+            color:isActive ? 0xf2f7fb : 0xb8c8d8,
+            transparent:true,
+            opacity:appState.ui?.nav3DArchitectural ? (isActive ? .98 : .86) : (isActive ? .96 : .72),
+            roughness:.78,
+            metalness:.03,
+            side:THREE.DoubleSide
+          });
+          const wall = new THREE.Mesh(geo, jointMat);
           wall.castShadow = true;
           wall.receiveShadow = true;
           wall.userData.wallId = `${joint.prevWallId || ''}+${joint.currWallId || ''}`;
@@ -6996,12 +7008,19 @@ function getSheetBranchOpenMap(){
         return group;
       };
 
-      const visibleRacks = getNav3DRacks().filter(r => {
+      let visibleRacks = getNav3DRacks().filter(r => {
+        const rackActive = focusRackIds.has(r.id) || focusRackIds.has(nav3dRackKey(r.id));
+        const zoneActive = focusZoneIds.has(r.zoneId);
         if(ui.isolation === 'all') return true;
-        if(ui.isolation === 'zone') return focusZoneIds.has(r.zoneId);
-        if(ui.isolation === 'solo') return focusRackIds.has(r.id) || focusZoneIds.has(r.zoneId);
-        return focusRackIds.has(r.id);
+        if(ui.isolation === 'zone') return zoneActive;
+        if(ui.isolation === 'solo') return rackActive || zoneActive;
+        return rackActive;
       });
+      if(!visibleRacks.length){
+        const fallbackRack = findNav3DRackById(getTargetRackId()) || getNav3DRacks()[0] || null;
+        if(fallbackRack) visibleRacks = [fallbackRack];
+        if(window.__wmsDiagPush) window.__wmsDiagPush('3d', 'Se aplicó fallback de rack visible en WebGL');
+      }
       visibleRacks.forEach(r => {
         const active = focusRackIds.has(r.id);
         const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, true);
@@ -7088,8 +7107,19 @@ function getSheetBranchOpenMap(){
         else focusRackCamera(rackId, false);
         setTimeout(() => { renderSideRacks(); renderProductOperationalCard(); renderMiniMap(); syncToolbar(); }, 60);
       };
-      const resize = () => { const rect = canvas.getBoundingClientRect(); renderer.setSize(Math.max(320,rect.width), Math.max(260,rect.height), false); camera.aspect = Math.max(1,rect.width)/Math.max(1,rect.height); camera.updateProjectionMatrix(); };
-      resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas); resize();
+      const resize = () => {
+        const stage = modal.querySelector('.nav3d-stage');
+        const rect = canvas.getBoundingClientRect();
+        const stageRect = stage?.getBoundingClientRect?.() || rect;
+        const w = Math.max(320, Math.round(rect.width || stageRect.width || 860));
+        const h = Math.max(260, Math.round(rect.height || stageRect.height || 560));
+        renderer.setSize(w, h, false);
+        camera.aspect = w / Math.max(1, h);
+        camera.updateProjectionMatrix();
+      };
+      resizeObserver = new ResizeObserver(resize); resizeObserver.observe(modal.querySelector('.nav3d-stage') || canvas); resize();
+      requestAnimationFrame(resize);
+      setTimeout(resize, 120);
       const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); const t = performance.now() * 0.0032; activePulseTargets.forEach(item => { const pulse = 0.72 + (Math.sin(t) + 1) * 0.34; if(item.activeShell?.material){ item.activeShell.material.opacity = 0.48 + pulse * 0.24; item.activeShell.material.emissiveIntensity = 1.25 + pulse * 1.15; } if(item.glowShell){ const s = 0.98 + pulse * 0.08; item.glowShell.scale.set(s,s,s); if(item.glowShell.material) item.glowShell.material.opacity = 0.07 + pulse * 0.11; } if(item.slotLabel){ item.slotLabel.material.opacity = 0.74 + pulse * 0.22; item.slotLabel.position.y = item.labelY + pulse * 0.04; } }); renderer.render(scene,camera); };
       animate();
       canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); });
@@ -13605,7 +13635,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v104',
+      version: 'v105',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13664,7 +13694,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v104',
+        version: 'v105',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13724,7 +13754,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v104</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v105</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">

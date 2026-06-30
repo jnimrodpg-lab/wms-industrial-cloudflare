@@ -5727,3 +5727,15 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
   max-height:250px;
   overflow:auto;
 }
+
+
+/* WMS v105 - 3D navegable visible */
+.nav3d-stage{
+  min-height:520px!important;
+}
+#nav3dCanvas{
+  min-height:520px!important;
+}
+.nav3d-loading{
+  z-index:12;
+}
