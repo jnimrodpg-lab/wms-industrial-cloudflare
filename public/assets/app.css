@@ -5629,3 +5629,9 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 .v90-version-badge{
   border-color:rgba(54,245,141,.62)!important;
 }
+
+
+/* WMS v102 - esquina L cerrada */
+.layout-wall-corner-closure{
+  shape-rendering:geometricPrecision;
+}

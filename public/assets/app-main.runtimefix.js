@@ -1,4 +1,4 @@
-/* WMS_V101_UNION_REVIT_SKETCHUP */
+/* WMS_V102_ESQUINA_L_CERRADA */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
@@ -6799,7 +6799,28 @@ function getSheetBranchOpenMap(){
           group.add(edges);
         });
 
-        // v101: el 3D conserva uniones limpias por miter en cada wall prism, sin tapas triangulares extra.
+        // v102: cierre completo de esquinas tipo L en 3D.
+        getAllWallCornerClosurePolygons().forEach(joint => {
+          if(!Array.isArray(joint.poly) || joint.poly.length < 4) return;
+          const isActive = joint.selected || activeZoneIds.has(joint.zoneId);
+          const height = Math.max(2.8, (Number(joint.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
+          const geo = makeWallPrismGeometry(joint.poly, height);
+          if(!geo) return;
+          const wall = new THREE.Mesh(geo, wallMat.clone());
+          wall.material.opacity = isActive ? wallMat.opacity : wallMat.opacity;
+          wall.castShadow = true;
+          wall.receiveShadow = true;
+          wall.userData.wallId = `${joint.prevWallId || ''}+${joint.currWallId || ''}`;
+          group.add(wall);
+          const edges = new THREE.LineSegments(
+            new THREE.EdgesGeometry(wall.geometry),
+            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
+          );
+          edges.position.copy(wall.position);
+          edges.rotation.copy(wall.rotation);
+          edges.scale.copy(wall.scale);
+          group.add(edges);
+        });
         return group;
       };
       const makeZoneMaterials = (active=false) => ({
@@ -9141,6 +9162,76 @@ function getSheetBranchOpenMap(){
     return [innerA, innerB, outerB, outerA];
   }
 
+
+  function pointDist2D(a,b){
+    return Math.hypot(Number(a?.x || 0) - Number(b?.x || 0), Number(a?.y || 0) - Number(b?.y || 0));
+  }
+  function getZoneWallCornerClosurePolygons(zone){
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return [];
+    const out = [];
+    const count = zone.pts.length;
+    for(let idx=0; idx<count; idx+=1){
+      const prevIdx = (idx - 1 + count) % count;
+      const currIdx = idx;
+      const prevWall = getZoneEdgeWall(zone, prevIdx);
+      const currWall = getZoneEdgeWall(zone, currIdx);
+      if(!prevWall?.enabled || !currWall?.enabled) continue;
+      const prevSide = getWallSideSign(prevWall.side);
+      const currSide = getWallSideSign(currWall.side);
+      if(prevSide !== currSide) continue;
+
+      const prevA = zone.pts[prevIdx];
+      const prevB = zone.pts[idx];
+      const currA = zone.pts[idx];
+      const currB = zone.pts[(idx + 1) % count];
+      const vertex = currA;
+      if(!prevA || !prevB || !currB || !vertex) continue;
+
+      const prevBaseN = getZoneOutwardEdgeNormal(zone, prevA, prevB);
+      const currBaseN = getZoneOutwardEdgeNormal(zone, currA, currB);
+      const prevN = { x:prevBaseN.x * prevSide, y:prevBaseN.y * prevSide };
+      const currN = { x:currBaseN.x * currSide, y:currBaseN.y * currSide };
+      const prevTh = Math.max(8, Number(prevWall.thickness || getZoneWallThickness(zone) || 14));
+      const currTh = Math.max(8, Number(currWall.thickness || getZoneWallThickness(zone) || 14));
+
+      const vPrev = { x:Number(vertex.x || 0) + prevN.x * prevTh, y:Number(vertex.y || 0) + prevN.y * prevTh };
+      const vCurr = { x:Number(vertex.x || 0) + currN.x * currTh, y:Number(vertex.y || 0) + currN.y * currTh };
+
+      const hit = lineIntersection2D(
+        { x:Number(prevA.x || 0) + prevN.x * prevTh, y:Number(prevA.y || 0) + prevN.y * prevTh },
+        vPrev,
+        vCurr,
+        { x:Number(currB.x || 0) + currN.x * currTh, y:Number(currB.y || 0) + currN.y * currTh }
+      );
+
+      let outerCorner = hit;
+      const fallback = { x:vPrev.x + currN.x * currTh, y:vPrev.y + currN.y * currTh };
+      const maxLen = Math.max(prevTh, currTh) * 3.2 + 24;
+      if(!outerCorner || pointDist2D(outerCorner, vertex) > maxLen){
+        outerCorner = fallback;
+      }
+
+      out.push({
+        zoneId: zone.id,
+        prevWallId: zoneEdgeWallId(zone.id, prevIdx),
+        currWallId: zoneEdgeWallId(zone.id, currIdx),
+        selected: appState.selectedWallId === zoneEdgeWallId(zone.id, prevIdx) || appState.selectedWallId === zoneEdgeWallId(zone.id, currIdx),
+        height: Math.max(120, Number(prevWall.height || currWall.height || appState.layout?.meta?.defaultWallHeight || 290)),
+        poly: [
+          { x:Number(vertex.x || 0), y:Number(vertex.y || 0) },
+          vCurr,
+          outerCorner,
+          vPrev
+        ]
+      });
+    }
+    return out;
+  }
+  function getAllWallCornerClosurePolygons(){
+    ensureLayoutDecorations();
+    return (appState.layout?.zones || []).flatMap(zone => getZoneWallCornerClosurePolygons(zone));
+  }
+
   function wallPolygonPath(poly){
     if(!Array.isArray(poly) || poly.length < 3) return '';
     return poly.map((pt, idx) => `${idx === 0 ? 'M' : 'L'} ${Number(pt.x||0)} ${Number(pt.y||0)}`).join(' ') + ' Z';
@@ -9949,7 +10040,7 @@ function getSheetBranchOpenMap(){
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
-            <span class="v90-version-badge">v101 unión Revit/SketchUp</span>
+            <span class="v90-version-badge">v102 esquina L cerrada</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10511,8 +10602,19 @@ function getSheetBranchOpenMap(){
       wallLayer.appendChild(label);
     });
 
-    // v101: unión tipo Revit/SketchUp. No se dibuja una pieza triangular extra;
-    // las paredes contiguas se encuentran con miter limpio desde su propia geometría.
+    // v102: cierre completo de esquinas en L.
+    getAllWallCornerClosurePolygons().forEach(joint => {
+      if(!Array.isArray(joint.poly) || joint.poly.length < 4) return;
+      wallLayer.appendChild(svgEl('path',{
+        d: wallPolygonPath(joint.poly),
+        class:'layout-wall-corner-closure',
+        fill: joint.selected ? 'rgba(255,224,138,.98)' : 'rgba(231,239,247,.99)',
+        stroke: joint.selected ? 'rgba(255,190,80,.92)' : 'rgba(231,239,247,.70)',
+        'stroke-width':'1',
+        style:'pointer-events:none'
+      }));
+    });
+
     // v89 FORCE: puertas con modelo de imagen 2; reemplaza definitivamente el modelo viejo de rombos.
     const openingTypeName = type => {
       const kind = normalizeOpeningType(type);
@@ -11158,6 +11260,11 @@ function getSheetBranchOpenMap(){
       if(!Array.isArray(poly) || poly.length < 4) return;
       const base = poly.map(p => iso(p.x, p.y, 0));
       wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.72)', stroke:'rgba(255,255,255,.55)', 'stroke-width':'1.6'}));
+    });
+    getAllWallCornerClosurePolygons().forEach(joint => {
+      if(!Array.isArray(joint.poly) || joint.poly.length < 4) return;
+      const base = joint.poly.map(p => iso(p.x, p.y, 0));
+      wallLayer.appendChild(svgEl('path',{d:base.map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ')+' Z', fill:'rgba(231,239,247,.92)', stroke:'rgba(255,255,255,.60)', 'stroke-width':'1.4'}));
     });
     racks.forEach(r=>{
       const h = Math.max(48, Math.round((getModelById(r.modelId)?.height || 220) * (ISO_Z_SCALE * 0.6666667)));
@@ -13458,7 +13565,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagnosticsInstalled = true;
     const maxLogs = 120;
     const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v101',
+      version: 'v102',
       logs: [],
       startedAt: new Date().toISOString()
     };
@@ -13517,7 +13624,7 @@ function getSheetBranchOpenMap(){
     window.__wmsDiagSummary = () => {
       const layout = appState?.layout || {};
       return {
-        version: 'v101',
+        version: 'v102',
         screen: appState?.screen || '',
         branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
         products: Array.isArray(appState?.products) ? appState.products.length : 0,
@@ -13577,7 +13684,7 @@ function getSheetBranchOpenMap(){
     modal.innerHTML = `
       <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
         <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v101</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
+          <div><b style="font-size:18px">Diagnóstico WMS v102</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
           <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
         </div>
         <div style="padding:16px 18px;overflow:auto">
