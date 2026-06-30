@@ -5537,3 +5537,12 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 .v90-version-badge{
   border-color:rgba(54,245,141,.55)!important;
 }
+
+
+/* WMS v96 - zoom estable sin rebote */
+#layoutSvg{
+  touch-action:none;
+}
+.zoom-chip{
+  user-select:none;
+}

@@ -1,3 +1,4 @@
+/* WMS_V96_ZOOM_NO_BOUNCE_FIX */
 /* WMS_V95_LAYOUT_STATE_SCROLL_WIDTH_FIX */
 /* v94: centro real del muro */
 /* v93: alineado a extremos reales del muro */
@@ -10377,7 +10378,7 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
-            <span class="v90-version-badge">v95 layout fixes</span>
+            <span class="v90-version-badge">v96 zoom fix</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -10563,11 +10564,15 @@ function getSheetBranchOpenMap(){
 
   function scheduleLayoutAutoFit(force=false){
     if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if(!force && appState.editor?.viewBoxCustomized && appState.editor?.lastZoomAt && (now - appState.editor.lastZoomAt) < 520) return;
     window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
     const run = () => {
       if(appState.editor?.dragging || appState.editor?.dragSelect?.active) return;
       const svg = document.getElementById('layoutSvg');
       if(!svg) return;
+      const nowRun = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+      if(!force && appState.editor?.viewBoxCustomized && appState.editor?.lastZoomAt && (nowRun - appState.editor.lastZoomAt) < 520) return;
       if(force || !appState.editor.viewBoxCustomized) fitLayoutViewBox();
       renderLayoutSvg(svg);
       renderLayoutSection();
@@ -11411,7 +11416,21 @@ function getSheetBranchOpenMap(){
 
   function hexToRgba(hex, a){ const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16); return `rgba(${r},${g},${b},${a})`; }
   function svgPoint(evt, svg){ const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
-function zoomLayout(factor, center){
+  function renderLayoutViewportOnly(){
+    const svg = document.getElementById('layoutSvg');
+    if(!svg) return;
+    window.cancelAnimationFrame(appState.editor?.layoutAutoFitRaf || 0);
+    svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+    renderLayoutSvg(svg);
+    renderLayoutSection();
+    renderLayoutStackMenu();
+    const zl = document.getElementById('zoomLabel');
+    if(zl){
+      const vb = appState.editor.viewBox || {w:900};
+      zl.textContent = `${Math.round((900 / Math.max(1, vb.w)) * 100)}%`;
+    }
+  }
+  function zoomLayout(factor, center){
     const vb = appState.editor.viewBox || { x:0, y:0, w:900, h:620 };
     const cx = center ? center.x : vb.x + vb.w/2;
     const cy = center ? center.y : vb.y + vb.h/2;
@@ -11424,7 +11443,8 @@ function zoomLayout(factor, center){
       h: nh
     };
     appState.editor.viewBoxCustomized = true;
-    renderLayoutEditor();
+    appState.editor.lastZoomAt = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    renderLayoutViewportOnly();
   }
 
   function bindLayoutToolbar(){
@@ -11487,7 +11507,11 @@ function zoomLayout(factor, center){
       renderLayoutSection();
     });
     const svg = $('#layoutSvg');
-    svg.onwheel = e => { e.preventDefault(); zoomLayout(e.deltaY > 0 ? 1.12 : 0.88, svgPoint(e, svg)); };
+    svg.onwheel = e => {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1.10 : 0.90;
+      zoomLayout(factor, svgPoint(e, svg));
+    };
   }
 
 

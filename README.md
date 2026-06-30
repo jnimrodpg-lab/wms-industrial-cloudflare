@@ -52,3 +52,8 @@ Actualización v95:
 - La pantalla activa se guarda en localStorage para no volver a Empresa/Admin al cambiar o recargar.
 - El campo Ancho del vano/puerta ahora cambia la dimensión visible de la puerta sobre el muro.
 - Se mantiene el ancho transversal de la abertura limitado por el espesor del muro.
+
+Actualización v96:
+- El zoom ya no reconstruye toda la vista de layout en cada paso.
+- El zoom actualiza solo el viewport SVG, evitando el rebote de acercar/alejar.
+- Se bloqueó el auto-fit durante unos milisegundos después de cada zoom para que no compita con el zoom manual.
