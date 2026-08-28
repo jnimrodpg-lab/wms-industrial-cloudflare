@@ -820,7 +820,15 @@
     cloneZone.id = newId;
     cloneZone.name = `${zone.name || ('Zona '+zone.id)} copia`;
     cloneZone.color = getNextZoneColor(zone.color);
-    cloneZone.pts = cloneZone.pts.map(pt => ({ x:snapGrid(pt.x + 60), y:snapGrid(pt.y + 40) }));
+    delete cloneZone.linkedRoomId; delete cloneZone.dynamicFromRoom; delete cloneZone.roomLinkBroken; cloneZone.source='manual';
+    let candidate=null;
+    for(let step=1;step<=12;step++){
+      const dx=60*step,dy=40*step; const pts=(zone.pts||[]).map(pt=>({x:snapGrid(pt.x+dx),y:snapGrid(pt.y+dy)}));
+      const hit=typeof findZoneOverlap==='function'?findZoneOverlap('',pts):null;
+      if(!hit){candidate=pts;break;}
+    }
+    if(!candidate){ if(typeof showToast==='function')showToast('No hay espacio libre cercano para duplicar la zona sin superponerla.','warning',2600); return; }
+    cloneZone.pts = candidate;
     ensureZoneSectionCuts(cloneZone);
     appState.layout.zones.push(cloneZone);
     appState.selectedZoneId = newId;

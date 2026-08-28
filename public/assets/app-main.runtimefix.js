@@ -1,4 +1,4 @@
-/* WMS_V118_ARCHITECTURAL_3D */
+/* WMS_V119_OPENINGS_ZONE_GUARDS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
@@ -1420,15 +1420,58 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     }));
   }
   function rackFullyInsideZone(rack, zone){ return !!(rack && zone) && rackCorners(rack).every(pt => pointInPoly(pt, zone.pts) || pointNearPolygonEdge(pt, zone.pts, 1)); }
-  function collectSnapPoints(exceptZoneId = ''){ const out = []; (appState.layout?.zones || []).forEach(zone => zone.pts.forEach((pt, idx) => { if(zone.id !== exceptZoneId) out.push({ x:pt.x, y:pt.y, zoneId:zone.id, idx }); })); return out; }
+  function collectSnapPoints(exceptZoneId = ''){
+    const out = [];
+    (appState.layout?.zones || []).forEach(zone => {
+      if(zone.id === exceptZoneId || !Array.isArray(zone.pts)) return;
+      zone.pts.forEach((pt, idx) => {
+        out.push({ x:pt.x, y:pt.y, zoneId:zone.id, idx, type:'zone-vertex', label:`Vértice ${zone.id}` });
+        const b=zone.pts[(idx+1)%zone.pts.length];
+        if(b) out.push({x:(pt.x+b.x)/2,y:(pt.y+b.y)/2,zoneId:zone.id,type:'zone-mid',label:`Centro borde ${zone.id}`});
+      });
+    });
+    (appState.layout?.walls||[]).forEach(w=>{
+      out.push({x:Number(w.x1||0),y:Number(w.y1||0),wallId:w.id,type:'wall-end',label:`Extremo ${w.id}`});
+      out.push({x:Number(w.x2||0),y:Number(w.y2||0),wallId:w.id,type:'wall-end',label:`Extremo ${w.id}`});
+      out.push({x:(Number(w.x1||0)+Number(w.x2||0))/2,y:(Number(w.y1||0)+Number(w.y2||0))/2,wallId:w.id,type:'wall-mid',label:`Centro ${w.id}`});
+    });
+    return out;
+  }
   function snapPointAdvanced(point, { zoneId = '', keepAxis = null, origin = null } = {}){
-    let x = snapGrid(point.x), y = snapGrid(point.y);
+    let x = snapGrid(point.x), y = snapGrid(point.y), type='grid', label='Rejilla';
     if(keepAxis === 'x' && origin) y = origin.y;
     if(keepAxis === 'y' && origin) x = origin.x;
-    if(!isSnapEnabled()) return { x, y };
-    const threshold = Math.max(4, Math.min(20, getSnapSize() * 1.6));
-    collectSnapPoints(zoneId).forEach(pt => { if(Math.abs(pt.x - x) <= threshold) x = pt.x; if(Math.abs(pt.y - y) <= threshold) y = pt.y; });
-    return { x, y };
+    if(!isSnapEnabled()) return { x, y, type, label };
+    const threshold = Math.max(6, Math.min(28, getSnapSize() * 3.6));
+    let best=null;
+    collectSnapPoints(zoneId).forEach(pt=>{
+      let tx=pt.x,ty=pt.y;
+      if(keepAxis==='x'&&origin) ty=origin.y;
+      if(keepAxis==='y'&&origin) tx=origin.x;
+      const d=Math.hypot(tx-x,ty-y);
+      if(d<=threshold && (!best||d<best.d)) best={...pt,x:tx,y:ty,d};
+    });
+    if(best){ x=best.x;y=best.y;type=best.type;label=best.label; }
+    else {
+      let edgeBest=null;
+      const consider=(a,b,edgeLabel,edgeType)=>{
+        const pr=projectPointToSegment({x,y},a,b),d=Math.hypot(pr.x-x,pr.y-y);
+        let px=pr.x,py=pr.y;
+        if(keepAxis==='x'&&origin)py=origin.y;
+        if(keepAxis==='y'&&origin)px=origin.x;
+        const dd=Math.hypot(px-x,py-y);
+        if(dd<=threshold*.78&&(!edgeBest||dd<edgeBest.d))edgeBest={x:px,y:py,d:dd,label:edgeLabel,type:edgeType};
+      };
+      (appState.layout?.zones||[]).forEach(z=>{if(z.id===zoneId)return;(z.pts||[]).forEach((a,i)=>{const b=z.pts[(i+1)%z.pts.length];if(b)consider(a,b,`Borde ${z.id}`,'zone-edge');});});
+      (appState.layout?.walls||[]).forEach(w=>consider({x:Number(w.x1||0),y:Number(w.y1||0)},{x:Number(w.x2||0),y:Number(w.y2||0)},`Muro ${w.id}`,'wall-edge'));
+      if(edgeBest){x=edgeBest.x;y=edgeBest.y;type=edgeBest.type;label=edgeBest.label;}
+      else {
+        let ax=null,ay=null;
+        collectSnapPoints(zoneId).forEach(pt=>{const dx=Math.abs(pt.x-x),dy=Math.abs(pt.y-y);if(dx<=threshold*.55&&(!ax||dx<ax.d))ax={d:dx,v:pt.x,label:pt.label};if(dy<=threshold*.55&&(!ay||dy<ay.d))ay={d:dy,v:pt.y,label:pt.label};});
+        if(ax&&keepAxis!=='y'){x=ax.v;type='align-x';label=`Alinear X · ${ax.label}`;} if(ay&&keepAxis!=='x'){y=ay.v;type='align-y';label=`Alinear Y · ${ay.label}`;}
+      }
+    }
+    return { x, y, type, label };
   }
   function getRackOccupancy(rackId){ let total = 0; for(const p of (appState.products || [])){ if(p.rack === rackId || p.rackStore === rackId) total++; } return total; }
 
@@ -3023,16 +3066,21 @@ const DEFAULT_GRID_SIZE = 2;
 
   function rotateZoneWithContents(zoneId, deltaDegrees, { persist=true, rerender=true } = {}){
     const zone = findZoneById(zoneId);
-    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return;
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return false;
     const delta = Number(deltaDegrees) || 0;
-    if(!delta) return;
+    if(!delta) return false;
     const center = polygonCentroid(zone.pts);
-    zone.pts = zone.pts.map(pt => rotatePointAround(pt, center, delta));
+    const candidate = zone.pts.map(pt => rotatePointAround(pt, center, delta));
+    const collision = typeof findZoneOverlap === 'function' ? findZoneOverlap(zone.id,candidate) : null;
+    if(collision){ if(typeof setZoneCollisionPreview==='function')setZoneCollisionPreview(zone.id,collision,candidate); if(typeof showToast==='function')showToast(`Rotación bloqueada: ${zone.name||zone.id} se superpondría con ${collision.name||collision.id}.`,'warning',2400); if(rerender&&typeof renderLayoutEditor==='function')renderLayoutEditor(); return false; }
+    zone.pts = candidate;
+    if(typeof clearZoneCollisionPreview==='function')clearZoneCollisionPreview();
     // v110: la rotación de estructura no rota ni reposiciona racks.
     appState.selectedZoneId = zone.id;
     clearRackSnapPreview();
     if(persist) persistActiveLayout();
     if(rerender) renderLayoutEditor();
+    return true;
   }
 
   function setZoneRotation(zoneId, targetDegrees){
@@ -3882,7 +3930,15 @@ const DEFAULT_GRID_SIZE = 2;
     cloneZone.id = newId;
     cloneZone.name = `${zone.name || ('Zona '+zone.id)} copia`;
     cloneZone.color = getNextZoneColor(zone.color);
-    cloneZone.pts = cloneZone.pts.map(pt => ({ x:snapGrid(pt.x + 60), y:snapGrid(pt.y + 40) }));
+    delete cloneZone.linkedRoomId; delete cloneZone.dynamicFromRoom; delete cloneZone.roomLinkBroken; cloneZone.source='manual';
+    let candidate=null;
+    for(let step=1;step<=12;step++){
+      const dx=60*step,dy=40*step; const pts=(zone.pts||[]).map(pt=>({x:snapGrid(pt.x+dx),y:snapGrid(pt.y+dy)}));
+      const hit=typeof findZoneOverlap==='function'?findZoneOverlap('',pts):null;
+      if(!hit){candidate=pts;break;}
+    }
+    if(!candidate){ if(typeof showToast==='function')showToast('No hay espacio libre cercano para duplicar la zona sin superponerla.','warning',2600); return; }
+    cloneZone.pts = candidate;
     ensureZoneSectionCuts(cloneZone);
     appState.layout.zones.push(cloneZone);
     appState.selectedZoneId = newId;
@@ -5880,7 +5936,7 @@ function getSheetBranchOpenMap(){
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v118-architectural-3d';
+      const localUrl = './vendor/three.module.min.js?v=wms-v119-openings-zone-guards';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -6421,8 +6477,10 @@ function getSheetBranchOpenMap(){
           const width = Math.max(40, Math.min(rawLengthUnits * .86, Number(o.width || (o.type === 'window' ? 120 : 90)) || 90));
           const half = (width / 2) / Math.max(1, rawLengthUnits);
           const t = Math.max(half, Math.min(1-half, Number(o.t || .5)));
-          const sillUnits = o.type === 'window' ? Math.max(0, Number(o.sill || 90) || 90) : 0;
-          const heightUnits = Math.max(30, Number(o.height || (o.type === 'window' ? 100 : 210)) || 210);
+          const type = normalizeOpeningType(o.type);
+          const def = openingDefaultForType(type);
+          const sillUnits = (type==='door' || type==='gate') ? 0 : Math.max(0, Number(o.sill ?? def.sill) || 0);
+          const heightUnits = Math.max(20, Number(o.height || def.height) || def.height);
           return { ...o, t, t0:Math.max(0, t-half), t1:Math.min(1, t+half), sillUnits, heightUnits };
         }).sort((a,b)=>a.t0-b.t0);
       };
@@ -6485,6 +6543,7 @@ function getSheetBranchOpenMap(){
       const addOpeningFrame3D = (group, seg, opening, rawLengthUnits, height, thicknessUnits, isActive) => {
         if(appState.ui?.nav3DShowOpeningFrames === false || !opening) return;
         const type=normalizeOpeningType(opening.type);
+        if(type==='free' && opening.frame !== true) return;
         const dx=Number(seg.b.x||0)-Number(seg.a.x||0), dy=Number(seg.b.y||0)-Number(seg.a.y||0);
         const len=Math.max(1,Math.hypot(dx,dy)); const ux=dx/len, uy=dy/len; const n=getSegmentNormal(seg);
         const centerT=Number(opening.t||.5); const center={x:Number(seg.a.x||0)+dx*centerT,y:Number(seg.a.y||0)+dy*centerT};
@@ -8941,7 +9000,7 @@ function getSheetBranchOpenMap(){
   }
 
 
-/* WMS_V117_CAD_ZONES_RACKS_VALIDATION */
+/* WMS_V119_OPENINGS_ZONE_GUARDS */
   function ensureLayoutEditorState(){
     if(!appState.editor || typeof appState.editor !== 'object') appState.editor = {};
     ensureLayoutDecorations();
@@ -8969,6 +9028,8 @@ function getSheetBranchOpenMap(){
     if(appState.editor.wallMergePreview === undefined) appState.editor.wallMergePreview = null;
     if(!Array.isArray(appState.editor.selectedWallIds)) appState.editor.selectedWallIds = appState.selectedWallId ? [appState.selectedWallId] : [];
     if(appState.editor.roomMovePreview === undefined) appState.editor.roomMovePreview = null;
+    if(appState.editor.zoneCollisionPreview === undefined) appState.editor.zoneCollisionPreview = null;
+    if(appState.editor.geometrySnapPreview === undefined) appState.editor.geometrySnapPreview = null;
     // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
     if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
       appState.editor.snapSize = DEFAULT_GRID_SIZE;
@@ -9099,11 +9160,8 @@ function getSheetBranchOpenMap(){
     ensureWallTopology();
     const node = getWallNode(nodeId);
     if(!node) return null;
-    node.x = Number(x||0); node.y = Number(y||0);
-    syncManualWallsFromNodes();
-    syncRoomLinkedZones();
-    ensureOpeningAttachmentOffsets();
-    return node;
+    const ok = trySetWallNodesPositionsBulk([{id:nodeId,x:Number(x||0),y:Number(y||0)}], appState.layout, {silent:true});
+    return ok ? getWallNode(nodeId) : null;
   }
   function setManualWallLength(wall, nextLength){
     if(!wall || wall.autoZoneEdge) return false;
@@ -9113,8 +9171,7 @@ function getSheetBranchOpenMap(){
     const len = Math.max(1, Math.hypot(b.x-a.x, b.y-a.y));
     const target = Math.max(10, Number(nextLength || len) || len);
     const dx = (b.x-a.x)/len, dy = (b.y-a.y)/len;
-    setWallNodePosition(b.id, a.x + dx*target, a.y + dy*target);
-    return true;
+    return !!setWallNodePosition(b.id, a.x + dx*target, a.y + dy*target);
   }
   function nextRoomId(){
     ensureWallTopology();
@@ -9173,7 +9230,7 @@ function getSheetBranchOpenMap(){
     if(!room) return false;
     ensureWallTopology();
     const updates=roomNodeIds(room).map(id=>{ const n=getWallNode(id); return n?{id,x:(snap?snapGrid(n.x+dx):n.x+dx),y:(snap?snapGrid(n.y+dy):n.y+dy)}:null; }).filter(Boolean);
-    return setWallNodesPositionsBulk(updates);
+    return trySetWallNodesPositionsBulk(updates, appState.layout, {silent:false});
   }
   function mergeWallNodeInto(sourceId,targetId,layout=appState.layout){
     if(!sourceId||!targetId||sourceId===targetId) return targetId;
@@ -9280,6 +9337,127 @@ function getSheetBranchOpenMap(){
     });
     return layout;
   }
+  // v119 — geometría segura de zonas: snap entre zonas/muros + prohibición de solapes interiores.
+  function zoneBoundaryDistance(point, pts){
+    if(!point || !Array.isArray(pts) || pts.length < 2) return Infinity;
+    let best=Infinity;
+    for(let i=0;i<pts.length;i++){
+      const pr=projectPointToSegment(point,pts[i],pts[(i+1)%pts.length]);
+      best=Math.min(best,Math.hypot(pr.x-point.x,pr.y-point.y));
+    }
+    return best;
+  }
+  function pointStrictlyInsidePolygon(point, pts, tolerance=.8){
+    return !!(point && Array.isArray(pts) && pts.length>=3 && pointInPoly(point,pts) && zoneBoundaryDistance(point,pts)>tolerance);
+  }
+  function segmentProperIntersection(a,b,c,d,eps=.35){
+    const cross=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+    const ab1=cross(a,b,c), ab2=cross(a,b,d), cd1=cross(c,d,a), cd2=cross(c,d,b);
+    return ((ab1>eps&&ab2<-eps)||(ab1<-eps&&ab2>eps)) && ((cd1>eps&&cd2<-eps)||(cd1<-eps&&cd2>eps));
+  }
+  function zonePolygonsOverlap(a,b,tolerance=.8){
+    if(!Array.isArray(a)||a.length<3||!Array.isArray(b)||b.length<3) return false;
+    const ba={minX:Math.min(...a.map(p=>p.x)),maxX:Math.max(...a.map(p=>p.x)),minY:Math.min(...a.map(p=>p.y)),maxY:Math.max(...a.map(p=>p.y))};
+    const bb={minX:Math.min(...b.map(p=>p.x)),maxX:Math.max(...b.map(p=>p.x)),minY:Math.min(...b.map(p=>p.y)),maxY:Math.max(...b.map(p=>p.y))};
+    if(ba.maxX<=bb.minX+tolerance||bb.maxX<=ba.minX+tolerance||ba.maxY<=bb.minY+tolerance||bb.maxY<=ba.minY+tolerance) return false;
+    for(let i=0;i<a.length;i++) for(let j=0;j<b.length;j++) if(segmentProperIntersection(a[i],a[(i+1)%a.length],b[j],b[(j+1)%b.length],tolerance*.25)) return true;
+    if(a.some(p=>pointStrictlyInsidePolygon(p,b,tolerance)) || b.some(p=>pointStrictlyInsidePolygon(p,a,tolerance))) return true;
+    const aMid=a.map((p,i)=>({x:(p.x+a[(i+1)%a.length].x)/2,y:(p.y+a[(i+1)%a.length].y)/2}));
+    const bMid=b.map((p,i)=>({x:(p.x+b[(i+1)%b.length].x)/2,y:(p.y+b[(i+1)%b.length].y)/2}));
+    if(aMid.some(p=>pointStrictlyInsidePolygon(p,b,tolerance)) || bMid.some(p=>pointStrictlyInsidePolygon(p,a,tolerance))) return true;
+    const ca=polygonCentroid(a), cb=polygonCentroid(b);
+    if(pointStrictlyInsidePolygon(ca,b,tolerance) || pointStrictlyInsidePolygon(cb,a,tolerance)) return true;
+    return false;
+  }
+  function findZoneOverlap(zoneId, pts, layout=appState.layout){
+    if(!Array.isArray(pts)||pts.length<3) return null;
+    return (layout?.zones||[]).find(other=>other?.id!==zoneId && Array.isArray(other.pts) && other.pts.length>=3 && zonePolygonsOverlap(pts,other.pts)) || null;
+  }
+  function clearZoneCollisionPreview(){ if(appState.editor) appState.editor.zoneCollisionPreview=null; }
+  function setZoneCollisionPreview(zoneId, other, pts=null){
+    if(!appState.editor) return;
+    appState.editor.zoneCollisionPreview={zoneId,otherZoneId:other?.id||'',message:other?`No se puede superponer con ${other.name||other.id}.`:'Las zonas no pueden superponerse.',pts:Array.isArray(pts)?pts.map(p=>({...p})):null};
+  }
+  function zoneOwnTopologyIds(zoneId=''){
+    const zone=findZoneById(zoneId), room=zone?.linkedRoomId?findRoomById(zone.linkedRoomId):null; const nodeIds=new Set(room?.nodeIds||[]), wallIds=new Set();
+    if(room) roomWallEdges(room).forEach(e=>{if(e.wall?.id)wallIds.add(e.wall.id);});
+    return {nodeIds,wallIds};
+  }
+  function zoneTargetSegments(excludeZoneId=''){
+    const out=[], own=zoneOwnTopologyIds(excludeZoneId);
+    (appState.layout?.zones||[]).forEach(z=>{
+      if(z.id===excludeZoneId||!Array.isArray(z.pts)) return;
+      for(let i=0;i<z.pts.length;i++) out.push({a:z.pts[i],b:z.pts[(i+1)%z.pts.length],kind:'zone-edge',label:`Borde ${z.name||z.id}`,zoneId:z.id});
+    });
+    (appState.layout?.walls||[]).filter(w=>wallLength(w)>2&&!own.wallIds.has(w.id)).forEach(w=>out.push({a:{x:Number(w.x1||0),y:Number(w.y1||0)},b:{x:Number(w.x2||0),y:Number(w.y2||0)},kind:'wall-edge',label:`Muro ${w.id}`,wallId:w.id}));
+    return out;
+  }
+  function zoneTargetPoints(excludeZoneId=''){
+    const out=[], own=zoneOwnTopologyIds(excludeZoneId);
+    (appState.layout?.zones||[]).forEach(z=>{
+      if(z.id===excludeZoneId) return;
+      (z.pts||[]).forEach((p,i)=>out.push({x:p.x,y:p.y,label:`Vértice ${z.name||z.id}`,zoneId:z.id,idx:i}));
+      (z.pts||[]).forEach((p,i)=>{ const b=z.pts[(i+1)%z.pts.length]; if(b) out.push({x:(p.x+b.x)/2,y:(p.y+b.y)/2,label:`Centro borde ${z.name||z.id}`,zoneId:z.id}); });
+    });
+    (appState.layout?.wallNodes||[]).forEach(n=>{if(!own.nodeIds.has(n.id))out.push({x:Number(n.x||0),y:Number(n.y||0),label:`Nodo ${n.id}`,nodeId:n.id});});
+    (appState.layout?.walls||[]).filter(w=>wallLength(w)>2&&!own.wallIds.has(w.id)).forEach(w=>out.push({x:(Number(w.x1)+Number(w.x2))/2,y:(Number(w.y1)+Number(w.y2))/2,label:`Centro ${w.id}`,wallId:w.id}));
+    return out;
+  }
+  function snapZoneTranslation(zone, originalPts, dx, dy){
+    const baseDx=snapGrid(dx), baseDy=snapGrid(dy), threshold=Math.max(6,Math.min(30,getSnapSize()*4.2));
+    let best=null;
+    const moving=(originalPts||[]).map(p=>({x:p.x+baseDx,y:p.y+baseDy}));
+    zoneTargetPoints(zone?.id||'').forEach(t=>moving.forEach(p=>{
+      const vx=t.x-p.x, vy=t.y-p.y, dist=Math.hypot(vx,vy);
+      if(dist<=threshold && (!best||dist<best.score)) best={score:dist,dx:baseDx+vx,dy:baseDy+vy,label:t.label,point:{x:t.x,y:t.y},kind:'point'};
+    }));
+    zoneTargetSegments(zone?.id||'').forEach(seg=>{
+      const tx=seg.b.x-seg.a.x, ty=seg.b.y-seg.a.y, tl=Math.hypot(tx,ty)||1, ux=tx/tl, uy=ty/tl, nx=-uy, ny=ux;
+      moving.forEach((a,i)=>{
+        const b=moving[(i+1)%moving.length]; if(!b) return;
+        const mx=b.x-a.x,my=b.y-a.y,ml=Math.hypot(mx,my)||1, dot=Math.abs((mx/ml)*ux+(my/ml)*uy); if(dot<Math.cos(6*Math.PI/180)) return;
+        const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2}; const signed=(mid.x-seg.a.x)*nx+(mid.y-seg.a.y)*ny; if(Math.abs(signed)>threshold) return;
+        const projA=(a.x-seg.a.x)*ux+(a.y-seg.a.y)*uy, projB=(b.x-seg.a.x)*ux+(b.y-seg.a.y)*uy; const lo=Math.min(projA,projB), hi=Math.max(projA,projB); if(hi< -threshold || lo>tl+threshold) return;
+        const cx=-nx*signed, cy=-ny*signed, score=Math.abs(signed)*.72;
+        if(!best||score<best.score) best={score,dx:baseDx+cx,dy:baseDy+cy,label:seg.label,point:{x:mid.x+cx,y:mid.y+cy},kind:seg.kind,target:seg};
+      });
+    });
+    const result=best||{dx:baseDx,dy:baseDy,label:'Rejilla',point:null,kind:'grid'};
+    if(appState.editor) appState.editor.geometrySnapPreview=result.kind==='grid'?null:result;
+    return result;
+  }
+  function roomCandidatePoints(room, originalNodes, dx, dy){
+    return (room?.nodeIds||[]).map(id=>originalNodes?.[id]?{x:originalNodes[id].x+dx,y:originalNodes[id].y+dy}:null).filter(Boolean);
+  }
+  function affectedZoneIdsForNodes(nodeIds, layout=appState.layout){
+    const ids=new Set(nodeIds||[]), out=[];
+    (layout?.zones||[]).forEach(z=>{ const room=z.linkedRoomId?findRoomById(z.linkedRoomId,layout):null; if(room&&(room.nodeIds||[]).some(id=>ids.has(id))) out.push(z.id); });
+    return out;
+  }
+  function trySetWallNodesPositionsBulk(items, layout=appState.layout, {silent=true}={}){
+    if(!layout||!Array.isArray(layout.wallNodes)) return false;
+    const ids=(items||[]).map(i=>i.id).filter(Boolean), affected=affectedZoneIdsForNodes(ids,layout);
+    const map=new Map(layout.wallNodes.map(n=>[n.id,n])); const original=ids.map(id=>{const n=map.get(id);return n?{id,x:n.x,y:n.y}:null;}).filter(Boolean);
+    setWallNodesPositionsBulk(items,layout);
+    let hit=null, hitZone='';
+    for(const zid of affected){ const z=(layout.zones||[]).find(x=>x.id===zid); const other=z?findZoneOverlap(z.id,z.pts,layout):null; if(other){hit=other;hitZone=z.id;break;} }
+    if(hit){ setWallNodesPositionsBulk(original,layout); setZoneCollisionPreview(hitZone,hit); if(!silent) showToast(`Movimiento bloqueado: ${hitZone} no puede superponerse con ${hit.name||hit.id}.`,'warning',2400); return false; }
+    clearZoneCollisionPreview(); return true;
+  }
+  function snapWallNodeSetTranslation(nodeIds, originalNodes, dx, dy, movingWallIds=[]){
+    const threshold=Math.max(6,Math.min(26,getSnapSize()*3.8)); let best=null; const movingSet=new Set(nodeIds||[]), wallSet=new Set(movingWallIds||[]);
+    const pts=(nodeIds||[]).map(id=>originalNodes?.[id]?{id,x:originalNodes[id].x+dx,y:originalNodes[id].y+dy}:null).filter(Boolean);
+    const targets=[]; (appState.layout?.wallNodes||[]).forEach(n=>{if(!movingSet.has(n.id))targets.push({x:n.x,y:n.y,label:`Nodo ${n.id}`});});
+    (appState.layout?.zones||[]).forEach(z=>(z.pts||[]).forEach(p=>targets.push({x:p.x,y:p.y,label:`Zona ${z.id}`})));
+    targets.forEach(t=>pts.forEach(p=>{const vx=t.x-p.x,vy=t.y-p.y,d=Math.hypot(vx,vy);if(d<=threshold&&(!best||d<best.score))best={score:d,dx:dx+vx,dy:dy+vy,label:t.label,point:{x:t.x,y:t.y}};}));
+    (appState.layout?.walls||[]).filter(w=>!wallSet.has(w.id)&&wallLength(w)>2).forEach(w=>{
+      const a={x:Number(w.x1||0),y:Number(w.y1||0)},b={x:Number(w.x2||0),y:Number(w.y2||0)};
+      pts.forEach(p=>{const pr=projectPointToSegment(p,a,b),dist=Math.hypot(pr.x-p.x,pr.y-p.y);if(dist<=threshold*.75&&(!best||dist<best.score))best={score:dist,dx:dx+(pr.x-p.x),dy:dy+(pr.y-p.y),label:`Muro ${w.id}`,point:pr};});
+    });
+    if(best && appState.editor) appState.editor.geometrySnapPreview={...best,kind:'wall'}; else if(appState.editor) appState.editor.geometrySnapPreview=null;
+    return best||{dx,dy,label:'Rejilla',point:null};
+  }
+
   function nextRoomZoneName(room){
     const idx = Math.max(1,(appState.layout?.zones||[]).length+1);
     const base = String(room?.name || '').replace(/^Recinto\s*/i,'').trim();
@@ -9299,6 +9477,8 @@ function getSheetBranchOpenMap(){
       id, name:nextRoomZoneName(room), color:palette[(appState.layout.zones||[]).length % palette.length], pts:pts.map(p=>({...p})),
       linkedRoomId:room.id, dynamicFromRoom:true, roomLinkBroken:false, edgeWalls:{}, source:'room'
     };
+    const collision=findZoneOverlap('',zone.pts);
+    if(collision){ showToast(`No se puede crear la zona: el recinto se superpone con ${collision.name||collision.id}.`,'warning',2800); return null; }
     appState.layout.zones.push(zone);
     room.zoneId=id;
     appState.selectedRoomId=room.id;
@@ -9394,7 +9574,12 @@ function getSheetBranchOpenMap(){
     ensureWallTopology();
     const out=[];
     (appState.layout.wallNodes||[]).forEach(n=>out.push({x:n.x,y:n.y,type:'endpoint',label:'Extremo',nodeId:n.id,priority:0}));
-    (appState.layout.zones||[]).forEach(z=>(z.pts||[]).forEach(pt=>out.push({x:pt.x,y:pt.y,type:'zone',label:'Vértice zona',priority:2})));
+    (appState.layout.zones||[]).forEach(z=>{
+      (z.pts||[]).forEach((pt,i)=>{
+        out.push({x:pt.x,y:pt.y,type:'zone',label:`Vértice ${z.id}`,priority:2});
+        const b=z.pts[(i+1)%z.pts.length]; if(b) out.push({x:(pt.x+b.x)/2,y:(pt.y+b.y)/2,type:'zone-mid',label:`Centro borde ${z.id}`,priority:3});
+      });
+    });
     const walls=(appState.layout.walls||[]).filter(w=>wallLength(w)>2);
     walls.forEach(w=>out.push({x:(Number(w.x1)+Number(w.x2))/2,y:(Number(w.y1)+Number(w.y2))/2,type:'midpoint',label:'Centro',priority:1}));
     for(let i=0;i<walls.length;i++) for(let j=i+1;j<walls.length;j++){
@@ -9431,13 +9616,14 @@ function getSheetBranchOpenMap(){
     });
     if(best){ x=best.x; y=best.y; type=best.type; label=(best.nodeId && best.nodeId===appState.editor.wallChainStartNodeId && appState.editor.wallChainNodeIds?.length>=3)?'Cerrar':best.label; nodeId=best.nodeId||''; }
     else {
-      let wallBest=null;
-      (appState.layout.walls||[]).forEach(w=>{
-        const proj=projectPointToSegment({x,y},{x:Number(w.x1||0),y:Number(w.y1||0)},{x:Number(w.x2||0),y:Number(w.y2||0)});
-        const d=Math.hypot(proj.x-x,proj.y-y);
-        if(d<=threshold*.72 && (!wallBest||d<wallBest.d)) wallBest={...proj,d};
-      });
-      if(wallBest){ x=wallBest.x; y=wallBest.y; type='perpendicular'; label='Muro'; }
+      const targets=collectWallSnapTargets(); let alignX=null,alignY=null;
+      targets.forEach(t=>{ const ax=Math.abs(t.x-x), ay=Math.abs(t.y-y); if(ax<=threshold*.58&&(!alignX||ax<alignX.d))alignX={d:ax,x:t.x,label:t.label}; if(ay<=threshold*.58&&(!alignY||ay<alignY.d))alignY={d:ay,y:t.y,label:t.label}; });
+      if(alignX){x=alignX.x;type='alignment';label=`Alinear X · ${alignX.label}`;} if(alignY){y=alignY.y;type='alignment';label=`Alinear Y · ${alignY.label}`;}
+      let edgeBest=null;
+      const considerEdge=(a,b,edgeLabel)=>{ const proj=projectPointToSegment({x,y},a,b); const d=Math.hypot(proj.x-x,proj.y-y); if(d<=threshold*.72&&(!edgeBest||d<edgeBest.d))edgeBest={...proj,d,label:edgeLabel}; };
+      (appState.layout.walls||[]).forEach(w=>considerEdge({x:Number(w.x1||0),y:Number(w.y1||0)},{x:Number(w.x2||0),y:Number(w.y2||0)},`Muro ${w.id}`));
+      (appState.layout.zones||[]).forEach(z=>(z.pts||[]).forEach((a,i)=>{const b=z.pts[(i+1)%z.pts.length];if(b)considerEdge(a,b,`Borde ${z.id}`);}));
+      if(edgeBest){ x=edgeBest.x; y=edgeBest.y; type='perpendicular'; label=edgeBest.label; }
     }
     return {x,y,type,label,nodeId};
   }
@@ -9549,7 +9735,7 @@ function getSheetBranchOpenMap(){
   function copySelectedStructure(){
     if(!isStructureLayoutScreen()) return false;
     const op=findOpeningById(appState.selectedOpeningId), wall=findWallById(appState.selectedWallId), zone=findZoneById(appState.selectedZoneId);
-    if(op){ appState.editor.structureClipboard={type:'opening',data:clone(op)}; showToast('Vano copiado.','success',1200); return true; }
+    if(op){ appState.editor.structureClipboard={type:'opening',data:clone(op)}; showToast('Opening copiado.','success',1200); return true; }
     if(wall && !wall.autoZoneEdge){ appState.editor.structureClipboard={type:'wall',data:clone(wall)}; showToast('Muro copiado.','success',1200); return true; }
     if(zone){ appState.editor.structureClipboard={type:'zone',data:clone(zone)}; showToast('Zona copiada.','success',1200); return true; }
     return false;
@@ -10160,8 +10346,8 @@ function getSheetBranchOpenMap(){
     }
     if(measurement) return { type:'measure', title:'Medición', subtitle:`${measurement.id} · ${formatDistanceCm(Math.hypot(measurement.b.x-measurement.a.x, measurement.b.y-measurement.a.y))}` };
     if(opening){
-      const host = findWallById(opening.wallId);
-      return { type:'opening', title:opening.type === 'window' ? 'Ventana' : 'Puerta / vano', subtitle:`${opening.id} · ${host?.id || 'sin pared'} · ${Math.round(Number(opening.width||90))} u` };
+      const host = findWallById(opening.wallId), kind=normalizeOpeningType(opening.type); const title=kind==='window'?'Ventana':kind==='free'?'Abertura libre':kind==='gate'?'Portón':'Puerta';
+      return { type:'opening', title, subtitle:`${opening.id} · ${host?.id || 'sin pared'} · ${Math.round(Number(opening.width||90))} cm · cota ${Math.round(Number(opening.sill||0))} cm` };
     }
     if(wall){
       return { type:'wall', title:wall.name || wall.id, subtitle:`${wall.id} · ${formatDistanceCm(wallLength(wall))} · espesor ${formatDistanceCm(Number(wall.thickness||12))}` };
@@ -10184,8 +10370,9 @@ function getSheetBranchOpenMap(){
     const nextW = Math.max(40, Number.isFinite(Number(updates.w)) ? Number(updates.w) : (b.maxX - b.minX));
     const nextH = Math.max(40, Number.isFinite(Number(updates.h)) ? Number(updates.h) : (b.maxY - b.minY));
     // Mantener forma rectangular si la zona tiene 4 vértices; si tiene más, escalar proporcionalmente.
+    let candidate;
     if(zone.pts.length === 4){
-      zone.pts = [
+      candidate = [
         {x:snapGrid(nextX), y:snapGrid(nextY)},
         {x:snapGrid(nextX+nextW), y:snapGrid(nextY)},
         {x:snapGrid(nextX+nextW), y:snapGrid(nextY+nextH)},
@@ -10193,12 +10380,16 @@ function getSheetBranchOpenMap(){
       ];
     } else {
       const oldW = Math.max(1, b.maxX - b.minX), oldH = Math.max(1, b.maxY - b.minY);
-      zone.pts = zone.pts.map(pt => ({
+      candidate = zone.pts.map(pt => ({
         x: snapGrid(nextX + ((pt.x - b.minX) / oldW) * nextW),
         y: snapGrid(nextY + ((pt.y - b.minY) / oldH) * nextH)
       }));
     }
+    const collision=findZoneOverlap(zone.id,candidate);
+    if(collision){ setZoneCollisionPreview(zone.id,collision,candidate); showToast(`Cambio bloqueado: ${zone.name||zone.id} no puede superponerse con ${collision.name||collision.id}.`,'warning',2400); return false; }
+    zone.pts=candidate; clearZoneCollisionPreview();
     // v110: la estructura no reposiciona racks; se corrigen luego en Distribución de racks.
+    return true;
   }
 
   function addWarehouseTemplate(){
@@ -10304,7 +10495,7 @@ function getSheetBranchOpenMap(){
     return `
       <div class="layout-right-head">
         <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
-        <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Pared' : summary.type === 'opening' ? 'Vano' : summary.type === 'measure' ? 'Medida' : summary.type === 'room' ? 'Recinto' : 'Plano'}</span>
+        <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Pared' : summary.type === 'opening' ? 'Opening' : summary.type === 'measure' ? 'Medida' : summary.type === 'room' ? 'Recinto' : 'Plano'}</span>
       </div>
       <div class="layout-right-scroll ${appState.editor.beginnerMode ? 'beginner-scroll' : ''}">
         <section class="layout-prop-card selected-summary">
@@ -10424,6 +10615,7 @@ function getSheetBranchOpenMap(){
           ${!sw.autoZoneEdge?`<div class="layout-prop-grid two" style="margin-top:10px"><label>Mover ΔX (cm)<input id="rpWallMoveX" type="number" step="1" value="0"></label><label>Mover ΔY (cm)<input id="rpWallMoveY" type="number" step="1" value="0"></label></div>`:''}
           <div class="layout-template-grid" style="margin-top:10px">
             ${sw.autoZoneEdge ? `<button class="seg-btn" id="rpWallFlip">Invertir muro</button>` : `<button class="seg-btn" id="rpWallDuplicate">Duplicar muro</button><button class="seg-btn" id="rpWallMoveExact">Mover exacto</button>`}
+            <button class="seg-btn" id="rpWallAddFree">Agregar abertura</button>
             <button class="seg-btn" id="rpWallAddDoor">Agregar puerta</button>
             <button class="seg-btn" id="rpWallAddWindow">Agregar ventana</button>
             <button class="seg-btn danger" id="rpWallDelete">Eliminar muro</button>
@@ -10431,14 +10623,14 @@ function getSheetBranchOpenMap(){
           <div class="tiny muted" style="margin-top:8px">Los extremos son nodos compartidos. Al mover un nodo, todos los muros conectados permanecen unidos.</div>
         </section>`; })() : ''}
         ${structureMode && findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card opening-editor-card">
-          <div class="layout-prop-title">Vano seleccionado</div>
+          <div class="layout-prop-title">Opening seleccionado</div>
           ${(() => { const op=findOpeningById(appState.selectedOpeningId); const wall=findWallById(op?.wallId); const info=getOpeningPositionInfo(op, wall); const type=normalizeOpeningType(op.type); return `<div class="tiny muted" style="margin-bottom:10px">Arrastra el vano sobre el muro o ajusta su posición exacta. ${wall ? `Pared ${escapeHtml(wall.id)}` : ''}</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(op.id)}" disabled></label>
-            <label>Tipo<select id="rpOpeningType"><option value="door" ${type==='door'?'selected':''}>Puerta</option><option value="window" ${type==='window'?'selected':''}>Ventana</option><option value="free" ${type==='free'?'selected':''}>Vano libre</option><option value="gate" ${type==='gate'?'selected':''}>Portón</option></select></label>
-            <label>Ancho<input id="rpOpeningWidth" type="number" min="40" max="360" step="5" value="${formatUnitNumber(op.width||90)}"></label>
-            <label>Alto<input id="rpOpeningHeight" type="number" min="40" max="320" step="5" value="${formatUnitNumber(op.height || openingDefaultForType(type).height)}"></label>
-            <label>Alféizar<input id="rpOpeningSill" type="number" min="0" max="260" step="5" value="${formatUnitNumber(op.sill || 0)}"></label>
+            <label>Tipo<select id="rpOpeningType"><option value="free" ${type==='free'?'selected':''}>Abertura libre</option><option value="door" ${type==='door'?'selected':''}>Puerta</option><option value="window" ${type==='window'?'selected':''}>Ventana</option><option value="gate" ${type==='gate'?'selected':''}>Portón</option></select></label>
+            <label>Ancho (cm)<input id="rpOpeningWidth" type="number" min="40" max="600" step="5" value="${formatUnitNumber(op.width||90)}"></label>
+            <label>Alto (cm)<input id="rpOpeningHeight" type="number" min="20" max="600" step="5" value="${formatUnitNumber(op.height || openingDefaultForType(type).height)}"></label>
+            <label>${type==='window'?'Antepecho (cm)':'Cota inferior (cm)'}<input id="rpOpeningSill" type="number" min="0" max="600" step="5" value="${formatUnitNumber(op.sill || 0)}" ${type==='door'||type==='gate'?'disabled':''}></label>
             <label>Profundidad<input id="rpOpeningDepth" type="number" min="4" max="120" step="1" value="${formatUnitNumber(op.depth || wall?.thickness || 14)}"></label>
             <label>Posición %<input id="rpOpeningT" type="number" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}"></label>
             <label>Desde inicio<input id="rpOpeningLeft" type="number" min="0" step="5" value="${info ? formatUnitNumber(info.left) : 0}"></label>
@@ -10450,7 +10642,7 @@ function getSheetBranchOpenMap(){
             <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}" style="width:100%;margin-top:10px">
           </div>
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpening25">25%</button><button class="seg-btn" id="rpOpeningCenter">50%</button><button class="seg-btn" id="rpOpening75">75%</button><button class="seg-btn" id="rpOpeningNudgeLeft">◀ 0.25 m</button><button class="seg-btn" id="rpOpeningNudgeRight">0.25 m ▶</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>
-          <div class="tiny muted" style="margin-top:8px">Tip: arrastra el vano a lo largo del muro. La abertura queda embebida y el 3D se recorta como hueco real.</div>` })()}
+          <div class="tiny muted" style="margin-top:8px">${type==='free'?'Abertura libre: usa Cota inferior 0 para abrir desde el piso o una cota mayor para crear una abertura elevada. No genera hoja de puerta.':'Arrastra el opening a lo largo del muro. El hueco queda embebido y se actualiza también en 3D.'}</div>` })()}
         </section>` : ''}
         ${structureMode && appState.editor?.selectedMeasurementId ? (()=>{ const mm=(appState.layout.measurements||[]).find(m=>m.id===appState.editor.selectedMeasurementId); if(!mm) return ''; const dx=mm.b.x-mm.a.x,dy=mm.b.y-mm.a.y; return `<section class="layout-prop-card"><div class="layout-prop-title">Medición</div><div class="layout-prop-grid two"><label>Distancia<input value="${formatDistanceCm(Math.hypot(dx,dy))}" disabled></label><label>ΔX<input value="${formatDistanceCm(Math.abs(dx))}" disabled></label><label>ΔY<input value="${formatDistanceCm(Math.abs(dy))}" disabled></label><label>ID<input value="${escapeHtml(mm.id)}" disabled></label></div><button class="seg-btn danger" id="rpMeasureDelete" style="margin-top:10px">Eliminar medición</button></section>`; })() : ''}
         ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
@@ -10552,7 +10744,7 @@ function getSheetBranchOpenMap(){
     if($('#rpWallAngle')) $('#rpWallAngle').onchange = e => { if(v117SetWallAngle(selectedWall,Number(e.target.value||0))){ persistActiveLayout(); renderLayoutEditor(); } };
     if($('#rpWallMoveExact')) $('#rpWallMoveExact').onclick = () => { if(v117TranslateWallCm(selectedWall,$('#rpWallMoveX')?.value,$('#rpWallMoveY')?.value)){ persistActiveLayout(); renderLayoutEditor(); } };
     if($('#rpWallHeight')) $('#rpWallHeight').onchange = e => { if(!selectedWall) return; const sc=Math.max(.0001,getScaleCmPerUnit()); selectedWall.height=Math.max(120/sc,Math.min(600/sc,Number(e.target.value||290)/sc)); if(selectedWall.autoZoneEdge){ const z=findZoneById(selectedWall.zoneId); if(z) setZoneEdgeWall(z,Number(selectedWall.edgeIndex||0),{height:selectedWall.height}); } persistActiveLayout(); renderLayoutEditor(); };
-    const wallNodeCoord=(nodeId,axis,value)=>{ const node=getWallNode(nodeId); if(!node) return; const units=Number(value||0)/Math.max(.0001,getScaleCmPerUnit()); setWallNodePosition(nodeId,axis==='x'?units:node.x,axis==='y'?units:node.y); persistActiveLayout(); renderLayoutEditor(); };
+    const wallNodeCoord=(nodeId,axis,value)=>{ const node=getWallNode(nodeId); if(!node) return; const units=Number(value||0)/Math.max(.0001,getScaleCmPerUnit()); const moved=setWallNodePosition(nodeId,axis==='x'?units:node.x,axis==='y'?units:node.y); if(!moved)showToast('Coordenada bloqueada: provocaría superposición entre zonas.','warning',2200); persistActiveLayout(); renderLayoutEditor(); };
     if(selectedWall && !selectedWall.autoZoneEdge){
       if($('#rpWallAX')) $('#rpWallAX').onchange=e=>wallNodeCoord(selectedWall.startNodeId,'x',e.target.value);
       if($('#rpWallAY')) $('#rpWallAY').onchange=e=>wallNodeCoord(selectedWall.startNodeId,'y',e.target.value);
@@ -10593,10 +10785,11 @@ function getSheetBranchOpenMap(){
       persistActiveLayout();
       renderLayoutEditor();
     };
+    if($('#rpWallAddFree')) $('#rpWallAddFree').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'free'); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpWallAddDoor')) $('#rpWallAddDoor').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'door'); persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpWallAddWindow')) $('#rpWallAddWindow').onclick = () => { if(!selectedWall) return; createOpeningOnWall(selectedWall.id, 'window'); persistActiveLayout(); renderLayoutEditor(); };
     const persistOpeningUpdate = () => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); if(host){ const len=Math.max(1,wallLength(host)); const width=Math.max(40,Number(selectedOpening.width||90)||90); const current=Number(selectedOpening.offset); selectedOpening.offset=Math.max(width/2,Math.min(len-width/2,Number.isFinite(current)?current:Number(selectedOpening.t||.5)*len)); selectedOpening.t=openingClampT(host,width,selectedOpening.offset/len); } persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); const host=findWallById(selectedOpening.wallId); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; selectedOpening.height = def.height; selectedOpening.sill = def.sill; selectedOpening.depth = Math.max(4, Math.min(120, Number(selectedOpening.depth || host?.thickness || 14) || 14)); persistOpeningUpdate(); };
+    if($('#rpOpeningType')) $('#rpOpeningType').onchange = e => { if(!selectedOpening) return; const nextType=normalizeOpeningType(e.target.value); const prevType=normalizeOpeningType(selectedOpening.type); selectedOpening.type = nextType; const def=openingDefaultForType(nextType); const host=findWallById(selectedOpening.wallId); if(!Number(selectedOpening.width) || selectedOpening.width < def.width*.65) selectedOpening.width = def.width; if(prevType!==nextType){ selectedOpening.height = def.height; selectedOpening.sill = def.sill; } if(nextType==='door'||nextType==='gate') selectedOpening.sill=0; selectedOpening.depth = Math.max(4, Math.min(120, Number(selectedOpening.depth || host?.thickness || 14) || 14)); persistOpeningUpdate(); };
     if($('#rpOpeningWidth')) {
       const commitOpeningWidth = e => {
         if(!selectedOpening) return;
@@ -10606,8 +10799,8 @@ function getSheetBranchOpenMap(){
       $('#rpOpeningWidth').onchange = commitOpeningWidth;
       $('#rpOpeningWidth').onblur = commitOpeningWidth;
     }
-    if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; selectedOpening.height = Math.max(40, Math.min(320, Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
-    if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; selectedOpening.sill = (normalizeOpeningType(selectedOpening.type) === 'window') ? Math.max(0, Math.min(260, Number(e.target.value || 0) || 0)) : Math.max(0, Math.min(80, Number(e.target.value || 0) || 0)); persistOpeningUpdate(); };
+    if($('#rpOpeningHeight')) $('#rpOpeningHeight').onchange = e => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); const wallH=Math.max(40,Number(host?.height||appState.layout?.meta?.defaultWallHeight||290)||290); const sill=Math.max(0,Number(selectedOpening.sill||0)||0); selectedOpening.height = Math.max(20, Math.min(Math.max(20,wallH-sill), Number(e.target.value || 210) || 210)); persistOpeningUpdate(); };
+    if($('#rpOpeningSill')) $('#rpOpeningSill').onchange = e => { if(!selectedOpening) return; const type=normalizeOpeningType(selectedOpening.type); if(type==='door'||type==='gate'){ selectedOpening.sill=0; persistOpeningUpdate(); return; } const host=findWallById(selectedOpening.wallId); const wallH=Math.max(40,Number(host?.height||appState.layout?.meta?.defaultWallHeight||290)||290); const h=Math.max(20,Number(selectedOpening.height||openingDefaultForType(type).height)||100); selectedOpening.sill = Math.max(0, Math.min(Math.max(0,wallH-h), Number(e.target.value || 0) || 0)); persistOpeningUpdate(); };
     if($('#rpOpeningDepth')) $('#rpOpeningDepth').onchange = e => { if(!selectedOpening) return; const host=findWallById(selectedOpening.wallId); const maxDepth=Math.max(4, Math.min(120, Number(host?.thickness || 14) || 14)); selectedOpening.depth = Math.max(4, Math.min(maxDepth, Number(e.target.value || maxDepth) || maxDepth)); persistOpeningUpdate(); };
     const setOpeningPositionPct = value => { if(!selectedOpening) return; const wall=findWallById(selectedOpening.wallId); if(!wall) return; const len=Math.max(1,wallLength(wall)); selectedOpening.offset=len*Math.max(.01,Math.min(.99,(Number(value||50)||50)/100)); selectedOpening.t=openingClampT(wall,selectedOpening.width,selectedOpening.offset/len); persistOpeningUpdate(); };
     if($('#rpOpeningT')) $('#rpOpeningT').onchange = e => setOpeningPositionPct(e.target.value);
@@ -10641,7 +10834,7 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v117-cad-zones-racks';
+    document.body.dataset.wmsLayoutVersion = 'v119-openings-zone-guards';
     document.body.dataset.wmsLayoutWorkspace = isRackDistributionScreen() ? 'racks' : 'structure';
     const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
@@ -10696,7 +10889,7 @@ function getSheetBranchOpenMap(){
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='select'?'active':''}" data-emode="select"><span class="v80-tool-ico">↖</span><b>Seleccionar</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='wall'?'active':''}" data-emode="wall"><span class="v80-tool-ico">╱</span><b>Muro</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='door'?'active':''}" data-emode="door"><span class="v80-tool-ico">◧</span><b>Puerta</b></button>
-                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='opening'?'active':''}" data-emode="opening"><span class="v80-tool-ico">▭</span><b>Vano</b></button>
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='opening'?'active':''}" data-emode="opening"><span class="v80-tool-ico">▭</span><b>Abertura</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlusRail" data-tool-proxy="btnZonePlus"><span class="v80-tool-ico">□</span><b>Zona</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='measure'?'active':''}" data-emode="measure"><span class="v80-tool-ico">↔</span><b>Medir</b></button>
                     ` : `
@@ -11298,6 +11491,17 @@ function getSheetBranchOpenMap(){
       }
     }
 
+    const geometrySnap=appState.editor?.geometrySnapPreview;
+    if(geometrySnap?.point){
+      const sp=geometrySnap.point; guideLayer.appendChild(svgEl('circle',{cx:sp.x,cy:sp.y,r:'7',fill:'rgba(72,245,167,.18)',stroke:'#48f5a7','stroke-width':'2.2',style:'pointer-events:none'}));
+      const st=svgEl('text',{x:sp.x+11,y:sp.y-10,'text-anchor':'start',style:'font-size:10px;font-weight:900;fill:#8dffd0;paint-order:stroke;stroke:#05101c;stroke-width:4px;pointer-events:none'}); st.textContent=geometrySnap.label||'SNAP'; guideLayer.appendChild(st);
+    }
+    const zoneCollision=appState.editor?.zoneCollisionPreview;
+    if(zoneCollision){
+      const other=findZoneById(zoneCollision.otherZoneId); const pts=zoneCollision.pts||other?.pts||[];
+      if(pts.length>=3){ const dcol=pts.map((pt,i)=>`${i?'L':'M'} ${pt.x} ${pt.y}`).join(' ')+' Z'; guideLayer.appendChild(svgEl('path',{d:dcol,fill:'rgba(255,75,91,.13)',stroke:'#ff5b68','stroke-width':'3','stroke-dasharray':'9 6',style:'pointer-events:none'})); const c=polygonCentroid(pts); const tt=svgEl('text',{x:c.x,y:c.y-12,'text-anchor':'middle',style:'font-size:11px;font-weight:950;fill:#ff8f98;paint-order:stroke;stroke:#05101c;stroke-width:4px;pointer-events:none'});tt.textContent='NO SE PUEDE SUPERPONER';guideLayer.appendChild(tt); }
+    }
+
     v117RenderDragMeasurements(guideLayer);
 
     // v102: cierre completo de esquinas en L.
@@ -11325,7 +11529,7 @@ function getSheetBranchOpenMap(){
       const kind = normalizeOpeningType(type);
       if(kind === 'window') return 'VENTANA';
       if(kind === 'gate') return 'PORTÓN';
-      if(kind === 'free') return 'VANO';
+      if(kind === 'free') return 'ABERTURA';
       return 'PUERTA';
     };
     const openingAccentForType = (type, selected=false) => selected ? '#36f58d' : (normalizeOpeningType(type) === 'window' ? '#53e7ff' : normalizeOpeningType(type) === 'free' ? '#c7fff0' : '#36f58d');
@@ -12038,8 +12242,9 @@ function getSheetBranchOpenMap(){
     }
     if(appState.editor.mode === 'zone' && isStructureLayoutScreen()){
       const id = nextZoneId();
-      appState.layout.zones.push({ id, name:'Zona ' + id, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x:p.x-60,y:p.y-40},{x:p.x+60,y:p.y-40},{x:p.x+60,y:p.y+40},{x:p.x-60,y:p.y+40}] });
-      normalizeZoneAndRackIds(); persistActiveLayout();
+      const newZone={ id, name:'Zona ' + id, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x:p.x-60,y:p.y-40},{x:p.x+60,y:p.y-40},{x:p.x+60,y:p.y+40},{x:p.x-60,y:p.y+40}] };
+      const collision=findZoneOverlap('',newZone.pts); if(collision){showToast(`No se puede crear aquí: se superpondría con ${collision.name||collision.id}.`,'warning',2400);return;}
+      appState.layout.zones.push(newZone); normalizeZoneAndRackIds(); persistActiveLayout();
       appState.selectedZoneId = id; appState.editor.mode = 'select'; renderLayoutEditor(); return;
     }
     if(appState.editor.mode === 'rack' && isRackDistributionScreen()){
@@ -12078,7 +12283,9 @@ function getSheetBranchOpenMap(){
     const sel = appState.selectedVertex || { zoneId:'', idx:-1 };
     const zone = findZoneById(sel.zoneId);
     if(!zone || sel.idx < 0 || !Array.isArray(zone.pts) || zone.pts.length <= 3) return;
-    zone.pts.splice(sel.idx, 1);
+    const candidate=clone(zone.pts); candidate.splice(sel.idx,1); const collision=findZoneOverlap(zone.id,candidate);
+    if(collision){setZoneCollisionPreview(zone.id,collision,candidate);showToast(`No se puede quitar el vértice: la zona se superpondría con ${collision.name||collision.id}.`,'warning',2400);renderLayoutEditor();return;}
+    zone.pts=candidate;
     appState.selectedVertex = { zoneId:'', idx:-1 };
     appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
     persistActiveLayout();
@@ -12105,12 +12312,12 @@ function getSheetBranchOpenMap(){
     if(linkedRoom){
       ensureWallTopology();
       const originalNodes={}; roomNodeIds(linkedRoom).forEach(id=>{ const n=getWallNode(id); if(n) originalNodes[id]={x:n.x,y:n.y}; });
-      appState.editor.dragging={type:'room-zone',zoneId,roomId:linkedRoom.id,start:p,originalNodes,mergeCandidate:null,moved:false};
+      appState.editor.dragging={type:'room-zone',zoneId,roomId:linkedRoom.id,start:p,originalNodes,originalZonePts:clone(zone.pts||[]),mergeCandidate:null,moved:false,lastValidDx:0,lastValidDy:0,blockedByZoneCollision:false};
       appState.editor.roomMovePreview=null;
       renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector(); return;
     }
     const zoneIndex = (appState.layout?.zones || []).findIndex(z => z === zone);
-    appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts) };
+    appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts), lastValid:clone(zone.pts), blockedByZoneCollision:false };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startVertexDrag(e, zoneId, idx){
@@ -12213,48 +12420,46 @@ function getSheetBranchOpenMap(){
     if(d.type === 'zone'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
-      zone.pts = d.original.map(pt => ({ x: snapGrid(pt.x + dx), y: snapGrid(pt.y + dy) }));
+      const snapped=snapZoneTranslation(zone,d.original,p.x-d.start.x,p.y-d.start.y);
+      const candidate=d.original.map(pt=>({x:pt.x+snapped.dx,y:pt.y+snapped.dy}));
+      const collision=findZoneOverlap(zone.id,candidate);
+      if(collision){ zone.pts=clone(d.lastValid||d.original); d.blockedByZoneCollision=true; setZoneCollisionPreview(zone.id,collision,candidate); }
+      else { zone.pts=candidate; d.lastValid=clone(candidate); d.blockedByZoneCollision=false; clearZoneCollisionPreview(); }
       // v110: mover la zona no arrastra los racks.
-      clearRackSnapPreview();
-      renderLayoutSvg(svg); renderLayoutSection();
+      clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'room-zone'){
-      const room=findRoomById(d.roomId); if(!room) return;
+      const room=findRoomById(d.roomId), zone=findZoneById(d.zoneId); if(!room||!zone) return;
       const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y;
-      const baseDx=snapGrid(rawDx), baseDy=snapGrid(rawDy);
-      const candidate=findRoomWallCollisionSnap(room,d.originalNodes,baseDx,baseDy);
-      const useDx=candidate?candidate.dx:baseDx, useDy=candidate?candidate.dy:baseDy;
-      setWallNodesPositionsBulk(Object.entries(d.originalNodes).map(([id,n])=>({id,x:n.x+useDx,y:n.y+useDy})));
-      d.mergeCandidate=candidate; d.moved=true; appState.editor.roomMovePreview=candidate;
+      const snapMove=snapZoneTranslation(zone,d.originalZonePts||zone.pts,rawDx,rawDy);
+      const candidateMerge=findRoomWallCollisionSnap(room,d.originalNodes,snapMove.dx,snapMove.dy);
+      const useDx=candidateMerge?candidateMerge.dx:snapMove.dx, useDy=candidateMerge?candidateMerge.dy:snapMove.dy;
+      const proposed=roomCandidatePoints(room,d.originalNodes,useDx,useDy); const collision=findZoneOverlap(zone.id,proposed);
+      if(collision){ d.blockedByZoneCollision=true; d.mergeCandidate=null; appState.editor.roomMovePreview=null; setZoneCollisionPreview(zone.id,collision,proposed); }
+      else { setWallNodesPositionsBulk(Object.entries(d.originalNodes).map(([id,n])=>({id,x:n.x+useDx,y:n.y+useDy}))); d.mergeCandidate=candidateMerge; d.moved=true; d.lastValidDx=useDx; d.lastValidDy=useDy; d.blockedByZoneCollision=false; appState.editor.roomMovePreview=candidateMerge; clearZoneCollisionPreview(); }
       clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'wall-group'){
-      const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y, moveDx=snapGrid(rawDx), moveDy=snapGrid(rawDy); setWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+moveDx,y:d.originalNodes[id].y+moveDy}))); d.moved=true; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      const rawDx=snapGrid(p.x-d.start.x), rawDy=snapGrid(p.y-d.start.y); const sm=snapWallNodeSetTranslation(d.nodeIds,d.originalNodes,rawDx,rawDy,d.wallIds||[]); const ok=trySetWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+sm.dx,y:d.originalNodes[id].y+sm.dy})),appState.layout,{silent:true}); d.blockedByZoneCollision=!ok; d.moved=d.moved||ok; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'wall-body'){
-      const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y;
-      const moveDx=snapGrid(rawDx), moveDy=snapGrid(rawDy);
-      setWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+moveDx,y:d.originalNodes[id].y+moveDy})));
-      d.moved=true; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      const rawDx=snapGrid(p.x-d.start.x), rawDy=snapGrid(p.y-d.start.y); const sm=snapWallNodeSetTranslation(d.nodeIds,d.originalNodes,rawDx,rawDy,[d.wallId]);
+      const ok=trySetWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+sm.dx,y:d.originalNodes[id].y+sm.dy})),appState.layout,{silent:true});
+      d.blockedByZoneCollision=!ok; d.moved=d.moved||ok; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'vertex'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
       const lockAxis = e.shiftKey ? (Math.abs(p.x - d.start.x) >= Math.abs(p.y - d.start.y) ? 'x' : 'y') : null;
-      const snapped = snapPointAdvanced(p, { zoneId:d.zoneId, keepAxis:lockAxis, origin:d.original });
+      const snapped = snapPointAdvanced(p, { zoneId:d.zoneId, keepAxis:lockAxis, origin:d.original }); appState.editor.geometrySnapPreview={point:{x:snapped.x,y:snapped.y},label:snapped.label||'Snap',kind:snapped.type||'point'}; const candidate=clone(zone.pts); candidate[d.idx]={x:snapped.x,y:snapped.y}; const collision=findZoneOverlap(zone.id,candidate);
       clearRackSnapPreview();
-      zone.pts[d.idx] = { x:snapped.x, y:snapped.y }; pickNearestEdge(snapped); renderLayoutSvg(svg); renderLayoutSection();
+      if(collision){ d.blockedByZoneCollision=true; setZoneCollisionPreview(zone.id,collision,candidate); } else { zone.pts=candidate; d.blockedByZoneCollision=false; clearZoneCollisionPreview(); pickNearestEdge(snapped); } renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'edge'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
-      const a0 = d.originalA, b0 = d.originalB;
+      const a0 = d.originalA, b0 = d.originalB; const candidate=clone(zone.pts);
       const horizontal = Math.abs(a0.y - b0.y) <= Math.abs(a0.x - b0.x);
-      if(horizontal){
-        const ny = snapGrid(a0.y + dy);
-        zone.pts[d.a].y = ny; zone.pts[d.b].y = ny;
-      } else {
-        const nx = snapGrid(a0.x + dx);
-        zone.pts[d.a].x = nx; zone.pts[d.b].x = nx;
-      }
-      clearRackSnapPreview();
-      appState.selectedEdge = { zoneId:d.zoneId, a:d.a, b:d.b };
-      renderLayoutSvg(svg); renderLayoutSection();
+      if(horizontal){ const base={x:(a0.x+b0.x)/2,y:a0.y+dy}; const snapped=snapPointAdvanced(base,{zoneId:d.zoneId,keepAxis:'y',origin:{x:base.x,y:a0.y}}); candidate[d.a].y=snapped.y;candidate[d.b].y=snapped.y; }
+      else { const base={x:a0.x+dx,y:(a0.y+b0.y)/2}; const snapped=snapPointAdvanced(base,{zoneId:d.zoneId,keepAxis:'x',origin:{x:a0.x,y:base.y}}); candidate[d.a].x=snapped.x;candidate[d.b].x=snapped.x; }
+      const collision=findZoneOverlap(zone.id,candidate); clearRackSnapPreview();
+      if(collision){d.blockedByZoneCollision=true;setZoneCollisionPreview(zone.id,collision,candidate);}else{zone.pts=candidate;d.blockedByZoneCollision=false;clearZoneCollisionPreview();}
+      appState.selectedEdge = { zoneId:d.zoneId, a:d.a, b:d.b }; renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'section-guide'){
       const zone = findZoneById(d.zoneId) || appState.layout.zones[0];
       if(zone){
@@ -12265,7 +12470,7 @@ function getSheetBranchOpenMap(){
         renderLayoutSvg(svg); renderLayoutSection();
       }
     } else if(d.type === 'wall-node'){
-      const node=getWallNode(d.nodeId); if(!node) return; const smart=snapWallPointSmart(p,{origin:d.original,shiftKey:e.shiftKey,excludeNodeId:d.nodeId}); setWallNodePosition(node.id,smart.x,smart.y); clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+      const node=getWallNode(d.nodeId); if(!node) return; const smart=snapWallPointSmart(p,{origin:d.original,shiftKey:e.shiftKey,excludeNodeId:d.nodeId}); appState.editor.geometrySnapPreview={point:{x:smart.x,y:smart.y},label:smart.label,kind:smart.type}; const moved=setWallNodePosition(node.id,smart.x,smart.y); d.blockedByZoneCollision=!moved; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'opening'){
       const opening = findOpeningById(d.openingId);
       if(!opening) return;
@@ -12333,12 +12538,15 @@ function getSheetBranchOpenMap(){
       normalizeZoneAndRackIds(); v117RunValidation({quiet:true});
     }
     if(d && d.type==='zone'){ normalizeZoneAndRackIds(); }
+    if(d?.blockedByZoneCollision) showToast('Movimiento limitado: las zonas no pueden superponerse.','warning',2200);
     if(d && d.type==='room-zone'){
       if(d.mergeCandidate && mergeRoomSharedWall(d.mergeCandidate)) showToast('Paredes coincidentes unidas como muro compartido.', 'success', 2400);
       v117ResolveWallIntersections(); v117RefreshRooms(); syncRoomLinkedZones(); normalizeZoneAndRackIds(); appState.editor.roomMovePreview=null;
     }
     if(d && (d.type==='wall-node' || d.type==='wall-body' || d.type==='wall-group')){ syncManualWallsFromNodes(); v117ResolveWallIntersections(); v117RefreshRooms(); syncRoomLinkedZones(); ensureOpeningAttachmentOffsets(); appState.editor.wallMergePreview=null; }
     clearRackSnapPreview();
+    clearZoneCollisionPreview();
+    if(appState.editor) appState.editor.geometrySnapPreview=null;
     appState.editor.dragging = null;
     persistActiveLayout();
     if(isLayoutWorkspaceScreen()) renderLayoutEditor();
@@ -12656,7 +12864,7 @@ function getSheetBranchOpenMap(){
     if($('#btnAddRackAbove')) $('#btnAddRackAbove').onclick = () => { if(!rack) return; duplicateRackAbove(rack.id); };
   }
 
-/* WMS_V117_CAD_ZONES_RACKS_VALIDATION */
+/* WMS_V119_CAD_ZONE_GUARDS */
   // v114-v117 acumulativa: topología CAD, recintos inteligentes, distribución masiva y validación operativa.
   function v117GetSelectedWallIds(){ const ids=Array.isArray(appState.editor?.selectedWallIds)?appState.editor.selectedWallIds.filter(Boolean):[]; if(appState.selectedWallId&&!ids.includes(appState.selectedWallId))ids.unshift(appState.selectedWallId); return [...new Set(ids)]; }
   function v117SetSelectedWallIds(ids){ if(!appState.editor)appState.editor={}; const clean=[...new Set((ids||[]).filter(id=>findWallById(id)&&!findWallById(id).autoZoneEdge))]; appState.editor.selectedWallIds=clean; appState.selectedWallId=clean[0]||''; if(clean.length){appState.selectedOpeningId='';appState.selectedRoomId='';} }
@@ -12908,6 +13116,8 @@ function getSheetBranchOpenMap(){
   }
   function v117OperationalIssues(){
     ensureLayoutMeta(); const issues=[]; const racks=appState.layout.racks||[], walls=(appState.layout.walls||[]).filter(w=>wallLength(w)>2); const sc=Math.max(.0001,getScaleCmPerUnit()); const minAisleCm=Math.max(40,Number(appState.layout.meta.minAisleCm||120)||120), minAisle=minAisleCm/sc;
+    const zones=appState.layout.zones||[];
+    for(let i=0;i<zones.length;i++) for(let j=i+1;j<zones.length;j++){ const a=zones[i],b=zones[j]; if(typeof zonePolygonsOverlap==='function'&&zonePolygonsOverlap(a.pts,b.pts)){ const ca=polygonCentroid(a.pts),cb=polygonCentroid(b.pts);issues.push({type:'zone-overlap',severity:'error',zoneIds:[a.id,b.id],message:`${a.name||a.id} y ${b.name||b.id}: las zonas se superponen.`,point:{x:(ca.x+cb.x)/2,y:(ca.y+cb.y)/2}}); } }
     racks.forEach(r=>{ const z=findZoneById(r.zoneId); if(!z||!rackFullyInsideZone(r,z))issues.push({type:'outside',severity:'error',rackIds:[r.id],message:`${r.id}: fuera de su zona.`,point:{x:r.x+r.w/2,y:r.y+r.h/2}}); });
     for(let i=0;i<racks.length;i++) for(let j=i+1;j<racks.length;j++){
       const a=racks[i],b=racks[j]; if(racksCanOverlapByLevel(a,b))continue; const pa=rackCorners(a),pb=rackCorners(b);
@@ -14654,7 +14864,7 @@ function getSheetBranchOpenMap(){
   btnStopScanner.addEventListener('click', stopScanner);
   scannerModal.addEventListener('click', (e) => { if (e.target === scannerModal) stopScanner(); });
 
-console.info('*** WMS v118 ARCHITECTURAL 3D ACTIVE ***');
+console.info('*** WMS v119 OPENINGS + ZONE GUARDS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

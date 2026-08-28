@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v118-architectural-3d';
+      const localUrl = './vendor/three.module.min.js?v=wms-v119-openings-zone-guards';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -543,8 +543,10 @@
           const width = Math.max(40, Math.min(rawLengthUnits * .86, Number(o.width || (o.type === 'window' ? 120 : 90)) || 90));
           const half = (width / 2) / Math.max(1, rawLengthUnits);
           const t = Math.max(half, Math.min(1-half, Number(o.t || .5)));
-          const sillUnits = o.type === 'window' ? Math.max(0, Number(o.sill || 90) || 90) : 0;
-          const heightUnits = Math.max(30, Number(o.height || (o.type === 'window' ? 100 : 210)) || 210);
+          const type = normalizeOpeningType(o.type);
+          const def = openingDefaultForType(type);
+          const sillUnits = (type==='door' || type==='gate') ? 0 : Math.max(0, Number(o.sill ?? def.sill) || 0);
+          const heightUnits = Math.max(20, Number(o.height || def.height) || def.height);
           return { ...o, t, t0:Math.max(0, t-half), t1:Math.min(1, t+half), sillUnits, heightUnits };
         }).sort((a,b)=>a.t0-b.t0);
       };
@@ -607,6 +609,7 @@
       const addOpeningFrame3D = (group, seg, opening, rawLengthUnits, height, thicknessUnits, isActive) => {
         if(appState.ui?.nav3DShowOpeningFrames === false || !opening) return;
         const type=normalizeOpeningType(opening.type);
+        if(type==='free' && opening.frame !== true) return;
         const dx=Number(seg.b.x||0)-Number(seg.a.x||0), dy=Number(seg.b.y||0)-Number(seg.a.y||0);
         const len=Math.max(1,Math.hypot(dx,dy)); const ux=dx/len, uy=dy/len; const n=getSegmentNormal(seg);
         const centerT=Number(opening.t||.5); const center={x:Number(seg.a.x||0)+dx*centerT,y:Number(seg.a.y||0)+dy*centerT};

@@ -1,5 +1,5 @@
 {
-  "version": "118",
+  "version": "119",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -14,5 +14,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v118: representación 3D arquitectónica mejorada, modo Presentación, puertas abatibles, ventanas detalladas, zócalos y techos por zona."
+  "notes": "v119: aberturas libres elevables, snap mejorado entre zonas/muros y bloqueo geométrico de solapes entre zonas."
 }

@@ -1,4 +1,4 @@
-/* WMS_V117_CAD_ZONES_RACKS_VALIDATION */
+/* WMS_V119_CAD_ZONE_GUARDS */
   // v114-v117 acumulativa: topología CAD, recintos inteligentes, distribución masiva y validación operativa.
   function v117GetSelectedWallIds(){ const ids=Array.isArray(appState.editor?.selectedWallIds)?appState.editor.selectedWallIds.filter(Boolean):[]; if(appState.selectedWallId&&!ids.includes(appState.selectedWallId))ids.unshift(appState.selectedWallId); return [...new Set(ids)]; }
   function v117SetSelectedWallIds(ids){ if(!appState.editor)appState.editor={}; const clean=[...new Set((ids||[]).filter(id=>findWallById(id)&&!findWallById(id).autoZoneEdge))]; appState.editor.selectedWallIds=clean; appState.selectedWallId=clean[0]||''; if(clean.length){appState.selectedOpeningId='';appState.selectedRoomId='';} }
@@ -250,6 +250,8 @@
   }
   function v117OperationalIssues(){
     ensureLayoutMeta(); const issues=[]; const racks=appState.layout.racks||[], walls=(appState.layout.walls||[]).filter(w=>wallLength(w)>2); const sc=Math.max(.0001,getScaleCmPerUnit()); const minAisleCm=Math.max(40,Number(appState.layout.meta.minAisleCm||120)||120), minAisle=minAisleCm/sc;
+    const zones=appState.layout.zones||[];
+    for(let i=0;i<zones.length;i++) for(let j=i+1;j<zones.length;j++){ const a=zones[i],b=zones[j]; if(typeof zonePolygonsOverlap==='function'&&zonePolygonsOverlap(a.pts,b.pts)){ const ca=polygonCentroid(a.pts),cb=polygonCentroid(b.pts);issues.push({type:'zone-overlap',severity:'error',zoneIds:[a.id,b.id],message:`${a.name||a.id} y ${b.name||b.id}: las zonas se superponen.`,point:{x:(ca.x+cb.x)/2,y:(ca.y+cb.y)/2}}); } }
     racks.forEach(r=>{ const z=findZoneById(r.zoneId); if(!z||!rackFullyInsideZone(r,z))issues.push({type:'outside',severity:'error',rackIds:[r.id],message:`${r.id}: fuera de su zona.`,point:{x:r.x+r.w/2,y:r.y+r.h/2}}); });
     for(let i=0;i<racks.length;i++) for(let j=i+1;j<racks.length;j++){
       const a=racks[i],b=racks[j]; if(racksCanOverlapByLevel(a,b))continue; const pa=rackCorners(a),pb=rackCorners(b);

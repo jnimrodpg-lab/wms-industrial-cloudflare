@@ -1,4 +1,4 @@
-console.info('*** WMS v118 ARCHITECTURAL 3D ACTIVE ***');
+console.info('*** WMS v119 OPENINGS + ZONE GUARDS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

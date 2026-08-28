@@ -443,15 +443,58 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     }));
   }
   function rackFullyInsideZone(rack, zone){ return !!(rack && zone) && rackCorners(rack).every(pt => pointInPoly(pt, zone.pts) || pointNearPolygonEdge(pt, zone.pts, 1)); }
-  function collectSnapPoints(exceptZoneId = ''){ const out = []; (appState.layout?.zones || []).forEach(zone => zone.pts.forEach((pt, idx) => { if(zone.id !== exceptZoneId) out.push({ x:pt.x, y:pt.y, zoneId:zone.id, idx }); })); return out; }
+  function collectSnapPoints(exceptZoneId = ''){
+    const out = [];
+    (appState.layout?.zones || []).forEach(zone => {
+      if(zone.id === exceptZoneId || !Array.isArray(zone.pts)) return;
+      zone.pts.forEach((pt, idx) => {
+        out.push({ x:pt.x, y:pt.y, zoneId:zone.id, idx, type:'zone-vertex', label:`Vértice ${zone.id}` });
+        const b=zone.pts[(idx+1)%zone.pts.length];
+        if(b) out.push({x:(pt.x+b.x)/2,y:(pt.y+b.y)/2,zoneId:zone.id,type:'zone-mid',label:`Centro borde ${zone.id}`});
+      });
+    });
+    (appState.layout?.walls||[]).forEach(w=>{
+      out.push({x:Number(w.x1||0),y:Number(w.y1||0),wallId:w.id,type:'wall-end',label:`Extremo ${w.id}`});
+      out.push({x:Number(w.x2||0),y:Number(w.y2||0),wallId:w.id,type:'wall-end',label:`Extremo ${w.id}`});
+      out.push({x:(Number(w.x1||0)+Number(w.x2||0))/2,y:(Number(w.y1||0)+Number(w.y2||0))/2,wallId:w.id,type:'wall-mid',label:`Centro ${w.id}`});
+    });
+    return out;
+  }
   function snapPointAdvanced(point, { zoneId = '', keepAxis = null, origin = null } = {}){
-    let x = snapGrid(point.x), y = snapGrid(point.y);
+    let x = snapGrid(point.x), y = snapGrid(point.y), type='grid', label='Rejilla';
     if(keepAxis === 'x' && origin) y = origin.y;
     if(keepAxis === 'y' && origin) x = origin.x;
-    if(!isSnapEnabled()) return { x, y };
-    const threshold = Math.max(4, Math.min(20, getSnapSize() * 1.6));
-    collectSnapPoints(zoneId).forEach(pt => { if(Math.abs(pt.x - x) <= threshold) x = pt.x; if(Math.abs(pt.y - y) <= threshold) y = pt.y; });
-    return { x, y };
+    if(!isSnapEnabled()) return { x, y, type, label };
+    const threshold = Math.max(6, Math.min(28, getSnapSize() * 3.6));
+    let best=null;
+    collectSnapPoints(zoneId).forEach(pt=>{
+      let tx=pt.x,ty=pt.y;
+      if(keepAxis==='x'&&origin) ty=origin.y;
+      if(keepAxis==='y'&&origin) tx=origin.x;
+      const d=Math.hypot(tx-x,ty-y);
+      if(d<=threshold && (!best||d<best.d)) best={...pt,x:tx,y:ty,d};
+    });
+    if(best){ x=best.x;y=best.y;type=best.type;label=best.label; }
+    else {
+      let edgeBest=null;
+      const consider=(a,b,edgeLabel,edgeType)=>{
+        const pr=projectPointToSegment({x,y},a,b),d=Math.hypot(pr.x-x,pr.y-y);
+        let px=pr.x,py=pr.y;
+        if(keepAxis==='x'&&origin)py=origin.y;
+        if(keepAxis==='y'&&origin)px=origin.x;
+        const dd=Math.hypot(px-x,py-y);
+        if(dd<=threshold*.78&&(!edgeBest||dd<edgeBest.d))edgeBest={x:px,y:py,d:dd,label:edgeLabel,type:edgeType};
+      };
+      (appState.layout?.zones||[]).forEach(z=>{if(z.id===zoneId)return;(z.pts||[]).forEach((a,i)=>{const b=z.pts[(i+1)%z.pts.length];if(b)consider(a,b,`Borde ${z.id}`,'zone-edge');});});
+      (appState.layout?.walls||[]).forEach(w=>consider({x:Number(w.x1||0),y:Number(w.y1||0)},{x:Number(w.x2||0),y:Number(w.y2||0)},`Muro ${w.id}`,'wall-edge'));
+      if(edgeBest){x=edgeBest.x;y=edgeBest.y;type=edgeBest.type;label=edgeBest.label;}
+      else {
+        let ax=null,ay=null;
+        collectSnapPoints(zoneId).forEach(pt=>{const dx=Math.abs(pt.x-x),dy=Math.abs(pt.y-y);if(dx<=threshold*.55&&(!ax||dx<ax.d))ax={d:dx,v:pt.x,label:pt.label};if(dy<=threshold*.55&&(!ay||dy<ay.d))ay={d:dy,v:pt.y,label:pt.label};});
+        if(ax&&keepAxis!=='y'){x=ax.v;type='align-x';label=`Alinear X · ${ax.label}`;} if(ay&&keepAxis!=='x'){y=ay.v;type='align-y';label=`Alinear Y · ${ay.label}`;}
+      }
+    }
+    return { x, y, type, label };
   }
   function getRackOccupancy(rackId){ let total = 0; for(const p of (appState.products || [])){ if(p.rack === rackId || p.rackStore === rackId) total++; } return total; }
 
@@ -2046,16 +2089,21 @@ const DEFAULT_GRID_SIZE = 2;
 
   function rotateZoneWithContents(zoneId, deltaDegrees, { persist=true, rerender=true } = {}){
     const zone = findZoneById(zoneId);
-    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return;
+    if(!zone || !Array.isArray(zone.pts) || zone.pts.length < 3) return false;
     const delta = Number(deltaDegrees) || 0;
-    if(!delta) return;
+    if(!delta) return false;
     const center = polygonCentroid(zone.pts);
-    zone.pts = zone.pts.map(pt => rotatePointAround(pt, center, delta));
+    const candidate = zone.pts.map(pt => rotatePointAround(pt, center, delta));
+    const collision = typeof findZoneOverlap === 'function' ? findZoneOverlap(zone.id,candidate) : null;
+    if(collision){ if(typeof setZoneCollisionPreview==='function')setZoneCollisionPreview(zone.id,collision,candidate); if(typeof showToast==='function')showToast(`Rotación bloqueada: ${zone.name||zone.id} se superpondría con ${collision.name||collision.id}.`,'warning',2400); if(rerender&&typeof renderLayoutEditor==='function')renderLayoutEditor(); return false; }
+    zone.pts = candidate;
+    if(typeof clearZoneCollisionPreview==='function')clearZoneCollisionPreview();
     // v110: la rotación de estructura no rota ni reposiciona racks.
     appState.selectedZoneId = zone.id;
     clearRackSnapPreview();
     if(persist) persistActiveLayout();
     if(rerender) renderLayoutEditor();
+    return true;
   }
 
   function setZoneRotation(zoneId, targetDegrees){
