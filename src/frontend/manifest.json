@@ -1,5 +1,5 @@
 {
-  "version": "134",
+  "version": "140",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v134 acumulativa: sincronización de selección 2D↔3D, edición 3D protegida por modo, visualización WMS por zonas/ocupación/stock/categoría/marca, localizador de producto y racks 3D optimizados con instancing."
+  "notes": "v140 acumulativa: Rack Builder Pro para construir estanterías desde cero con piezas, uniones, materiales, divisiones parciales, niveles/slots variables y representación 2D/3D integrada al WMS."
 }

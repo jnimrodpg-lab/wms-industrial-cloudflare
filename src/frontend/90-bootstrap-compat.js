@@ -1,4 +1,4 @@
-console.info('*** WMS v134 2D-3D SYNC + VISUAL WMS + PRODUCT LOCATOR + RACK PERFORMANCE ACTIVE ***');
+console.info('*** WMS v140 RACK BUILDER PRO + FURNITURE CONSTRUCTION + VARIABLE LEVEL SLOTS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v134-sync-visual-wms';
+      const localUrl = './vendor/three.module.min.js?v=wms-v140-rack-builder-pro';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -1040,9 +1040,10 @@
         const d = Math.max(.45, (Number(r.h || model.depth || 56))*scale);
         const rackH = Math.max(1.2, (Number(r.rackHeight || model.height || 240))*hScale);
         const levels = Math.max(1, Math.min(8, Number(model.levels || 4) || 4));
-        const slots = Math.max(1, Math.min(6, Number(model.slots || model.capacity || 2) || 2));
+        const levelSlots = typeof buildLevelSlots==='function' ? buildLevelSlots(model) : [];
         const target = activeInfoForRack(r);
         const level = Math.max(1, Math.min(levels, Number(target.level || 1)));
+        const slots = Math.max(1, Math.min(12, Number(levelSlots[level-1] || model.slots || model.capacity || 2) || 2));
         const slot = Math.max(1, Math.min(slots, Number(target.slot || 1)));
         const rackCenter = toWorld(Number(r.x||0) + Number(r.w||model.width||120)/2, Number(r.y||0) + Number(r.h||model.depth||56)/2, 0);
         if(mode !== 'slot') return new THREE.Vector3(rackCenter.x, Math.min(rackH*.55, 3.8), rackCenter.z);
@@ -1067,6 +1068,22 @@
         const p = toWorld(Number(r.x||0) + Number(r.w||model.width||120)/2, Number(r.y||0) + Number(r.h||model.depth||56)/2, 0);
         group.position.set(p.x, 0, p.z);
         group.rotation.y = rackYaw(r);
+        if(model?.furniture?.enabled && typeof getFurnitureRenderPieces === 'function') {
+          const pieces=getFurnitureRenderPieces(model);
+          const MW=Math.max(1,Number(model.width||120)),MD=Math.max(1,Number(model.depth||40)),MH=Math.max(1,Number(model.height||200));
+          const sx=w/MW, sz=d/MD, sy=rackH/MH;
+          const panelBase=model.furniture.material==='metal'?0x45667f:(model.furniture.material==='wood'?0xb47b43:0xdce5ed);
+          const panelMat=new THREE.MeshStandardMaterial({color:panelBase,roughness:model.furniture.material==='metal'?.36:.72,metalness:model.furniture.material==='metal'?.58:.03});
+          const backMat=new THREE.MeshStandardMaterial({color:panelBase,roughness:.8,metalness:.02,transparent:true,opacity:.55});
+          pieces.forEach(piece=>{
+            if(piece.type==='brace'){const a=new THREE.Vector3(-w/2+Number(piece.x||0)*sx,Number(piece.z||0)*sy,-d/2+Math.max(.02,Number(piece.y||0))*sz),b=new THREE.Vector3(-w/2+Number(piece.x2||piece.x+piece.w||0)*sx,Number(piece.z2||piece.z+piece.h||0)*sy,-d/2+Math.max(.02,Number(piece.y||0))*sz);addCylinderBetween(group,a,b,Math.max(.018,Number(piece.d||2)*Math.min(sx,sy)*.45),panelMat,false);return;}
+            const pw=Math.max(.012,Number(piece.w||1)*sx),ph=Math.max(.012,Number(piece.h||1)*sy),pd=Math.max(.012,Number(piece.d||1)*sz),px=-w/2+(Number(piece.x||0)+Number(piece.w||1)/2)*sx,py=(Number(piece.z||0)+Number(piece.h||1)/2)*sy,pz=-d/2+(Number(piece.y||0)+Number(piece.d||1)/2)*sz;addBox(group,pw,ph,pd,px,py,pz,piece.type==='back'?backMat:panelMat,false);
+          });
+          const target=activeInfoForRack(r),defs=typeof deriveFurnitureLevels==='function'?deriveFurnitureLevels(model):[];
+          if(active&&defs.length){const lv=defs.find(l=>l.index===Math.max(1,Number(target.level||1))),slot=lv?.slots?.[Math.max(1,Number(target.slot||1))-1];if(lv&&slot){const hw=Math.max(.04,(slot.x1-slot.x0)*sx*.92),hh=Math.max(.05,(lv.z1-lv.z0)*sy*.84),hd=Math.max(.04,d*.82),hx=-w/2+(slot.x0+(slot.x1-slot.x0)/2)*sx,hy=(lv.z0+(lv.z1-lv.z0)/2)*sy;const activeShell=addBox(group,hw,hh,hd,hx,hy,0,matActive,false);activePulseTargets.push({activeShell,baseScale:1});}}
+          if(active){const haloGeo=new THREE.EdgesGeometry(new THREE.BoxGeometry(w+.16,rackH+.16,d+.16)),halo=new THREE.LineSegments(haloGeo,new THREE.LineBasicMaterial({color:0x7dffab,transparent:true,opacity:.96}));halo.position.y=rackH/2;group.add(halo);}
+          return group;
+        }
         const postW = Math.max(.045, w*.045);
         const beamH = Math.max(.035, rackH*.014);
         [[-w/2,-d/2],[w/2,-d/2],[-w/2,d/2],[w/2,d/2]].forEach(([x,z]) => addBox(group, postW, rackH, postW, x, rackH/2, z, matFrame));
@@ -1131,6 +1148,7 @@
         const w=Math.max(.8,(Number(r.w||model.width||120))*scale),d=Math.max(.45,(Number(r.h||model.depth||56))*scale),rackH=Math.max(1.1,(Number(r.rackHeight||model.height||240))*hScale);
         const levels=Math.max(1,Math.min(8,Number(model.levels||4)||4)), p=toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2,Number(r.y||0)+Number(r.h||model.depth||56)/2,0);
         group.position.set(p.x,0,p.z); group.rotation.y=rackYaw(r);
+        if(model?.furniture?.enabled && typeof getFurnitureRenderPieces === 'function'){const pieces=getFurnitureRenderPieces(model),MW=Math.max(1,Number(model.width||120)),MD=Math.max(1,Number(model.depth||40)),MH=Math.max(1,Number(model.height||200)),sx=w/MW,sz=d/MD,sy=rackH/MH,c=rackVisualColor(r),mat=new THREE.MeshStandardMaterial({color:ui.wmsMode==='architecture'?(model.furniture.material==='wood'?0xb47b43:model.furniture.material==='metal'?0x45667f:0xdce5ed):c,roughness:model.furniture.material==='metal'?.4:.74,metalness:model.furniture.material==='metal'?.48:.03});pieces.filter(piece=>piece.type!=='brace'&&piece.type!=='back').slice(0,48).forEach(piece=>{addBox(group,Math.max(.012,Number(piece.w||1)*sx),Math.max(.012,Number(piece.h||1)*sy),Math.max(.012,Number(piece.d||1)*sz),-w/2+(Number(piece.x||0)+Number(piece.w||1)/2)*sx,(Number(piece.z||0)+Number(piece.h||1)/2)*sy,-d/2+(Number(piece.y||0)+Number(piece.d||1)/2)*sz,mat,false);});return group;}
         const c=rackVisualColor(r), frameC=ui.wmsMode==='architecture'?new THREE.Color(0x315c7a):c.clone().multiplyScalar(.72), beamC=ui.wmsMode==='architecture'?new THREE.Color(0xd58437):c;
         const frameMat=new THREE.MeshStandardMaterial({color:frameC,roughness:.38,metalness:.56}), beamMat=new THREE.MeshStandardMaterial({color:beamC,roughness:.44,metalness:.32}), shelfMat=new THREE.MeshStandardMaterial({color:c.clone().lerp(new THREE.Color(0xdbe1e4),.55),roughness:.72,metalness:.08,transparent:true,opacity:.78});
         const post=Math.max(.04,w*.035), beam=Math.max(.03,rackH*.012);
@@ -2934,6 +2952,7 @@
     const rack = foundRack || { id:rackId || fallbackModel.id || 'Rack', modelId:fallbackModel.id, x:0, y:0, w:fallbackModel.width || 120, h:fallbackModel.depth || 40, rackHeight:fallbackModel.height || 240, zoneId:'' };
     const model = forcedModel || rackModel(rack.modelId) || fallbackModel;
     const holder = targetSvg || $('#rackView');
+    if(model?.furniture?.enabled && typeof renderFurnitureRackDetail === 'function') return renderFurnitureRackDetail(rackId, prod, holder, model, rack);
     if(model && isUnderStairsStyle(model.style)) return renderUnderStairsDetail(rackId, prod, holder, model, rack);
     if(!holder || !model) return;
     holder.innerHTML = '';

@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "private": true,
-  "description": "WMS Industrial v134: sincronización 2D/3D, edición protegida, visualización WMS, localizador de productos y rendimiento 3D de racks.",
+  "description": "WMS Industrial v140 Rack Builder Pro: constructor de racks/estanterías desde cero con piezas reales, uniones, niveles y slots variables para melamina, madera y metal.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
