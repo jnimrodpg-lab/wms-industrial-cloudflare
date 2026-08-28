@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "private": true,
-  "description": "WMS Industrial v140 Rack Builder Pro: constructor de racks/estanterías desde cero con piezas reales, uniones, niveles y slots variables para melamina, madera y metal.",
+  "description": "WMS Industrial v142 Unified Rack Editor: modelo, dimensiones, niveles, slots y construcción física dentro del mismo editor.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

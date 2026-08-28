@@ -1,4 +1,4 @@
-/* WMS_V140_RACK_BUILDER_PRO */
+/* WMS_V142_UNIFIED_RACK_EDITOR */
 /* WMS_V134_SYNC_VISUAL_WMS */
 /* WMS_V130_UNIFIED_WALLS_VIEWS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
@@ -5972,7 +5972,7 @@ function getSheetBranchOpenMap(){
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v140-rack-builder-pro';
+      const localUrl = './vendor/three.module.min.js?v=wms-v142-unified-rack-editor';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -13813,7 +13813,7 @@ function getSheetBranchOpenMap(){
     const listScroll = list ? list.scrollTop : 0;
 
     renderModelsList();
-    refreshRackFurnitureBuilderHost(appState.selectedModelId);
+    bindIntegratedRackBuilder(appState.selectedModelId);
     renderRackModelPreview();
     if(window.contentFootRight) contentFootRight.textContent = `${appState.models.length} modelos`;
 
@@ -13856,7 +13856,7 @@ function getSheetBranchOpenMap(){
     appState.screen = 'racks';
     if(previousScreen !== 'racks') resetRackPreviewCamera();
     contentTitle.textContent = 'Rack Builder Pro';
-    contentSubtitle.textContent = 'Construye racks y estanterías desde cero como muebles reales: piezas, uniones, niveles y slots independientes.';
+    contentSubtitle.textContent = 'Editor unificado: modelo, dimensiones, niveles, slots y construcción física pieza por pieza en un solo flujo.';
     detailTitle.textContent = 'Preview constructivo 3D';
     detailSubtitle.textContent = 'Las piezas reales del mueble se representan en el preview. Arrastra para navegar y usa la rueda para zoom.';
     setTags([
@@ -13899,20 +13899,18 @@ function getSheetBranchOpenMap(){
             </div>
             <div class="model-actions">
               <button class="btn" id="btnSaveModel">Guardar modelo</button>
-              <button class="btn alt" id="btnNewModel">Nuevo modelo</button>
-              <button class="btn alt rack-builder-primary" id="btnNewFurnitureModel">Nuevo desde cero</button>
+              <button class="btn alt rack-builder-primary" id="btnNewModel">Nuevo rack desde cero</button>
               <button class="btn alt" id="btnDuplicateModel">Duplicar modelo</button>
               <button class="btn alt" id="btnDeleteModel">Eliminar modelo</button>
             </div>
           </section>
 
-          <div id="rackBuilderHost">${renderRackFurnitureBuilderMarkup(active)}</div>
 
           <section class="rack-block rack-library-editor-block">
             <div class="rack-block-head">
               <div>
                 <h3>Biblioteca de modelos</h3>
-                <div class="rack-block-sub">Cada modelo tiene su propio editor y su editor de niveles dentro del acordeón.</div>
+                <div class="rack-block-sub">Cada modelo concentra identidad, dimensiones, niveles, slots, construcción física y edición directa dentro del mismo acordeón.</div>
               </div>
               <div class="tag-row">
                 <span class="tag">${appState.models.length} modelos</span>
@@ -13939,15 +13937,14 @@ function getSheetBranchOpenMap(){
     detailWrap.innerHTML = '';
     const saveBtn = $('#btnSaveModel');
     if (saveBtn) saveBtn.onclick = saveRackModel;
-    if ($('#btnNewModel')) $('#btnNewModel').onclick = createNewRackModelDraft;
-    if ($('#btnNewFurnitureModel')) $('#btnNewFurnitureModel').onclick = createNewFurnitureModelDraft;
+    if ($('#btnNewModel')) $('#btnNewModel').onclick = createNewFurnitureModelDraft;
     if ($('#btnDuplicateModel')) $('#btnDuplicateModel').onclick = () => duplicateRackModel(appState.selectedModelId);
     if ($('#btnDeleteModel')) $('#btnDeleteModel').onclick = () => deleteRackModel(appState.selectedModelId);
     const undoRackBtn = document.querySelector('[data-history-undo="racks"]'); if(undoRackBtn) undoRackBtn.onclick = () => undoHistory('racks');
     const redoRackBtn = document.querySelector('[data-history-redo="racks"]'); if(redoRackBtn) redoRackBtn.onclick = () => redoHistory('racks');
 
     renderModelsList();
-    refreshRackFurnitureBuilderHost(active?.id);
+    bindIntegratedRackBuilder(active?.id);
     renderRackModelPreview();
     updateUndoRedoUi();
     contentStatus.textContent = 'Modo activo: EDICIÓN DE RACK • biblioteca editable, niveles integrados y preview técnico.';
@@ -13992,6 +13989,7 @@ function getSheetBranchOpenMap(){
               <select data-model-input="style" data-mid="${m.id}">
                 <option value="metallic" ${normalizeRackStyle(m.style)==='metallic'?'selected':''}>Metálico</option>
                 <option value="melamine" ${normalizeRackStyle(m.style)==='melamine'?'selected':''}>Melamina</option>
+                <option value="wood" ${normalizeRackStyle(m.style)==='wood'?'selected':''}>Madera</option>
                 <option value="under_stairs" ${normalizeRackStyle(m.style)==='under_stairs'?'selected':''}>Bajo escalera</option>
                 <option value="under_stairs_reflected" ${normalizeRackStyle(m.style)==='under_stairs_reflected'?'selected':''}>Bajo escalera reflejado</option>
               </select>
@@ -14071,6 +14069,7 @@ function getSheetBranchOpenMap(){
               }).join('')}
             </div>
           </div>` : ''}
+          <div class="rack-library-builder-section">${renderRackFurnitureBuilderMarkup(m)}</div>
           <div class="model-card-actions">
             <button class="mini-btn" data-model-action="duplicate" data-mid="${m.id}">Duplicar</button>
             <button class="mini-btn" data-model-action="delete" data-mid="${m.id}">Eliminar</button>
@@ -14143,7 +14142,13 @@ function getSheetBranchOpenMap(){
       const heights = buildLevelHeights(model);
       heights[idx] = Math.max(10, Number(inp.value || 10) || 10);
       model.levelHeights = heights;
+      ensureRackFurnitureModel(model);
+      if(model.furniture?.enabled){
+        const shelves=model.furniture.pieces.filter(p=>p.type==='shelf').sort((a,b)=>a.z-b.z);
+        if(idx < shelves.length){const levels=deriveFurnitureLevels(model);const lower=levels[idx]?.z0 ?? 0;shelves[idx].z=Math.max(0,Math.min(Number(model.height||200)-shelves[idx].h,lower+heights[idx]));furnitureRefitModel(model);syncFurnitureModelToLegacy(model);}
+      }
       appState.selectedModelId = id;
+      bindIntegratedRackBuilder(id);
       renderRackModelPreview();
     });
     $$('[data-level-slot-model]').forEach(inp => {
@@ -14154,9 +14159,11 @@ function getSheetBranchOpenMap(){
         if(!model) return;
         const slots = buildLevelSlots(model);
         const current = Number(nextValue ?? inp.value);
-        slots[idx] = Math.max(1, Math.min(6, current || 1));
+        slots[idx] = Math.max(1, Math.min(12, current || 1));
         model.levelSlots = slots;
         model.slots = Math.max(...slots);
+        ensureRackFurnitureModel(model);
+        if(model.furniture?.enabled) model.furniture.logicalSlots[idx+1]=slots[idx];
         appState.selectedModelId = id;
         rerenderRackEditorPreservingState({ focusId:id });
       };
@@ -14194,6 +14201,8 @@ function getSheetBranchOpenMap(){
       else if(action === 'delete') deleteRackModel(id);
       else if(action === 'use'){ const changed = appState.selectedModelId !== id; appState.selectedModelId = id; if(changed) resetRackPreviewCamera(); rerenderRackEditorPreservingState({ focusId:id }); }
     });
+
+    bindIntegratedRackBuilder(appState.selectedModelId);
   }
 
   function buildLevelHeights(model){
@@ -14219,6 +14228,7 @@ function getSheetBranchOpenMap(){
   function normalizeRackStyle(style){
     const raw = String(style || '').toLowerCase();
     if(raw === 'melamine' || raw === 'melamina' || raw === 'compact') return 'melamine';
+    if(raw === 'wood' || raw === 'madera') return 'wood';
     if(raw === 'under_stairs_reflected' || raw === 'bajo_escalera_reflejado' || raw === 'bajo escalera reflejado' || raw === 'under stairs reflected') return 'under_stairs_reflected';
     if(raw === 'under_stairs' || raw === 'bajo_escalera' || raw === 'bajo escalera') return 'under_stairs';
     return 'metallic';
@@ -14226,12 +14236,14 @@ function getSheetBranchOpenMap(){
   function rackStyleLabel(style){
     const normalized = normalizeRackStyle(style);
     if(normalized === 'melamine') return 'Melamina';
+    if(normalized === 'wood') return 'Madera';
     if(normalized === 'under_stairs_reflected') return 'Bajo escalera reflejado';
     return normalized === 'under_stairs' ? 'Bajo escalera' : 'Metálico';
   }
   function rackStyleSub(style){
     const normalized = normalizeRackStyle(style);
     if(normalized === 'melamine') return 'Rack melamina';
+    if(normalized === 'wood') return 'Estantería de madera';
     if(normalized === 'under_stairs_reflected') return 'Mueble bajo escalera reflejado';
     return normalized === 'under_stairs' ? 'Mueble bajo escalera' : 'Rack metálico';
   }
@@ -14332,11 +14344,13 @@ function getSheetBranchOpenMap(){
     const targetId = modelId || appState.selectedModelId;
     const draft = rackModel(targetId);
     if(!draft) return;
-    const count = Math.max(2, Number(draft.levels||4)||4);
+    const count = Math.max(1, Number(draft.levels||4)||4);
     const usable = Math.max(20, draft.height - draft.clearance);
     const each = Math.max(10, Math.round((usable / count) * 10) / 10);
     draft.levelHeights = Array.from({length: count}, () => each);
-    draft.levelSlots = Array.from({length: count}, () => Math.max(1, Math.min(6, Number(draft.slots || 2) || 2)));
+    draft.levelSlots = Array.from({length: count}, () => Math.max(1, Math.min(12, Number(draft.slots || 2) || 2)));
+    ensureRackFurnitureModel(draft);
+    if(draft.furniture?.enabled) furnitureGenerateFromModelSetup(draft);
     appState.selectedModelId = targetId;
     renderRackModels();
   }
@@ -14387,6 +14401,13 @@ function getSheetBranchOpenMap(){
     }
     else if(field === 'beam') model.beam = Math.max(2, Math.min(20, Number(rawValue || model.beam || 6) || 6));
     if(field === 'height' || field === 'clearance' || field === 'levels') syncLevelEditorCount(id);
+    ensureRackFurnitureModel(model);
+    if(model.furniture?.enabled){
+      if(field==='style'){const st=normalizeRackStyle(model.style);if(st==='metallic')model.furniture.material='metal';else if(st==='melamine')model.furniture.material='melamine';else if(st==='wood')model.furniture.material='wood';}
+      if(['width','depth','height'].includes(field)) furnitureRefitModel(model);
+      if(field==='levels') furnitureGenerateFromModelSetup(model);
+      if(field==='slots'){deriveFurnitureLevels(model).forEach(l=>{model.furniture.logicalSlots[l.index]=model.slots;});syncFurnitureModelToLegacy(model);}
+    }
     if(isUnderStairsStyle(model.style)){
       model.leftHeight = Math.max(40, Number(model.leftHeight || model.height || 238) || 238);
       model.rightHeight = Math.max(20, Number(model.rightHeight || Math.max(40, (model.height||238) * 0.35)) || Math.max(40, (model.height||238) * 0.35));
@@ -14522,7 +14543,7 @@ function getSheetBranchOpenMap(){
     let view = { x: cx - w / 2, y: cy - h / 2, w, h };
     const model = modelId ? rackModel(modelId) : null;
     const styleKind = normalizeRackStyle(model?.style || '');
-    if(styleKind === 'metallic' || styleKind === 'melamine'){
+    if(styleKind === 'metallic' || styleKind === 'melamine' || styleKind === 'wood'){
       const zoomFactor = 0.9;
       view = {
         x: view.x + (view.w * (1 - zoomFactor) / 2),
@@ -14604,7 +14625,7 @@ function getSheetBranchOpenMap(){
 
 
 
-  /* WMS v140 — Rack Builder Pro: modelador paramétrico de muebles/estanterías */
+  /* WMS v142 — Unified Rack Editor: modelo + construcción física en un solo flujo */
   function furnitureId(prefix='p'){ return `${prefix}_${Math.random().toString(36).slice(2,8)}`; }
 
   function ensureRackFurnitureModel(model){
@@ -14613,7 +14634,7 @@ function getSheetBranchOpenMap(){
     const f=model.furniture;
     f.version=1;
     f.enabled=!!f.enabled;
-    f.material = ['melamine','wood','metal'].includes(f.material) ? f.material : (normalizeRackStyle(model.style)==='metallic'?'metal':'melamine');
+    f.material = ['melamine','wood','metal'].includes(f.material) ? f.material : (normalizeRackStyle(model.style)==='metallic'?'metal':normalizeRackStyle(model.style)==='wood'?'wood':'melamine');
     f.thickness = Math.max(.3, Number(f.thickness || (f.material==='metal'?4:1.8)) || 1.8);
     f.backThickness = Math.max(.2, Number(f.backThickness || .3) || .3);
     f.snap = Math.max(.1, Number(f.snap || 1) || 1);
@@ -14640,7 +14661,7 @@ function getSheetBranchOpenMap(){
   }
 
   function furnitureMaterialLabel(material){ return material==='metal'?'Metal':material==='wood'?'Madera':'Melamina'; }
-  function furnitureMaterialStyle(material){ return material==='metal'?'metallic':'melamine'; }
+  function furnitureMaterialStyle(material){ return material==='metal'?'metallic':material==='wood'?'wood':'melamine'; }
 
   function furnitureMakePiece(type, props={}){
     return { id:furnitureId(type), type, name:props.name||furniturePieceLabel({type}), x:0,y:0,z:0,w:1,d:1,h:1,join:'flush',autoFit:'',...props };
@@ -14728,7 +14749,7 @@ function getSheetBranchOpenMap(){
   }
 
   function convertLegacyModelToFurniture(model){
-    ensureRackFurnitureModel(model); const f=model.furniture; f.enabled=true; f.material=normalizeRackStyle(model.style)==='metallic'?'metal':'melamine'; f.thickness=f.material==='metal'?4:1.8; f.pieces=[]; f.logicalSlots={};
+    ensureRackFurnitureModel(model); const f=model.furniture; f.enabled=true; f.material=normalizeRackStyle(model.style)==='metallic'?'metal':normalizeRackStyle(model.style)==='wood'?'wood':'melamine'; f.thickness=f.material==='metal'?4:1.8; f.pieces=[]; f.logicalSlots={};
     furnitureCreateCarcass(model,{keepCustom:false});
     const heights=buildLevelHeights(model),slots=buildLevelSlots(model),t=f.thickness,H=Number(model.height||200),W=Number(model.width||120),D=Number(model.depth||40);
     let cursor=Math.max(t,Number(model.clearance||0));
@@ -14756,6 +14777,7 @@ function getSheetBranchOpenMap(){
       <div class="rack-block-head"><div><h3>Constructor de mueble / estantería</h3><div class="rack-block-sub">Construye desde cero con piezas reales. Las uniones, repisas y divisiones generan automáticamente niveles y slots WMS.</div></div><div class="tag-row"><span class="tag">${material}</span><span class="tag">${pieceCount} piezas</span><span class="tag">${levels.length} niveles</span></div></div>
       <div class="rack-builder-toolbar">
         <button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Crear / rehacer carcasa</button>
+        <button class="mini-btn rack-builder-primary" data-furniture-action="build-from-levels" data-mid="${model.id}">Generar desde niveles</button>
         <button class="mini-btn" data-furniture-action="shelf" data-mid="${model.id}">+ Repisa</button>
         <button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ División</button>
         <button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button>
@@ -14784,6 +14806,13 @@ function getSheetBranchOpenMap(){
     </section>`;
   }
 
+  function bindIntegratedRackBuilder(modelId){
+    const model=rackModel(modelId);
+    if(!model) return;
+    bindRackFurnitureBuilder(model.id);
+    if(document.getElementById('rackBuilderFront')) renderRackFurnitureBuilder(model.id);
+  }
+
   function refreshRackFurnitureBuilderHost(modelId){
     const host=document.getElementById('rackBuilderHost'),model=rackModel(modelId);if(!host||!model)return;ensureRackFurnitureModel(model);host.innerHTML=renderRackFurnitureBuilderMarkup(model);bindRackFurnitureBuilder(model.id);renderRackFurnitureBuilder(model.id);
   }
@@ -14793,6 +14822,7 @@ function getSheetBranchOpenMap(){
     $$('[data-furniture-action]').forEach(btn=>{btn.onclick=e=>{e.preventDefault();e.stopPropagation();const id=btn.getAttribute('data-mid')||modelId,m=rackModel(id);if(!m)return;ensureRackFurnitureModel(m);const a=btn.getAttribute('data-furniture-action');recordHistorySnapshot('racks');
       if(a==='convert')convertLegacyModelToFurniture(m);
       else if(a==='carcass')furnitureCreateCarcass(m,{keepCustom:true});
+      else if(a==='build-from-levels')furnitureGenerateFromModelSetup(m);
       else if(a==='shelf')furnitureAddShelf(m);
       else if(a==='divider')furnitureAddDivider(m);
       else if(a==='back')furnitureAddBack(m);
@@ -14805,6 +14835,30 @@ function getSheetBranchOpenMap(){
     $$('[data-furniture-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;ensureRackFurnitureModel(m);const field=el.getAttribute('data-furniture-field');if(field==='material'){m.furniture.material=el.value;m.style=furnitureMaterialStyle(el.value);if(el.value==='metal'&&Number(m.furniture.thickness)<2)m.furniture.thickness=4;}else m.furniture[field]=Math.max(field==='snap'?.1:.2,Number(el.value||1));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackModelPreview();};el.oninput=apply;el.onchange=apply;});
     $$('[data-furniture-model-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;const f=el.getAttribute('data-furniture-model-field');m[f]=Math.max(f==='height'?60:f==='depth'?20:30,Number(el.value||m[f]||100));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackModelPreview();};el.oninput=apply;});
     [['rackBuilderShelfZ','shelfZ'],['rackBuilderDividerX','dividerX'],['rackBuilderDividerFrom','dividerFrom'],['rackBuilderDividerTo','dividerTo']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.oninput=()=>{appState.ui.rackBuilder[key]=Number(el.value||0);};});
+  }
+
+  function furnitureGenerateFromModelSetup(model){
+    ensureRackFurnitureModel(model);
+    const f=model.furniture;
+    f.enabled=true;
+    f.material=normalizeRackStyle(model.style)==='metallic'?'metal':(normalizeRackStyle(model.style)==='wood'?'wood':normalizeRackStyle(model.style)==='melamine'?'melamine':f.material||'melamine');
+    furnitureCreateCarcass(model,{keepCustom:false});
+    const count=Math.max(1,Math.min(12,Number(model.levels||1)||1));
+    const slots=Math.max(1,Math.min(12,Number(model.slots||1)||1));
+    const H=Number(model.height||200), t=Math.max(.3,Number(f.thickness||1.8));
+    const innerBottom=t;
+    const innerTop=Math.max(innerBottom+1,H-t);
+    const usable=Math.max(1,innerTop-innerBottom);
+    for(let i=1;i<count;i++){
+      const z=innerBottom+usable*i/count;
+      f.pieces.push(furnitureMakePiece('shelf',{name:`Repisa ${i}`,x:t,y:0,z,w:Math.max(1,Number(model.width||120)-2*t),d:Number(model.depth||40),h:t,join:f.material==='metal'?'bolted':'between',autoFit:'shelf'}));
+    }
+    furnitureRefitModel(model);
+    const levels=deriveFurnitureLevels(model);
+    f.logicalSlots={};
+    levels.forEach(l=>{f.logicalSlots[l.index]=slots;});
+    syncFurnitureModelToLegacy(model);
+    return model;
   }
 
   function furnitureSyncInstances(model){
@@ -14825,17 +14879,73 @@ function getSheetBranchOpenMap(){
     const model=rackModel(modelId);const svg=$('#rackBuilderFront'),inspector=$('#rackBuilderInspector'),levelsMount=$('#rackBuilderLevels');if(!model||!svg||!inspector||!levelsMount)return;ensureRackFurnitureModel(model);if(!model.furniture.enabled)return;furnitureRefitModel(model);const f=model.furniture,W=Number(model.width||120),H=Number(model.height||200),margin=64,availW=690,availH=450,scale=Math.min(availW/W,availH/H),ox=65+(availW-W*scale)/2,oy=40+(availH-H*scale)/2;svg.innerHTML='';
     const bg=svgEl('rect',{x:ox,y:oy,width:W*scale,height:H*scale,rx:3,fill:'rgba(8,21,32,.52)',stroke:'rgba(125,166,196,.32)','stroke-width':'1.2','stroke-dasharray':'6 5'});svg.appendChild(bg);
     for(let gx=0;gx<=W;gx+=10){const x=ox+gx*scale;svg.appendChild(svgEl('line',{x1:x,y1:oy,x2:x,y2:oy+H*scale,stroke:'rgba(255,255,255,.035)','stroke-width':.8}));}for(let gz=0;gz<=H;gz+=10){const y=oy+(H-gz)*scale;svg.appendChild(svgEl('line',{x1:ox,y1:y,x2:ox+W*scale,y2:y,stroke:'rgba(255,255,255,.035)','stroke-width':.8}));}
+    if(f.showDims) renderFurnitureSpanDimensions(svg,model,scale,ox,oy,H);
     const pieces=[...f.pieces].sort((a,b)=>(a.type==='back'?-10:0)-(b.type==='back'?-10:0));
     pieces.forEach(p=>{const selected=p.id===f.selectedPieceId;if(p.type==='brace'){const x1=ox+Number(p.x||0)*scale,y1=oy+(H-Number(p.z||0))*scale,x2=ox+Number(p.x2||p.x+p.w||0)*scale,y2=oy+(H-Number(p.z2||p.z+p.h||0))*scale;const line=svgEl('line',{x1,y1,x2,y2,class:`rack-builder-piece brace ${selected?'selected':''}`,'data-furniture-piece':p.id,'stroke-width':Math.max(3,Number(p.d||2)*scale)});svg.appendChild(line);return;}const x=ox+Number(p.x||0)*scale,y=oy+(H-(Number(p.z||0)+Number(p.h||0)))*scale,w=Math.max(2,Number(p.w||1)*scale),h=Math.max(2,Number(p.h||1)*scale);const rect=svgEl('rect',{x,y,width:w,height:h,rx:Math.min(3,h/4),class:`rack-builder-piece type-${p.type} material-${f.material} ${selected?'selected':''}`,'data-furniture-piece':p.id});svg.appendChild(rect);});
     const levelDefs=deriveFurnitureLevels(model); if(f.showSlots){levelDefs.forEach(l=>{l.slots.forEach(slot=>{const x=ox+slot.x0*scale,y=oy+(H-l.z1)*scale,w=(slot.x1-slot.x0)*scale,h=(l.z1-l.z0)*scale;const r=svgEl('rect',{x,y,width:w,height:h,class:'rack-builder-slot','pointer-events':'none'});svg.appendChild(r);const tx=svgEl('text',{x:x+w/2,y:y+h/2,class:'rack-builder-slot-label','text-anchor':'middle','dominant-baseline':'middle','pointer-events':'none'});tx.textContent=`N${l.index}-${slot.code}`;svg.appendChild(tx);});});}
-    if(f.showDims){const wt=svgEl('text',{x:ox+W*scale/2,y:oy+H*scale+34,class:'rack-builder-dim','text-anchor':'middle'});wt.textContent=`${Math.round(W*10)/10} cm`;svg.appendChild(wt);const ht=svgEl('text',{x:ox-32,y:oy+H*scale/2,class:'rack-builder-dim',transform:`rotate(-90 ${ox-32} ${oy+H*scale/2})`,'text-anchor':'middle'});ht.textContent=`${Math.round(H*10)/10} cm`;svg.appendChild(ht);}
+    if(f.showDims){const wt=svgEl('text',{x:ox+W*scale/2,y:oy+H*scale+34,class:'rack-builder-dim','text-anchor':'middle'});wt.textContent=`${Math.round(W*10)/10} cm`;svg.appendChild(wt);const ht=svgEl('text',{x:ox-32,y:oy+H*scale/2,class:'rack-builder-dim',transform:`rotate(-90 ${ox-32} ${oy+H*scale/2})`,'text-anchor':'middle'});ht.textContent=`${Math.round(H*10)/10} cm`;svg.appendChild(ht);renderFurnitureSelectedGuides(svg,model,scale,ox,oy,H);}
     $$('[data-furniture-piece]',svg).forEach(el=>{el.addEventListener('pointerdown',evt=>furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H));el.addEventListener('click',evt=>{evt.stopPropagation();f.selectedPieceId=el.getAttribute('data-furniture-piece');renderRackFurnitureBuilder(model.id);});});svg.onclick=()=>{f.selectedPieceId='';renderRackFurnitureBuilder(model.id);};
     renderFurnitureInspector(model,inspector);renderFurnitureLevels(model,levelsMount);syncFurnitureModelToLegacy(model);
   }
 
-  function furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H){evt.preventDefault();evt.stopPropagation();const f=model.furniture,p=f.pieces.find(x=>x.id===el.getAttribute('data-furniture-piece'));if(!p||p.carcass||p.type==='back'||p.type==='brace')return;f.selectedPieceId=p.id;const start={clientX:evt.clientX,clientY:evt.clientY,x:Number(p.x||0),z:Number(p.z||0)};el.setPointerCapture?.(evt.pointerId);const move=e=>{const dx=(e.clientX-start.clientX)/scale,dz=-(e.clientY-start.clientY)/scale;let next={x:start.x+dx,z:start.z+dz};next=furnitureSnapPiece(model,p,next);if(p.type==='shelf'){p.z=Math.max(0,Math.min(Number(model.height||200)-p.h,next.z));}else if(p.type==='divider'){p.x=Math.max(0,Math.min(Number(model.width||120)-p.w,next.x));}furnitureRefitModel(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);syncFurnitureModelToLegacy(model);saveRackModels();};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});}
+  function furnitureDimensionLine(svg,{x1,y1,x2,y2,label,labelX,labelY,rotate=0,accent=false}){
+    svg.appendChild(svgEl('line',{x1,y1,x2,y2,stroke:accent?'rgba(118,235,196,.95)':'rgba(240,183,70,.72)','stroke-width':accent?1.8:1.2,'stroke-dasharray':accent?'':'4 4','pointer-events':'none'}));
+    const tx=svgEl('text',{x:labelX,y:labelY,class:'rack-builder-dim','text-anchor':'middle','dominant-baseline':'middle','pointer-events':'none'});
+    if(rotate) tx.setAttribute('transform',`rotate(${rotate} ${labelX} ${labelY})`);
+    tx.textContent=label;
+    svg.appendChild(tx);
+  }
 
-  function renderFurnitureInspector(model,mount){const f=model.furniture,p=f.pieces.find(x=>x.id===f.selectedPieceId);if(!p){mount.innerHTML=`<div class="rack-builder-inspector-empty"><b>Selecciona una pieza</b><span>Haz clic en una repisa, lateral, división o refuerzo para editar medidas y tipo de unión.</span><div class="tiny muted">Las piezas de carcasa se mantienen vinculadas a las dimensiones generales. Las repisas y divisiones sí pueden arrastrarse.</div></div>`;return;}const joinOptions=f.material==='metal'?[['bolted','Atornillada'],['slot','Encastrada'],['welded','Soldada'],['flush','A ras']]:[['between','Entre laterales'],['overlap','Sobrepuesta'],['inset','Embutida'],['flush','A ras']];mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Pieza seleccionada</span><b>${escapeHtml(p.name||furniturePieceLabel(p))}</b></div><span class="tag">${furniturePieceLabel(p)}</span></div><div class="rack-builder-piece-grid"><label>X<input data-piece-field="x" type="number" step="0.1" value="${round1(p.x)}" ${p.carcass?'disabled':''}></label><label>Z<input data-piece-field="z" type="number" step="0.1" value="${round1(p.z)}" ${p.carcass?'disabled':''}></label><label>Ancho<input data-piece-field="w" type="number" step="0.1" value="${round1(p.w)}" ${p.autoFit?'disabled':''}></label><label>Alto<input data-piece-field="h" type="number" step="0.1" value="${round1(p.h)}" ${p.autoFit?'disabled':''}></label><label>Prof.<input data-piece-field="d" type="number" step="0.1" value="${round1(p.d)}"></label><label>Unión<select data-piece-field="join">${joinOptions.map(([v,l])=>`<option value="${v}" ${p.join===v?'selected':''}>${l}</option>`).join('')}</select></label></div><label class="rack-builder-piece-name">Nombre<input data-piece-field="name" value="${escapeHtml(p.name||'')}"></label><div class="rack-builder-inspector-actions"><button class="mini-btn" data-piece-action="duplicate">Duplicar</button><button class="mini-btn danger" data-piece-action="delete" ${p.carcass?'disabled':''}>Eliminar</button></div>`;$$('[data-piece-field]',mount).forEach(el=>{const apply=()=>{const field=el.getAttribute('data-piece-field');if(field==='name'||field==='join')p[field]=el.value;else p[field]=Math.max(['d','h','w'].includes(field)?.1:0,Number(el.value||0));if(field==='join'&&p.type==='shelf')p.autoFit='shelf';furnitureRefitModel(model);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};el.onchange=apply;if(el.tagName==='INPUT')el.oninput=apply;});const dup=mount.querySelector('[data-piece-action="duplicate"]');if(dup)dup.onclick=()=>{recordHistorySnapshot('racks');furnitureDuplicateSelectedPiece(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const del=mount.querySelector('[data-piece-action="delete"]');if(del)del.onclick=()=>{if(p.carcass)return;recordHistorySnapshot('racks');f.pieces=f.pieces.filter(x=>x.id!==p.id);f.selectedPieceId='';syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};}
+  function renderFurnitureSpanDimensions(svg,model,scale,ox,oy,H){
+    const levels=deriveFurnitureLevels(model); if(!levels.length) return;
+    const dimX=ox-54;
+    levels.forEach((level,idx)=>{
+      const y1=oy+(H-level.z1)*scale, y2=oy+(H-level.z0)*scale, mid=(y1+y2)/2;
+      svg.appendChild(svgEl('line',{x1:dimX+16,y1:y1,x2:dimX+16,y2:y2,stroke:'rgba(240,183,70,.55)','stroke-width':1,'pointer-events':'none'}));
+      svg.appendChild(svgEl('line',{x1:dimX+10,y1:y1,x2:ox-6,y2:y1,stroke:'rgba(240,183,70,.35)','stroke-width':1,'pointer-events':'none'}));
+      svg.appendChild(svgEl('line',{x1:dimX+10,y1:y2,x2:ox-6,y2:y2,stroke:'rgba(240,183,70,.35)','stroke-width':1,'pointer-events':'none'}));
+      const label=idx===0?`Base → Repisa 1: ${round1(level.height)} cm`:`Repisa ${idx} → Repisa ${idx+1}: ${round1(level.height)} cm`;
+      furnitureDimensionLine(svg,{x1:dimX,y1:y1,x2:dimX,y2:y2,label,labelX:dimX-6,labelY:mid,rotate:-90});
+    });
+  }
+
+  function furnitureNeighborBounds(model,piece){
+    const f=model.furniture, H=Number(model.height||200), t=Math.max(.3,Number(f.thickness||1.8));
+    if(piece.type==='shelf'){
+      const shelves=f.pieces.filter(p=>['base','shelf','top'].includes(p.type)&&p.id!==piece.id).map(p=>({id:p.id,type:p.type,z:Number(p.z||0),top:Number(p.z||0)+Number(p.h||0)})).sort((a,b)=>a.z-b.z);
+      let lower={label:'Base', top:0, z:0}, upper={label:'Tapa', z:H, top:H};
+      shelves.forEach(s=>{if(s.top<=piece.z+0.01) lower={label:s.type==='base'?'Base':`Repisa ${shelves.filter(x=>x.type==='shelf'&&x.z<=s.z).length}`,top:s.top,z:s.z}; if(s.z>=piece.z+piece.h-0.01 && upper.z===H) upper={label:s.type==='top'?'Tapa superior':`Repisa ${shelves.filter(x=>x.type==='shelf'&&x.z<=s.z).length+1}`,z:s.z,top:s.top};});
+      return {lower,upper};
+    }
+    if(piece.type==='divider'){
+      const tW=Math.max(.3,Number(piece.w||t));
+      return {left:{label:'Lateral izq.',x:t/2},right:{label:'Lateral der.',x:Number(model.width||120)-t/2},width:tW};
+    }
+    return null;
+  }
+
+  function renderFurnitureSelectedGuides(svg,model,scale,ox,oy,H){
+    const f=model.furniture, p=f.pieces.find(x=>x.id===f.selectedPieceId); if(!p) return;
+    if(p.type==='shelf'){
+      const nb=furnitureNeighborBounds(model,p); if(!nb) return;
+      const yTop=oy+(H-(Number(p.z||0)+Number(p.h||0)))*scale, yBottom=oy+(H-Number(p.z||0))*scale;
+      const prevY=oy+(H-Number(nb.lower.top||0))*scale, nextY=oy+(H-Number(nb.upper.z||H))*scale;
+      const dx=ox+Number(model.width||120)*scale+34;
+      if(Math.abs(prevY-yBottom)>8) furnitureDimensionLine(svg,{x1:dx,y1:prevY,x2:dx,y2:yBottom,label:`${nb.lower.label} → ${escapeHtml(p.name||'Repisa')}: ${round1((Number(p.z||0)-(Number(nb.lower.top)||0)))} cm`,labelX:dx+16,labelY:(prevY+yBottom)/2,rotate:-90,accent:true});
+      if(Math.abs(nextY-yTop)>8) furnitureDimensionLine(svg,{x1:dx+26,y1:yTop,x2:dx+26,y2:nextY,label:`${escapeHtml(p.name||'Repisa')} → ${nb.upper.label}: ${round1((Number(nb.upper.z||H)-(Number(p.z||0)+Number(p.h||0))))} cm`,labelX:dx+42,labelY:(yTop+nextY)/2,rotate:-90,accent:true});
+    } else if(p.type==='divider'){
+      const nb=furnitureNeighborBounds(model,p); if(!nb) return;
+      const xLeft=ox+Number(p.x||0)*scale, xRight=ox+(Number(p.x||0)+Number(p.w||0))*scale;
+      const leftX=ox+Number(nb.left.x||0)*scale, rightX=ox+Number(nb.right.x||Number(model.width||120))*scale;
+      const dy=oy+H*scale+26;
+      if(Math.abs(xLeft-leftX)>8) furnitureDimensionLine(svg,{x1:leftX,y1:dy,x2:xLeft,y2:dy,label:`Izq. → ${escapeHtml(p.name||'División')}: ${round1(Number(p.x||0)-(Number(nb.left.x)||0))} cm`,labelX:(leftX+xLeft)/2,labelY:dy+14,accent:true});
+      if(Math.abs(rightX-xRight)>8) furnitureDimensionLine(svg,{x1:xRight,y1:dy+24,x2:rightX,y2:dy+24,label:`${escapeHtml(p.name||'División')} → Der.: ${round1((Number(nb.right.x||Number(model.width||120))-(Number(p.x||0)+Number(p.w||0))))} cm`,labelX:(xRight+rightX)/2,labelY:dy+38,accent:true});
+    }
+  }
+
+  function furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H){evt.preventDefault();evt.stopPropagation();const f=model.furniture,p=f.pieces.find(x=>x.id===el.getAttribute('data-furniture-piece'));if(!p||p.carcass||p.type==='back'||p.type==='brace')return;recordHistorySnapshot('racks');f.selectedPieceId=p.id;const start={clientX:evt.clientX,clientY:evt.clientY,x:Number(p.x||0),z:Number(p.z||0)};el.setPointerCapture?.(evt.pointerId);const move=e=>{const dx=(e.clientX-start.clientX)/scale,dz=-(e.clientY-start.clientY)/scale;let next={x:start.x+dx,z:start.z+dz};next=furnitureSnapPiece(model,p,next);if(p.type==='shelf'){p.z=Math.max(0,Math.min(Number(model.height||200)-p.h,next.z));}else if(p.type==='divider'){p.x=Math.max(0,Math.min(Number(model.width||120)-p.w,next.x));}furnitureRefitModel(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);syncFurnitureModelToLegacy(model);saveRackModels();};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});}
+
+  function renderFurnitureInspector(model,mount){const f=model.furniture,p=f.pieces.find(x=>x.id===f.selectedPieceId);if(!p){const levels=deriveFurnitureLevels(model);mount.innerHTML=`<div class="rack-builder-inspector-empty"><b>Edición directa en la vista frontal</b><span>Haz clic o arrastra una repisa o división para editarla directamente. La vista ahora muestra distancias entre niveles.</span><div class="tiny muted">Si seleccionas una repisa verás la distancia hacia la base y hacia la repisa superior. Si seleccionas una división verás sus distancias laterales.</div>${levels.length?`<div class="rack-builder-distance-list">${[...levels].map((l,idx)=>`<div><b>${idx===0?'Base → Repisa 1':`Repisa ${idx} → Repisa ${idx+1}`}</b><span>${round1(l.height)} cm libres</span></div>`).join('')}</div>`:''}</div>`;return;}const joinOptions=f.material==='metal'?[['bolted','Atornillada'],['slot','Encastrada'],['welded','Soldada'],['flush','A ras']]:[['between','Entre laterales'],['overlap','Sobrepuesta'],['inset','Embutida'],['flush','A ras']];let metrics='';if(p.type==='shelf'){const nb=furnitureNeighborBounds(model,p);if(nb)metrics=`<div class="rack-builder-piece-metrics"><div><b>Separación inferior</b><span>${round1((Number(p.z||0)-(Number(nb.lower.top)||0)))} cm</span></div><div><b>Separación superior</b><span>${round1((Number(nb.upper.z||Number(model.height||200))-(Number(p.z||0)+Number(p.h||0))))} cm</span></div></div>`;}else if(p.type==='divider'){const nb=furnitureNeighborBounds(model,p);if(nb)metrics=`<div class="rack-builder-piece-metrics"><div><b>Lado izquierdo</b><span>${round1(Number(p.x||0)-(Number(nb.left.x)||0))} cm</span></div><div><b>Lado derecho</b><span>${round1((Number(nb.right.x||Number(model.width||120))-(Number(p.x||0)+Number(p.w||0))))} cm</span></div></div>`;}mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Pieza seleccionada</span><b>${escapeHtml(p.name||furniturePieceLabel(p))}</b></div><span class="tag">${furniturePieceLabel(p)}</span></div>${metrics}<div class="rack-builder-piece-grid"><label>X<input data-piece-field="x" type="number" step="0.1" value="${round1(p.x)}" ${p.carcass?'disabled':''}></label><label>Z<input data-piece-field="z" type="number" step="0.1" value="${round1(p.z)}" ${p.carcass?'disabled':''}></label><label>Ancho<input data-piece-field="w" type="number" step="0.1" value="${round1(p.w)}" ${p.autoFit?'disabled':''}></label><label>Alto<input data-piece-field="h" type="number" step="0.1" value="${round1(p.h)}" ${p.autoFit?'disabled':''}></label><label>Prof.<input data-piece-field="d" type="number" step="0.1" value="${round1(p.d)}"></label><label>Unión<select data-piece-field="join">${joinOptions.map(([v,l])=>`<option value="${v}" ${p.join===v?'selected':''}>${l}</option>`).join('')}</select></label></div><label class="rack-builder-piece-name">Nombre<input data-piece-field="name" value="${escapeHtml(p.name||'')}"></label><div class="rack-builder-inspector-actions"><button class="mini-btn" data-piece-action="duplicate">Duplicar</button><button class="mini-btn danger" data-piece-action="delete" ${p.carcass?'disabled':''}>Eliminar</button></div>`;$$('[data-piece-field]',mount).forEach(el=>{const apply=()=>{const field=el.getAttribute('data-piece-field');if(field==='name'||field==='join')p[field]=el.value;else p[field]=Math.max(['d','h','w'].includes(field)?.1:0,Number(el.value||0));if(field==='join'&&p.type==='shelf')p.autoFit='shelf';furnitureRefitModel(model);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};el.onchange=apply;if(el.tagName==='INPUT')el.oninput=apply;});const dup=mount.querySelector('[data-piece-action="duplicate"]');if(dup)dup.onclick=()=>{recordHistorySnapshot('racks');furnitureDuplicateSelectedPiece(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const del=mount.querySelector('[data-piece-action="delete"]');if(del)del.onclick=()=>{if(p.carcass)return;recordHistorySnapshot('racks');f.pieces=f.pieces.filter(x=>x.id!==p.id);f.selectedPieceId='';syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};}
 
   function renderFurnitureLevels(model,mount){const f=model.furniture,levels=deriveFurnitureLevels(model);if(!levels.length){mount.innerHTML='<div class="tiny muted">Agrega una base y una tapa/repisas para formar compartimentos.</div>';return;}mount.innerHTML=`<div class="rack-builder-levels-head"><div><b>Niveles y slots derivados</b><span>Los slots pueden ser físicos (divisor) o lógicos para WMS.</span></div><span class="tag">Capacidad ${levels.reduce((s,l)=>s+l.slots.length,0)}</span></div><div class="rack-builder-level-grid">${[...levels].reverse().map(l=>`<div class="rack-builder-level-card"><div><b>Nivel ${l.index}</b><span>${round1(l.height)} cm libres · ${l.physicalDividerCount} divisores físicos</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><div class="rack-builder-slot-chips">${l.slots.map(s=>`<span>${s.code} · ${round1(s.width)} cm</span>`).join('')}</div><div class="rack-builder-level-actions"><button class="mini-btn" data-furniture-materialize="${l.index}">Crear divisores físicos</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Quitar divisores</button></div></div>`).join('')}</div>`;$$('[data-furniture-level-slots]',mount).forEach(inp=>{inp.onchange=()=>{const idx=Number(inp.getAttribute('data-furniture-level-slots'));f.logicalSlots[idx]=Math.max(1,Math.min(12,Number(inp.value||1)||1));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};});$$('[data-furniture-materialize]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureMaterializeLevelDividers(model,Number(btn.getAttribute('data-furniture-materialize')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});$$('[data-furniture-clear-dividers]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureClearLevelDividers(model,Number(btn.getAttribute('data-furniture-clear-dividers')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});}
 
@@ -14847,12 +14957,12 @@ function getSheetBranchOpenMap(){
 
   function renderFurnitureRackDetail(rackId,prod,holder,model,rack){
     if(!holder||!model)return;ensureRackFurnitureModel(model);furnitureRefitModel(model);holder.innerHTML='';holder.setAttribute('preserveAspectRatio','xMidYMid meet');
-    const root=svgEl('g',{transform:'translate(0 86)'});holder.appendChild(root);const W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200),pieces=getFurnitureRenderPieces(model);const ox=-W/2,oy=-D/2;
+    const root=svgEl('g',{transform:'translate(0 86)'});holder.appendChild(root);const W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200),baseOffset=Math.max(0,Number(rack?.baseHeight ?? model.clearance ?? 0)||0),pieces=getFurnitureRenderPieces(model);const ox=-W/2,oy=-D/2;
     const colors=model.furniture.material==='metal'?{top:'#5f7891',front:'#2f526e',side:'#213f58',stroke:'#8ca7bf'}:model.furniture.material==='wood'?{top:'#d9b27d',front:'#b77d43',side:'#8e5f32',stroke:'#6d4524'}:{top:'#eef2f5',front:'#d5dee8',side:'#b7c4d2',stroke:'#8498ad'};
-    const prism=(p,attrs={})=>{const x0=ox+p.x,x1=x0+p.w,y0=oy+p.y,y1=y0+p.d,z0=p.z,z1=p.z+p.h;root.appendChild(face([toIso(x0,y0,z1),toIso(x1,y0,z1),toIso(x1,y1,z1),toIso(x0,y1,z1)],{fill:attrs.top||colors.top,stroke:colors.stroke,'stroke-width':'1'}));root.appendChild(face([toIso(x0,y1,z0),toIso(x1,y1,z0),toIso(x1,y1,z1),toIso(x0,y1,z1)],{fill:attrs.front||colors.front,stroke:colors.stroke,'stroke-width':'.9'}));root.appendChild(face([toIso(x1,y0,z0),toIso(x1,y1,z0),toIso(x1,y1,z1),toIso(x1,y0,z1)],{fill:attrs.side||colors.side,stroke:colors.stroke,'stroke-width':'.9'}));};
-    pieces.filter(p=>p.type==='back').forEach(p=>prism(p,{front:'rgba(127,151,174,.32)',top:'rgba(176,194,210,.36)',side:'rgba(108,132,153,.30)'}));pieces.filter(p=>p.type!=='back'&&p.type!=='brace').forEach(p=>prism(p));pieces.filter(p=>p.type==='brace').forEach(p=>{const a=toIso(ox+Number(p.x||0),oy+D*.1,Number(p.z||0)),b=toIso(ox+Number(p.x2||p.x+p.w||0),oy+D*.1,Number(p.z2||p.z+p.h||0));root.appendChild(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:model.furniture.material==='metal'?'#7193ad':'#8b6541','stroke-width':Math.max(2,Number(p.d||2)),'stroke-linecap':'round'}));});
+    const prism=(p,attrs={})=>{const x0=ox+p.x,x1=x0+p.w,y0=oy+p.y,y1=y0+p.d,z0=p.z+baseOffset,z1=p.z+p.h+baseOffset;root.appendChild(face([toIso(x0,y0,z1),toIso(x1,y0,z1),toIso(x1,y1,z1),toIso(x0,y1,z1)],{fill:attrs.top||colors.top,stroke:colors.stroke,'stroke-width':'1'}));root.appendChild(face([toIso(x0,y1,z0),toIso(x1,y1,z0),toIso(x1,y1,z1),toIso(x0,y1,z1)],{fill:attrs.front||colors.front,stroke:colors.stroke,'stroke-width':'.9'}));root.appendChild(face([toIso(x1,y0,z0),toIso(x1,y1,z0),toIso(x1,y1,z1),toIso(x1,y0,z1)],{fill:attrs.side||colors.side,stroke:colors.stroke,'stroke-width':'.9'}));};
+    pieces.filter(p=>p.type==='back').forEach(p=>prism(p,{front:'rgba(127,151,174,.32)',top:'rgba(176,194,210,.36)',side:'rgba(108,132,153,.30)'}));pieces.filter(p=>p.type!=='back'&&p.type!=='brace').forEach(p=>prism(p));pieces.filter(p=>p.type==='brace').forEach(p=>{const a=toIso(ox+Number(p.x||0),oy+D*.1,Number(p.z||0)+baseOffset),b=toIso(ox+Number(p.x2||p.x+p.w||0),oy+D*.1,Number(p.z2||p.z+p.h||0)+baseOffset);root.appendChild(svgEl('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:model.furniture.material==='metal'?'#7193ad':'#8b6541','stroke-width':Math.max(2,Number(p.d||2)),'stroke-linecap':'round'}));});
     const levels=deriveFurnitureLevels(model),selectedLevel=Math.max(1,Number(prod?.nivel||0)||0),selectedSlot=Math.max(1,Number(prod?.slot||0)||0);if(selectedLevel&&selectedSlot){const l=levels.find(x=>x.index===selectedLevel),slot=l?.slots?.[selectedSlot-1];if(l&&slot){const p={x:slot.x0+1,y:D*.08,z:l.z0+1,w:Math.max(1,slot.width-2),d:D*.84,h:Math.max(2,l.height-2)};prism(p,{top:'rgba(196,255,91,.48)',front:'rgba(143,255,91,.34)',side:'rgba(118,238,72,.28)'});}}
-    const base=toIso(0,0,H+14),label=svgEl('text',{x:base.x,y:base.y,class:'rack-title','text-anchor':'middle'});label.textContent=rack?.id||model.name||'Rack';root.appendChild(label);
+    const floorPt=toIso(0,0,baseOffset-3),floorLabel=svgEl('text',{x:floorPt.x,y:floorPt.y,class:'rack-dim','text-anchor':'middle'});floorLabel.textContent=`Piso ${round1(baseOffset)}cm`;root.appendChild(floorLabel);const base=toIso(0,0,H+baseOffset+14),label=svgEl('text',{x:base.x,y:base.y,class:'rack-title','text-anchor':'middle'});label.textContent=rack?.id||model.name||'Rack';root.appendChild(label);
     try{const box=root.getBBox();holder.setAttribute('viewBox',`${box.x-32} ${box.y-38} ${Math.max(180,box.width+64)} ${Math.max(220,box.height+78)}`);}catch{holder.setAttribute('viewBox','-240 -360 480 520');}
   }
   function renderReports(){
@@ -15765,7 +15875,7 @@ function getSheetBranchOpenMap(){
   btnStopScanner.addEventListener('click', stopScanner);
   scannerModal.addEventListener('click', (e) => { if (e.target === scannerModal) stopScanner(); });
 
-console.info('*** WMS v140 RACK BUILDER PRO + FURNITURE CONSTRUCTION + VARIABLE LEVEL SLOTS ACTIVE ***');
+console.info('*** WMS v142 UNIFIED RACK EDITOR + DIRECT FURNITURE + LEVEL SLOTS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

@@ -28,8 +28,8 @@ if (duplicateDeclarations.length || duplicateOverrides.length) {
   process.exit(1);
 }
 
-if (!source.startsWith('/* WMS_V140_RACK_BUILDER_PRO */')) {
-  console.error('Falta la marca de bundle v140.');
+if (!source.startsWith('/* WMS_V142_UNIFIED_RACK_EDITOR */')) {
+  console.error('Falta la marca de bundle v142.');
   process.exit(1);
 }
 console.log(`Auditoría frontend OK: ${declarations.size} funciones declaradas, sin overrides protegidos duplicados.`);
