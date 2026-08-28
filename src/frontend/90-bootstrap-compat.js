@@ -1,4 +1,4 @@
-console.info('*** WMS v109 3D PERFORMANCE ACTIVE ***');
+console.info('*** WMS v118 ARCHITECTURAL 3D ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

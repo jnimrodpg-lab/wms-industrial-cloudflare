@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v109-3d-performance';
+      const localUrl = './vendor/three.module.min.js?v=wms-v118-architectural-3d';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -67,8 +67,8 @@
         <div class="nav3d-head">
           <div>
             <div class="search-card-kicker">Ubicación visual · WebGL</div>
-            <h2>3D enfocado al producto</h2>
-            <p>Visualización 3D limpia del rack activo dentro del espacio del local.</p>
+            <h2>3D arquitectónico del layout</h2>
+            <p>Espacio, muros, vanos y racks representados con una lectura arquitectónica más limpia.</p>
           </div>
           <div class="nav3d-actions">
             <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
@@ -81,9 +81,11 @@
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
             <button class="iso-tool ${appState.ui?.nav3DWallCut ? 'active' : ''}" data-nav3d-action="wall-cut">Vista corte</button>
             <button class="iso-tool ${appState.ui?.nav3DArchitectural ? 'active' : ''}" data-nav3d-action="arch-mode">Arquitectónico</button>
+            <button class="iso-tool ${appState.ui?.nav3DPresentation ? 'active' : ''}" data-nav3d-action="presentation-mode">Presentación</button>
             <button class="iso-tool ${appState.ui?.nav3DRoof ? 'active' : ''}" data-nav3d-action="roof-toggle">Techo</button>
             <button class="iso-tool ${appState.ui?.nav3DShowRoomSlabs !== false ? 'active' : ''}" data-nav3d-action="room-slabs">Pisos</button>
             <button class="iso-tool ${appState.ui?.nav3DShowOpeningFrames !== false ? 'active' : ''}" data-nav3d-action="opening-frames">Marcos</button>
+            <button class="iso-tool ${appState.ui?.nav3DShowArchitecturalDetails !== false ? 'active' : ''}" data-nav3d-action="arch-details">Detalles</button>
             <button class="iso-tool" data-nav3d-action="camera-top">Planta 3D</button>
             <div class="nav3d-visual-switch">
               <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
@@ -251,7 +253,7 @@
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
     let pulseTimer = 0, isClosed = false, visibilityHandler = null;
     const activePulseTargets = [];
-    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof };
+    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation };
     const close = () => {
       if(isClosed) return;
       isClosed = true;
@@ -278,7 +280,9 @@
       modal.querySelectorAll('[data-nav3d-action^="visual-"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === `visual-${ui.visual}`));
       modal.querySelector('[data-nav3d-action="wall-cut"]')?.classList.toggle('active', !!appState.ui?.nav3DWallCut);
       modal.querySelector('[data-nav3d-action="arch-mode"]')?.classList.toggle('active', !!appState.ui?.nav3DArchitectural);
+      modal.querySelector('[data-nav3d-action="presentation-mode"]')?.classList.toggle('active', !!appState.ui?.nav3DPresentation);
       modal.querySelector('[data-nav3d-action="roof-toggle"]')?.classList.toggle('active', !!appState.ui?.nav3DRoof);
+      modal.querySelector('[data-nav3d-action="arch-details"]')?.classList.toggle('active', appState.ui?.nav3DShowArchitecturalDetails !== false);
       modal.querySelectorAll('[data-nav3d-target]').forEach(b => b.classList.toggle('active', b.dataset.nav3dTarget === ui.target));
     };
 
@@ -371,9 +375,11 @@
       const visualProfiles = {
         oscuro: { bg:0x061018, fog:.022, exposure:1.10, ambient:.52, hemi:.95, key:2.8, fill:.78, rim:1.15, active:2.0, floor:0x0b1722, floorA:'#102235', floorB:'#091827', floorC:'#07121d', grid:.36, ghost:.12, wire:.22 },
         operativo: { bg:0x081722, fog:.014, exposure:1.48, ambient:.82, hemi:1.42, key:3.75, fill:1.15, rim:1.55, active:2.9, floor:0x132638, floorA:'#183149', floorB:'#102338', floorC:'#0c1b2c', grid:.58, ghost:.20, wire:.40 },
-        claro: { bg:0x0d2232, fog:.010, exposure:1.72, ambient:1.05, hemi:1.70, key:4.25, fill:1.38, rim:1.75, active:3.2, floor:0x1a3347, floorA:'#234159', floorB:'#173047', floorC:'#102538', grid:.68, ghost:.26, wire:.52 }
+        claro: { bg:0x0d2232, fog:.010, exposure:1.72, ambient:1.05, hemi:1.70, key:4.25, fill:1.38, rim:1.75, active:3.2, floor:0x1a3347, floorA:'#234159', floorB:'#173047', floorC:'#102538', grid:.68, ghost:.26, wire:.52 },
+        presentacion: { bg:0xe7ecef, fog:.0045, exposure:1.18, ambient:1.35, hemi:1.65, key:3.15, fill:1.05, rim:.72, active:2.35, floor:0xcfd5d8, floorA:'#d8dddf', floorB:'#c9d0d4', floorC:'#c0c7cb', grid:0, ghost:.08, wire:.18 }
       };
-      const visual = visualProfiles[ui.visual] || visualProfiles.operativo;
+      const presentationMode = !!appState.ui?.nav3DPresentation;
+      const visual = presentationMode ? visualProfiles.presentacion : (visualProfiles[ui.visual] || visualProfiles.operativo);
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const pickables = [];
@@ -389,7 +395,7 @@
       if('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = visual.exposure;
-      camera = new THREE.PerspectiveCamera(42, 1, .1, 500);
+      camera = new THREE.PerspectiveCamera(presentationMode ? 36 : 42, 1, .1, 500);
       const ambient = new THREE.AmbientLight(0xc7e7ff, visual.ambient); scene.add(ambient);
       const hemi = new THREE.HemisphereLight(0xf2fbff, 0x153047, visual.hemi); scene.add(hemi);
       const key = new THREE.DirectionalLight(0xffffff, visual.key); key.position.set(16,38,22); key.castShadow = true; key.shadow.mapSize.set(1024,1024); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
@@ -430,7 +436,7 @@
       const layoutZones = layoutZonesRaw;
       const floorMat = new THREE.MeshStandardMaterial({ color:visual.floor, map:layoutZones.length ? null : makeFloorTexture(), roughness:.46, metalness:.22, envMapIntensity:.45, transparent:!!layoutZones.length, opacity:layoutZones.length ? .055 : 1 });
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
-      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = appState.ui?.nav3DArchitectural ? Math.min(.16, visual.grid*.24) : Math.min(.34, visual.grid*.48); world.add(grid);
+      const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = presentationMode ? 0 : (appState.ui?.nav3DArchitectural ? Math.min(.16, visual.grid*.24) : Math.min(.34, visual.grid*.48)); world.add(grid);
 
       const DEFAULT_WALL_HEIGHT = 290;
       const DEFAULT_WALL_THICKNESS = 14;
@@ -549,28 +555,50 @@
         mesh.receiveShadow = true;
         mesh.userData.wallId = wallId || '';
         group.add(mesh);
+        const edgeOpacity = presentationMode ? (isActive ? .34 : .10) : (isActive ? .70 : .36);
         const edges = new THREE.LineSegments(
           new THREE.EdgesGeometry(geo),
-          new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
+          new THREE.LineBasicMaterial({ color:presentationMode ? 0x697985 : (isActive ? 0xffffff : 0xd7e7f4), transparent:true, opacity:edgeOpacity })
         );
         group.add(edges);
         return mesh;
       };
-      const buildArchitecturalRoofGroup = (zones=[], activeZoneIds=new Set(), wallHeight=2.8) => {
+      const addArchitecturalBaseboards = (group, seg, openings, thicknessUnits, isActive) => {
+        if(!appState.ui?.nav3DArchitectural || appState.ui?.nav3DShowArchitecturalDetails === false) return;
+        const blockers=(openings||[]).filter(o=>['door','gate','free'].includes(normalizeOpeningType(o.type)) && Number(o.sillUnits||0) < 8).sort((a,b)=>a.t0-b.t0);
+        const ranges=[]; let cursor=0;
+        blockers.forEach(o=>{ const a=Math.max(cursor,Number(o.t0||0)), b=Math.max(a,Number(o.t1||0)); if(a>cursor+.004) ranges.push([cursor,a]); cursor=Math.max(cursor,b); });
+        if(cursor<.996) ranges.push([cursor,1]);
+        if(!blockers.length) ranges.push([0,1]);
+        const mat=new THREE.MeshStandardMaterial({color:presentationMode?0x9ca5aa:(isActive?0xcbd7df:0x6c7b86),roughness:.74,metalness:.02});
+        ranges.forEach(([a,b])=>{
+          const geo=makeWallBandGeometry(seg,a,b,.015,.13,Math.max(4,thicknessUnits*1.035),-.25);
+          if(!geo) return; const mesh=new THREE.Mesh(geo,mat); mesh.castShadow=false; mesh.receiveShadow=true; mesh.userData.wallId=seg.id||''; group.add(mesh);
+        });
+      };
+      const zoneCeilingHeightWorld = (zone, segments=[], fallback=2.8) => {
+        const explicit=Number(zone?.ceilingHeight||zone?.height3D||0);
+        if(explicit>0) return Math.max(1.8, explicit*hScale);
+        const related=(segments||[]).filter(seg=>seg?.zoneIds?.has?.(zone?.id) || seg?.zoneId===zone?.id);
+        if(related.length) return Math.max(1.8,...related.map(seg=>(Number(seg.height||DEFAULT_WALL_HEIGHT)||DEFAULT_WALL_HEIGHT)*hScale));
+        return Math.max(1.8,Number(fallback||2.8));
+      };
+      const buildArchitecturalRoofGroup = (zones=[], activeZoneIds=new Set(), wallHeight=2.8, segments=[]) => {
         const group = new THREE.Group();
         if(!appState.ui?.nav3DRoof) return group;
-        const roofMat = new THREE.MeshStandardMaterial({ color:0xe8f1f7, transparent:true, opacity:.18, roughness:.72, metalness:.02, side:THREE.DoubleSide, depthWrite:false });
-        const roofEdgeMat = new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:.38 });
         zones.forEach(z => {
           const pts = (z.pts || []).map(layoutToShapePoint);
           if(pts.length < 3) return;
+          const active=activeZoneIds.has(z.id);
           const shape = new THREE.Shape(pts);
-          const geo = new THREE.ShapeGeometry(shape);
+          const geo = new THREE.ExtrudeGeometry(shape,{depth:.055,bevelEnabled:false,steps:1});
+          geo.rotateX(-Math.PI/2);
+          const roofMat = new THREE.MeshStandardMaterial({ color:presentationMode?0xf5f5f2:(active?0xeaf4f9:0xd7e2e8), transparent:true, opacity:presentationMode ? .84 : (active ? .34 : .20), roughness:.82, metalness:.01, side:THREE.DoubleSide, depthWrite:!presentationMode });
           const mesh = new THREE.Mesh(geo, roofMat);
-          mesh.rotation.x = -Math.PI/2;
-          mesh.position.y = Math.max(1.25, wallHeight + .035);
-          group.add(mesh);
-          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, mesh.position.y + .01, -v.y));
+          mesh.position.y = zoneCeilingHeightWorld(z,segments,wallHeight)+.025;
+          mesh.castShadow=true; mesh.receiveShadow=true; mesh.userData.zoneId=z.id||''; group.add(mesh);
+          const roofEdgeMat = new THREE.LineBasicMaterial({ color:presentationMode?0x7a878e:0xffffff, transparent:true, opacity:presentationMode ? .18 : .38 });
+          const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, mesh.position.y + .07, -v.y));
           group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), roofEdgeMat));
         });
         return group;
@@ -578,6 +606,7 @@
 
       const addOpeningFrame3D = (group, seg, opening, rawLengthUnits, height, thicknessUnits, isActive) => {
         if(appState.ui?.nav3DShowOpeningFrames === false || !opening) return;
+        const type=normalizeOpeningType(opening.type);
         const dx=Number(seg.b.x||0)-Number(seg.a.x||0), dy=Number(seg.b.y||0)-Number(seg.a.y||0);
         const len=Math.max(1,Math.hypot(dx,dy)); const ux=dx/len, uy=dy/len; const n=getSegmentNormal(seg);
         const centerT=Number(opening.t||.5); const center={x:Number(seg.a.x||0)+dx*centerT,y:Number(seg.a.y||0)+dy*centerT};
@@ -585,18 +614,34 @@
         const frameU=Math.max(4,Math.min(9,widthU*.055)); const frameD=Math.max(5,thicknessUnits*.72);
         const maxVisibleU=Math.max(0,height/Math.max(.0001,hScale)-sillU); const visibleHU=Math.min(openingHU,maxVisibleU);
         if(visibleHU<=2) return;
-        const mat=new THREE.MeshStandardMaterial({color:isActive?0xf5fbff:0x8094a4,roughness:.48,metalness:.20});
-        const addPart=(cx,cy,wU,hU)=>{ const mid=toWorld(cx,cy,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.03,hU*hScale),Math.max(.05,frameD*scale)),mat); mesh.position.set(mid.x,(sillU+hU/2)*hScale,mid.z); mesh.rotation.y=-Math.atan2(dy,dx); mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh); };
+        const mat=new THREE.MeshStandardMaterial({color:presentationMode?(isActive?0x6e7b82:0x77848b):(isActive?0xf5fbff:0x8094a4),roughness:.45,metalness:.14});
+        const yaw=-Math.atan2(dy,dx);
+        const addVertical=(cx,cy,wU,hU)=>{ const mid=toWorld(cx,cy,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.03,hU*hScale),Math.max(.05,frameD*scale)),mat); mesh.position.set(mid.x,(sillU+hU/2)*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh); return mesh; };
+        const addHorizontal=(cyU,wU,yU,depthFactor=1)=>{ const mid=toWorld(center.x,center.y,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.025,frameU*hScale),Math.max(.05,frameD*scale*depthFactor)),mat); mesh.position.set(mid.x,yU*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh); return mesh; };
         const half=widthU/2;
-        addPart(center.x-ux*half,center.y-uy*half,frameU,visibleHU);
-        addPart(center.x+ux*half,center.y+uy*half,frameU,visibleHU);
-        const topCenter={x:center.x,y:center.y};
-        const top=toWorld(topCenter.x,topCenter.y,0);
-        if(openingHU<=maxVisibleU+.01){ const topMesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,widthU*scale),Math.max(.03,frameU*hScale),Math.max(.05,frameD*scale)),mat); topMesh.position.set(top.x,(sillU+openingHU)*hScale,top.z); topMesh.rotation.y=-Math.atan2(dy,dx); topMesh.castShadow=true; group.add(topMesh); }
-        if(normalizeOpeningType(opening.type)==='window'){
-          const glassH=Math.max(4,visibleHU-frameU);
-          const glass=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.05,(widthU-frameU*2)*scale),Math.max(.05,glassH*hScale)),new THREE.MeshPhysicalMaterial({color:0xa9e8ff,transparent:true,opacity:.22,roughness:.08,metalness:.02,transmission:.55,depthWrite:false,side:THREE.DoubleSide}));
-          glass.position.set(top.x+n.x*(thicknessUnits*.5*scale),(sillU+glassH*.5)*hScale,top.z+n.y*(thicknessUnits*.5*scale)); glass.rotation.y=-Math.atan2(dy,dx); group.add(glass);
+        addVertical(center.x-ux*half,center.y-uy*half,frameU,visibleHU);
+        addVertical(center.x+ux*half,center.y+uy*half,frameU,visibleHU);
+        if(openingHU<=maxVisibleU+.01) addHorizontal(0,widthU,sillU+openingHU);
+        if(type==='window'){
+          addHorizontal(0,widthU,sillU,1.24);
+          if(widthU>=135) addVertical(center.x,center.y,Math.max(3.2,frameU*.65),visibleHU);
+          const glassH=Math.max(4,visibleHU-frameU*1.4);
+          const glass=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.05,(widthU-frameU*2)*scale),Math.max(.05,glassH*hScale)),new THREE.MeshPhysicalMaterial({color:presentationMode?0xbad9e4:0xa9e8ff,transparent:true,opacity:presentationMode ? .34 : .22,roughness:.08,metalness:.02,transmission:.58,depthWrite:false,side:THREE.DoubleSide}));
+          const wp=toWorld(center.x+n.x*(thicknessUnits*.5),center.y+n.y*(thicknessUnits*.5),0); glass.position.set(wp.x,(sillU+visibleHU*.5)*hScale,wp.z); glass.rotation.y=yaw; group.add(glass);
+        }
+        if(appState.ui?.nav3DShowArchitecturalDetails === false || !['door','gate'].includes(type)) return;
+        const swingSign=Number(opening.swing||1)>=0?1:-1;
+        const leafW=Math.max(30,widthU-frameU*1.5); const leafH=Math.max(50,Math.min(visibleHU-frameU*.6,openingHU-frameU*.6));
+        const hinge={x:center.x-ux*leafW*.5,y:center.y-uy*leafW*.5};
+        const a=swingSign*THREE.MathUtils.degToRad(type==='gate'?52:68);
+        const vx=ux*Math.cos(a)-uy*Math.sin(a), vy=ux*Math.sin(a)+uy*Math.cos(a);
+        const lc={x:hinge.x+vx*leafW*.5,y:hinge.y+vy*leafW*.5}; const worldC=toWorld(lc.x,lc.y,0);
+        const leafMat=new THREE.MeshStandardMaterial({color:type==='gate'?(presentationMode?0x7f8d93:0x657a86):(presentationMode?0xc6a878:0x8f6b45),roughness:type==='gate' ? .50 : .66,metalness:type==='gate' ? .18 : .04});
+        const leaf=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.06,leafW*scale),Math.max(.08,leafH*hScale),Math.max(.035,3.8*scale)),leafMat);
+        leaf.position.set(worldC.x,(sillU+leafH*.5)*hScale,worldC.z); leaf.rotation.y=-Math.atan2(vy,vx); leaf.castShadow=true; leaf.receiveShadow=true; leaf.userData.openingId=opening.id||''; group.add(leaf);
+        if(type==='door'){
+          const free={x:hinge.x+vx*leafW*.82,y:hinge.y+vy*leafW*.82}; const hp=toWorld(free.x,free.y,0);
+          const handle=new THREE.Mesh(new THREE.SphereGeometry(.055,10,8),new THREE.MeshStandardMaterial({color:0xd6bd72,roughness:.28,metalness:.72})); handle.position.set(hp.x,Math.min((sillU+105)*hScale,(sillU+leafH*.58)*hScale),hp.z); group.add(handle);
         }
       };
       const buildArchitecturalRoomSlabs = (zones=[], activeZoneIds=new Set()) => {
@@ -610,7 +655,7 @@
           geo.rotateX(-Math.PI/2);
           const active=item.zone&&activeZoneIds.has(item.id);
           const color=new THREE.Color(item.color||'#9fb6c7');
-          const mat=new THREE.MeshStandardMaterial({color,roughness:.78,metalness:.03,transparent:true,opacity:active ? .72 : (appState.ui?.nav3DArchitectural ? .42 : .22),side:THREE.DoubleSide});
+          const mat=new THREE.MeshStandardMaterial({color:presentationMode?color.clone().lerp(new THREE.Color(0xd8dcde),.58):color,roughness:presentationMode ? .90 : .78,metalness:.02,transparent:true,opacity:presentationMode ? (active ? .94 : .80):(active ? .72 : (appState.ui?.nav3DArchitectural ? .42 : .22)),side:THREE.DoubleSide});
           const mesh=new THREE.Mesh(geo,mat); mesh.position.y=-.055; mesh.receiveShadow=true; mesh.userData.zoneId=item.zone?item.id:''; mesh.userData.roomId=item.zone?'':item.id; group.add(mesh);
         });
         return group;
@@ -631,11 +676,11 @@
           const thicknessUnits = Math.max(8, Number(seg.thickness || DEFAULT_WALL_THICKNESS) || DEFAULT_WALL_THICKNESS);
           const thickness = Math.max(.24, thicknessUnits * scale);
           const wallMat = new THREE.MeshStandardMaterial({
-            color:isActive ? 0xf2f7fb : 0xb8c8d8,
+            color:presentationMode ? (isActive ? 0xffffff : 0xeeeae3) : (isActive ? 0xf2f7fb : 0xb8c8d8),
             transparent:true,
-            opacity:appState.ui?.nav3DArchitectural ? (wallCut ? (isActive ? .74 : .48) : (isActive ? .98 : .86)) : (wallCut ? (isActive ? .62 : .38) : (isActive ? .96 : .72)),
-            roughness:.78,
-            metalness:.03,
+            opacity:presentationMode ? (wallCut ? (isActive ? .78 : .58) : .985) : (appState.ui?.nav3DArchitectural ? (wallCut ? (isActive ? .74 : .48) : (isActive ? .98 : .86)) : (wallCut ? (isActive ? .62 : .38) : (isActive ? .96 : .72))),
+            roughness:presentationMode ? .92 : .78,
+            metalness:.02,
             side:THREE.DoubleSide
           });
           const glassMat = new THREE.MeshStandardMaterial({ color:0x8feaff, transparent:true, opacity:appState.ui?.nav3DArchitectural ? .46 : .32, roughness:.18, metalness:.04, side:THREE.DoubleSide, depthWrite:false });
@@ -664,6 +709,7 @@
             if(cursor < .996){
               addWallMesh(group, makeWallBandGeometry(seg, cursor, 1, 0, height, thicknessUnits), wallMat, isActive, seg.id);
             }
+            addArchitecturalBaseboards(group,seg,openings,thicknessUnits,isActive);
             return;
           }
           const autoPoly = seg.autoZoneEdge && seg.zoneId && Number.isFinite(seg.edgeIndex) ? getAutoWallPolygon(seg.raw || seg) : null;
@@ -688,12 +734,13 @@
           group.add(wall);
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(wall.geometry),
-            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
+            new THREE.LineBasicMaterial({ color:presentationMode ? 0x697985 : (isActive ? 0xffffff : 0xd7e7f4), transparent:true, opacity:presentationMode ? (isActive ? .34 : .10) : (isActive ? .70 : .36) })
           );
           edges.position.copy(wall.position);
           edges.rotation.copy(wall.rotation);
           edges.scale.copy(wall.scale);
           group.add(edges);
+          addArchitecturalBaseboards(group,seg,[],thicknessUnits,isActive);
         });
 
         // v105: cierre completo de esquinas tipo L en 3D sin usar variables fuera de scope.
@@ -704,11 +751,11 @@
           const geo = makeWallPrismGeometry(joint.poly, height);
           if(!geo) return;
           const jointMat = new THREE.MeshStandardMaterial({
-            color:isActive ? 0xf2f7fb : 0xb8c8d8,
+            color:presentationMode ? (isActive ? 0xffffff : 0xeeeae3) : (isActive ? 0xf2f7fb : 0xb8c8d8),
             transparent:true,
-            opacity:appState.ui?.nav3DArchitectural ? (isActive ? .98 : .86) : (isActive ? .96 : .72),
-            roughness:.78,
-            metalness:.03,
+            opacity:presentationMode ? .985 : (appState.ui?.nav3DArchitectural ? (isActive ? .98 : .86) : (isActive ? .96 : .72)),
+            roughness:presentationMode ? .92 : .78,
+            metalness:.02,
             side:THREE.DoubleSide
           });
           const wall = new THREE.Mesh(geo, jointMat);
@@ -718,7 +765,7 @@
           group.add(wall);
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(wall.geometry),
-            new THREE.LineBasicMaterial({ color:isActive ? 0xffffff : 0xd7e7f4, transparent:true, opacity:isActive ? .70 : .36 })
+            new THREE.LineBasicMaterial({ color:presentationMode ? 0x697985 : (isActive ? 0xffffff : 0xd7e7f4), transparent:true, opacity:presentationMode ? (isActive ? .34 : .10) : (isActive ? .70 : .36) })
           );
           edges.position.copy(wall.position);
           edges.rotation.copy(wall.rotation);
@@ -730,8 +777,8 @@
       const roomSlabsGroup = buildArchitecturalRoomSlabs(layoutZones, focusZoneIds);
       world.add(roomSlabsGroup);
       const makeZoneMaterials = (active=false) => ({
-        floor: new THREE.MeshStandardMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xd9e4ec : 0x18394b) : (appState.ui?.nav3DArchitectural ? 0x2b3c4b : visual.floor), roughness:.62, metalness:.08, transparent:true, opacity:appState.ui?.nav3DArchitectural ? (active ? .16 : .035) : (active ? .54 : .07), side:THREE.DoubleSide, depthWrite:active }),
-        overlay: new THREE.MeshBasicMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xe9f3fa : 0x43e68c) : 0x8eb3ca, transparent:true, opacity:appState.ui?.nav3DArchitectural ? (active ? .08 : .012) : (active ? (ui.visual === 'oscuro' ? .08 : .12) : .014), side:THREE.DoubleSide, depthWrite:false }),
+        floor: new THREE.MeshStandardMaterial({ color:presentationMode ? (active?0xd9dedf:0xc8ced0) : (active ? (appState.ui?.nav3DArchitectural ? 0xd9e4ec : 0x18394b) : (appState.ui?.nav3DArchitectural ? 0x2b3c4b : visual.floor)), roughness:presentationMode ? .90 : .62, metalness:.03, transparent:true, opacity:presentationMode ? (active ? .32 : .13):(appState.ui?.nav3DArchitectural ? (active ? .16 : .035) : (active ? .54 : .07)), side:THREE.DoubleSide, depthWrite:active }),
+        overlay: new THREE.MeshBasicMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xe9f3fa : 0x43e68c) : 0x8eb3ca, transparent:true, opacity:presentationMode ? (active ? .045 : .008):(appState.ui?.nav3DArchitectural ? (active ? .08 : .012) : (active ? (ui.visual === 'oscuro' ? .08 : .12) : .014)), side:THREE.DoubleSide, depthWrite:false }),
         line: new THREE.LineBasicMaterial({ color:active ? (appState.ui?.nav3DArchitectural ? 0xffffff : 0x86ffd0) : 0x91bad3, transparent:true, opacity:active ? (appState.ui?.nav3DArchitectural ? .78 : (ui.visual === 'oscuro' ? .52 : .70)) : .12 })
       });
       layoutZones.forEach(z => {
@@ -753,7 +800,7 @@
       world.add(zoneWallsGroup);
       const maxWallHeight = Math.max(2.8, ...zoneWallSegments.map(s => (Number(s.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale));
       const roofZones = layoutZones.length ? layoutZones : (appState.layout?.rooms||[]).map(r=>({id:r.id,pts:roomPointsRaw(r)}));
-      const roofGroup = buildArchitecturalRoofGroup(roofZones, focusZoneIds, appState.ui?.nav3DWallCut ? Math.min(1.25, maxWallHeight) : maxWallHeight);
+      const roofGroup = buildArchitecturalRoofGroup(roofZones, focusZoneIds, appState.ui?.nav3DWallCut ? Math.min(1.25, maxWallHeight) : maxWallHeight, zoneWallSegments);
       world.add(roofGroup);
 
       const matGhost = new THREE.MeshStandardMaterial({ color:0x9eb6d0, transparent:true, opacity:Math.min(visual.ghost, .10), roughness:.86, metalness:.08, depthWrite:false });
@@ -1130,6 +1177,7 @@
         if(action && action.startsWith('visual-')){
           const mode = action.replace('visual-','');
           appState.ui.nav3DVisualMode = mode;
+          appState.ui.nav3DPresentation = false;
           ui.visual = mode;
         }
         if(action === 'wall-cut'){
@@ -1138,7 +1186,21 @@
         if(action === 'arch-mode'){
           appState.ui.nav3DArchitectural = !appState.ui.nav3DArchitectural;
           if(appState.ui.nav3DArchitectural) ui.route = false;
+          else appState.ui.nav3DPresentation = false;
         }
+        if(action === 'presentation-mode'){
+          appState.ui.nav3DPresentation = !appState.ui.nav3DPresentation;
+          if(appState.ui.nav3DPresentation){
+            appState.ui.nav3DArchitectural = true;
+            appState.ui.nav3DWallCut = false;
+            appState.ui.nav3DRoof = false;
+            appState.ui.nav3DShowRoomSlabs = true;
+            appState.ui.nav3DShowOpeningFrames = true;
+            appState.ui.nav3DShowArchitecturalDetails = true;
+            ui.route = false; ui.labels = false; ui.ghost = false;
+          }
+        }
+        if(action === 'arch-details'){ appState.ui.nav3DShowArchitecturalDetails = appState.ui.nav3DShowArchitecturalDetails === false; }
         if(action === 'roof-toggle'){
           appState.ui.nav3DRoof = !appState.ui.nav3DRoof;
         }

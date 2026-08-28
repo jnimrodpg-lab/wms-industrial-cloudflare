@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "private": true,
-  "description": "WMS Industrial v117: CAD avanzado, zonas inteligentes, distribución profesional de racks y validación operativa.",
+  "description": "WMS Industrial v118: 3D arquitectónico, modo presentación y detalles constructivos.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
