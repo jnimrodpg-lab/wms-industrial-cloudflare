@@ -1,5 +1,5 @@
 {
-  "version": "111",
+  "version": "112",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -13,5 +13,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v111 Layout Pro: connected wall nodes, chained wall drawing, smart snaps, numeric lengths, persistent measurements, room closure and linked openings."
+  "notes": "v112: rooms can become wall-linked dynamic WMS zones; architectural 3D adds room/zone slabs and optional opening frames."
 }

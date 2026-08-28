@@ -82,6 +82,7 @@
     selectedProduct: null,
     selectedRack: '',
     selectedZoneId: 'Z1',
+    selectedRoomId: '',
     selectedVertex: { zoneId:'', idx:-1 },
     selectedEdge: { zoneId:'', a:-1, b:-1 },
     selectedRackLayoutId: '',
@@ -209,12 +210,15 @@
   function ensureAppRuntimeState(){
     ensureProductPagingState();
     if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:false, ...appState.ui };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:true, nav3DShowRoomSlabs:true, nav3DShowOpeningFrames:true, ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!['NE','NW','SE','SW'].includes(appState.ui.isoView)) appState.ui.isoView = 'NE';
     if(!['all','zone','rack'].includes(appState.ui.isoIsolation)) appState.ui.isoIsolation = 'all';
     if(typeof appState.ui.isoGhost !== 'boolean') appState.ui.isoGhost = true;
+    if(typeof appState.ui.nav3DShowRoomSlabs !== 'boolean') appState.ui.nav3DShowRoomSlabs = true;
+    if(typeof appState.ui.nav3DShowOpeningFrames !== 'boolean') appState.ui.nav3DShowOpeningFrames = true;
+    if(appState.selectedRoomId === undefined) appState.selectedRoomId = '';
     if(!appState.admin || typeof appState.admin !== 'object') appState.admin = { branches:[], users:[], company:{} };
     if(!Array.isArray(appState.admin.branches)) appState.admin.branches = [];
     if(!Array.isArray(appState.admin.users)) appState.admin.users = [];

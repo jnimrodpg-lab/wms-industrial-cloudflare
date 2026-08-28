@@ -5771,3 +5771,14 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 .wall-pro-card .layout-prop-grid input:not(:disabled){font-variant-numeric:tabular-nums}
 .v80-tool-rail{gap:6px!important}.v80-tool-btn{min-height:54px!important}.v80-tool-btn.active{border-color:rgba(101,240,168,.75)!important;box-shadow:0 0 0 1px rgba(101,240,168,.18),0 8px 24px rgba(0,0,0,.18)!important;background:linear-gradient(180deg,rgba(35,113,82,.34),rgba(11,37,32,.72))!important}
 @media(max-width:1180px){.wall-draw-help{display:none}.wall-length-hud small{display:none}}
+
+
+/* WMS v112 — Recintos dinámicos + representación arquitectónica */
+.layout-room-fill{transition:fill .16s ease,stroke .16s ease,stroke-width .16s ease}
+.layout-room-fill.selected{filter:drop-shadow(0 0 4px rgba(111,240,168,.42))}
+.layout-room-fill.is-zone{fill-opacity:.95}
+.layout-room-label{font-weight:800;paint-order:stroke;stroke:rgba(4,14,22,.82);stroke-width:3px;stroke-linejoin:round;pointer-events:auto}
+.layout-room-label.selected{fill:#a8ffd0!important;font-weight:900}
+.room-zone-card{border-color:rgba(111,240,168,.26)!important;background:linear-gradient(180deg,rgba(111,240,168,.07),rgba(255,255,255,.012))!important}
+.room-zone-card .btn.primary{width:100%;min-height:42px}
+.layout-prop-card input:disabled{cursor:not-allowed}

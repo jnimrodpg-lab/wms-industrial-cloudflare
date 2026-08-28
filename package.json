@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
-  "description": "WMS Industrial v111 Layout Pro con muros conectados, snap inteligente, medidas exactas y vanos vinculados.",
+  "description": "WMS Industrial v112 con zonas dinámicas vinculadas a recintos y representación 3D arquitectónica mejorada.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
