@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "private": true,
-  "description": "WMS Industrial v109 rendimiento 3D para Cloudflare Pages Functions + D1.",
+  "description": "WMS Industrial v110 con estructura y distribución de racks separadas para Cloudflare Pages Functions + D1.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

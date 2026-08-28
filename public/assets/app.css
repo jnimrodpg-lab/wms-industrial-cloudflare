@@ -5739,3 +5739,20 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 .nav3d-loading{
   z-index:12;
 }
+
+
+/* ===== WMS v110: estructura y distribución de racks separadas ===== */
+.branch-switch-card.v53{grid-template-columns:minmax(180px,.8fr) minmax(300px,1.2fr)}
+.workspace-lock-badge{border-color:rgba(255,255,255,.14)!important;background:rgba(255,255,255,.055)!important}
+.workspace-lock-badge.structure-workspace{color:#ffd978!important}
+.workspace-lock-badge.rack-workspace{color:#7dffaf!important}
+body[data-wms-layout-workspace="structure"] .layout-rack-wrap.workspace-locked{opacity:.48;filter:saturate(.58)}
+body[data-wms-layout-workspace="structure"] .layout-rack-wrap.workspace-locked .ortho-rack-hit{pointer-events:none!important}
+body[data-wms-layout-workspace="racks"] .ortho-zone.workspace-locked{opacity:.58}
+body[data-wms-layout-workspace="racks"] .vertex-hit,
+body[data-wms-layout-workspace="racks"] .vertex,
+body[data-wms-layout-workspace="racks"] .edge-hit,
+body[data-wms-layout-workspace="racks"] .edge-handle,
+body[data-wms-layout-workspace="racks"] .edge-wall-pill{pointer-events:none!important}
+body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-events:none!important}
+@media(max-width:1180px){.branch-switch-card.v53{grid-template-columns:1fr}}

@@ -157,9 +157,15 @@
     productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', requestSeq:0 },
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
+      structure: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
+      distribution: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
       racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
     }
   };
+
+  function isRackDistributionScreen(){ return appState?.screen === 'distribution'; }
+  function isStructureLayoutScreen(){ return appState?.screen === 'layout'; }
+  function isLayoutWorkspaceScreen(){ return isStructureLayoutScreen() || isRackDistributionScreen(); }
 
   const storedRackModels = loadRackModels();
   if (storedRackModels) appState.models = storedRackModels.map(m => ({ ...m, leftHeight: Number(m.leftHeight || m.height || 240), rightHeight: Number(m.rightHeight || Math.max(40, (m.height || 240) * 0.35)), mirrored: isUnderStairsStyle(m?.style) ? (normalizeRackStyle(m?.style) === 'under_stairs_reflected' ? true : false) : !!m.mirrored }));
@@ -228,7 +234,8 @@
       };
     }
     if(typeof appState.editor.mode !== 'string' || !appState.editor.mode) appState.editor.mode = 'select';
-    if(!appState.history || typeof appState.history !== 'object') appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
+    if(!appState.history || typeof appState.history !== 'object') appState.history = {};
+    ['layout','structure','distribution','racks'].forEach(type => { if(!appState.history[type] || typeof appState.history[type] !== 'object') appState.history[type] = { undoStack:[], redoStack:[], isApplying:false, max:80 }; });
     if(!appState.auth || typeof appState.auth !== 'object') appState.auth = { loggedIn:false, user:'', role:'', company:'', companyCode:'' };
     if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', gender:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
     if(!appState.productFacets || typeof appState.productFacets !== 'object') appState.productFacets = { brands:[], categories:[], warehouses:[], zones:[], racks:[] };
@@ -747,7 +754,6 @@
       if(data?.facets) appState.productFacets = data.facets;
       syncProductFilterUi();
       updateProductAnalyticsSummary();
-      if(appState.screen === 'dashboard') renderDashboard();
       return data;
     }catch(_err){
       return null;
@@ -846,11 +852,18 @@
   }
 
   function getHistoryBucket(type){
-    if(!appState.history) appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
+    if(!appState.history) appState.history = {};
+    if(!appState.history[type]) appState.history[type] = { undoStack:[], redoStack:[], isApplying:false, max:80 };
     return appState.history[type];
   }
   function snapshotForType(type){
     if(type === 'layout') return clone(appState.layout || defaultLayout());
+    if(type === 'structure'){
+      const snapshot = clone(appState.layout || defaultLayout());
+      delete snapshot.racks;
+      return snapshot;
+    }
+    if(type === 'distribution') return clone(appState.layout?.racks || []);
     if(type === 'racks') return clone(appState.models || []);
     return null;
   }
@@ -876,8 +889,39 @@
       appState.selectedVertex = { zoneId:'', idx:-1 };
       appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
       persistActiveLayout();
-      if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
       else if(appState.screen === 'viewer' || appState.screen === 'products') renderMapView();
+    } else if(type === 'structure'){
+      const currentLayout = clone(appState.layout || defaultLayout());
+      const currentRacks = clone(currentLayout.racks || []);
+      const currentZones = Array.isArray(currentLayout.zones) ? currentLayout.zones : [];
+      const nextStructure = clone(payload || {});
+      const nextZones = Array.isArray(nextStructure.zones) ? nextStructure.zones : [];
+      const zoneIdMap = new Map();
+      currentZones.forEach((zone, index) => { const nextId = nextZones[index]?.id; if(zone?.id && nextId) zoneIdMap.set(String(zone.id), String(nextId)); });
+      currentRacks.forEach(rack => {
+        const mapped = zoneIdMap.get(String(rack.zoneId || ''));
+        if(!mapped || mapped === rack.zoneId) return;
+        const seq = (String(rack.id || '').match(/-E(\d+)/i)||[])[1] || '';
+        rack.zoneId = mapped;
+        if(seq) rack.id = `${mapped}-E${seq}`;
+      });
+      appState.layout = { ...currentLayout, ...nextStructure, racks:currentRacks };
+      ensureLayoutMeta();
+      normalizeLayoutSectionState();
+      appState.selectedZoneId = appState.layout?.zones?.[0]?.id || '';
+      appState.selectedRackLayoutId = '';
+      appState.selectedVertex = { zoneId:'', idx:-1 };
+      appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
+      persistActiveLayout();
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
+    } else if(type === 'distribution'){
+      appState.layout.racks = clone(Array.isArray(payload) ? payload : []);
+      appState.selectedRackLayoutId = appState.layout.racks?.[0]?.id || '';
+      appState.selectedRackLayoutIds = appState.selectedRackLayoutId ? [appState.selectedRackLayoutId] : [];
+      if(appState.selectedRackLayoutId){ const activeRack = appState.layout.racks[0]; appState.selectedZoneId = activeRack?.zoneId || appState.selectedZoneId; }
+      persistActiveLayout();
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
     } else if(type === 'racks'){
       appState.models = clone(Array.isArray(payload) ? payload : []);
       if(!appState.models.length){ updateUndoRedoUi(); return; }
@@ -917,7 +961,7 @@
     finally{ bucket.isApplying = false; }
   }
   function updateUndoRedoUi(){
-    ['layout','racks'].forEach(type => {
+    ['layout','structure','distribution','racks'].forEach(type => {
       const bucket = getHistoryBucket(type);
       const undoBtn = document.querySelector(`[data-history-undo="${type}"]`);
       const redoBtn = document.querySelector(`[data-history-redo="${type}"]`);

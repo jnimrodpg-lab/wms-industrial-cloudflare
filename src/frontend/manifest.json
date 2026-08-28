@@ -1,17 +1,17 @@
 {
-  "version": "109",
+  "version": "110",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
     "10-products-geometry.js",
     "20-sheet-layout-state.js",
     "30-admin-sync.js",
-    "40-sheet-dashboard-quality.js",
+    "40-sheet-viewer-tools.js",
     "50-viewer-3d.js",
     "60-layout-editor.js",
     "70-rack-editor.js",
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v109 3D performance: modular frontend, on-demand WebGL render, explicit GPU cleanup and local Three.js build copy."
+  "notes": "v110 UX: remove health/diagnostics UI and split structural layout editing from rack distribution with mutual locking."
 }

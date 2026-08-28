@@ -427,7 +427,9 @@
 
 
   function persistActiveLayout(){
-    if(!(appState.history?.layout?.isApplying)) recordHistorySnapshot('layout');
+    const historyType = isRackDistributionScreen() ? 'distribution' : (isStructureLayoutScreen() ? 'structure' : 'layout');
+    const bucket = getHistoryBucket(historyType);
+    if(!bucket?.isApplying) recordHistorySnapshot(historyType);
     const idx = getActiveLayoutBranchIndex();
     if(!appState.branchLayouts) appState.branchLayouts = {};
     normalizeLayoutSectionState();
@@ -727,6 +729,7 @@
   function normalizeZoneAndRackIds(){
     const zones = appState.layout.zones || [];
     const zoneRemap = new Map();
+    const preserveRackPlacement = isStructureLayoutScreen();
     zones.forEach((z, zi)=>{
       const previousId = String(z?.id || '').toUpperCase();
       let nextId = previousId;
@@ -754,6 +757,7 @@
       syncRackFootprint(r, false);
       if(!Number.isFinite(Number(r.x))) r.x = anchorX;
       if(!Number.isFinite(Number(r.y))) r.y = anchorY;
+      if(preserveRackPlacement) return;
       const probe = { x: anchorX + Math.max(r.w || 0, fallbackW) / 2, y: anchorY + Math.max(r.h || 0, fallbackH) / 2 };
       const host = findZoneById(r.zoneId) || zones.find(z => pointInPoly(probe, z.pts));
       if(host){
@@ -798,8 +802,7 @@
     renderLayoutEditor();
   }
   function duplicateSelectedZone(){
-    const zone = findZoneById(appState.selectedZoneId); if(!zone) return;
-    const sourceRacks = (appState.layout.racks||[]).filter(r => r.zoneId === zone.id).sort((a,b)=> (a.x-b.x) || (a.y-b.y));
+    const zone = findZoneById(appState.selectedZoneId); if(!zone || !isStructureLayoutScreen()) return;
     const cloneZone = clone(zone);
     const newId = nextZoneId();
     cloneZone.id = newId;
@@ -808,17 +811,8 @@
     cloneZone.pts = cloneZone.pts.map(pt => ({ x:snapGrid(pt.x + 60), y:snapGrid(pt.y + 40) }));
     ensureZoneSectionCuts(cloneZone);
     appState.layout.zones.push(cloneZone);
-    sourceRacks.forEach((rack, idx) => {
-      const copy = clone(rack);
-      copy.zoneId = newId;
-      copy.id = `${newId}-E${idx+1}`;
-      copy.x = snapGrid(rack.x + 60);
-      copy.y = snapGrid(rack.y + 40);
-      keepRackSnapped(copy, cloneZone);
-      appState.layout.racks.push(copy);
-    });
     appState.selectedZoneId = newId;
-    appState.selectedRackLayoutId = appState.layout.racks.find(r => r.zoneId === newId)?.id || '';
+    appState.selectedRackLayoutId = '';
     persistActiveLayout();
     renderLayoutEditor();
   }

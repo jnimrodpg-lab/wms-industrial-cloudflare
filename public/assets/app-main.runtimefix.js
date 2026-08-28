@@ -157,9 +157,15 @@
     productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', requestSeq:0 },
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
+      structure: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
+      distribution: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
       racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
     }
   };
+
+  function isRackDistributionScreen(){ return appState?.screen === 'distribution'; }
+  function isStructureLayoutScreen(){ return appState?.screen === 'layout'; }
+  function isLayoutWorkspaceScreen(){ return isStructureLayoutScreen() || isRackDistributionScreen(); }
 
   const storedRackModels = loadRackModels();
   if (storedRackModels) appState.models = storedRackModels.map(m => ({ ...m, leftHeight: Number(m.leftHeight || m.height || 240), rightHeight: Number(m.rightHeight || Math.max(40, (m.height || 240) * 0.35)), mirrored: isUnderStairsStyle(m?.style) ? (normalizeRackStyle(m?.style) === 'under_stairs_reflected' ? true : false) : !!m.mirrored }));
@@ -228,7 +234,8 @@
       };
     }
     if(typeof appState.editor.mode !== 'string' || !appState.editor.mode) appState.editor.mode = 'select';
-    if(!appState.history || typeof appState.history !== 'object') appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
+    if(!appState.history || typeof appState.history !== 'object') appState.history = {};
+    ['layout','structure','distribution','racks'].forEach(type => { if(!appState.history[type] || typeof appState.history[type] !== 'object') appState.history[type] = { undoStack:[], redoStack:[], isApplying:false, max:80 }; });
     if(!appState.auth || typeof appState.auth !== 'object') appState.auth = { loggedIn:false, user:'', role:'', company:'', companyCode:'' };
     if(!appState.productFilters || typeof appState.productFilters !== 'object') appState.productFilters = { brand:'', category:'', gender:'', warehouse:'', zone:'', rack:'', image_state:'', location_state:'', stock_state:'' };
     if(!appState.productFacets || typeof appState.productFacets !== 'object') appState.productFacets = { brands:[], categories:[], warehouses:[], zones:[], racks:[] };
@@ -747,7 +754,6 @@
       if(data?.facets) appState.productFacets = data.facets;
       syncProductFilterUi();
       updateProductAnalyticsSummary();
-      if(appState.screen === 'dashboard') renderDashboard();
       return data;
     }catch(_err){
       return null;
@@ -846,11 +852,18 @@
   }
 
   function getHistoryBucket(type){
-    if(!appState.history) appState.history = { layout:{ undoStack:[], redoStack:[], isApplying:false, max:80 }, racks:{ undoStack:[], redoStack:[], isApplying:false, max:80 } };
+    if(!appState.history) appState.history = {};
+    if(!appState.history[type]) appState.history[type] = { undoStack:[], redoStack:[], isApplying:false, max:80 };
     return appState.history[type];
   }
   function snapshotForType(type){
     if(type === 'layout') return clone(appState.layout || defaultLayout());
+    if(type === 'structure'){
+      const snapshot = clone(appState.layout || defaultLayout());
+      delete snapshot.racks;
+      return snapshot;
+    }
+    if(type === 'distribution') return clone(appState.layout?.racks || []);
     if(type === 'racks') return clone(appState.models || []);
     return null;
   }
@@ -876,8 +889,39 @@
       appState.selectedVertex = { zoneId:'', idx:-1 };
       appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
       persistActiveLayout();
-      if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
       else if(appState.screen === 'viewer' || appState.screen === 'products') renderMapView();
+    } else if(type === 'structure'){
+      const currentLayout = clone(appState.layout || defaultLayout());
+      const currentRacks = clone(currentLayout.racks || []);
+      const currentZones = Array.isArray(currentLayout.zones) ? currentLayout.zones : [];
+      const nextStructure = clone(payload || {});
+      const nextZones = Array.isArray(nextStructure.zones) ? nextStructure.zones : [];
+      const zoneIdMap = new Map();
+      currentZones.forEach((zone, index) => { const nextId = nextZones[index]?.id; if(zone?.id && nextId) zoneIdMap.set(String(zone.id), String(nextId)); });
+      currentRacks.forEach(rack => {
+        const mapped = zoneIdMap.get(String(rack.zoneId || ''));
+        if(!mapped || mapped === rack.zoneId) return;
+        const seq = (String(rack.id || '').match(/-E(\d+)/i)||[])[1] || '';
+        rack.zoneId = mapped;
+        if(seq) rack.id = `${mapped}-E${seq}`;
+      });
+      appState.layout = { ...currentLayout, ...nextStructure, racks:currentRacks };
+      ensureLayoutMeta();
+      normalizeLayoutSectionState();
+      appState.selectedZoneId = appState.layout?.zones?.[0]?.id || '';
+      appState.selectedRackLayoutId = '';
+      appState.selectedVertex = { zoneId:'', idx:-1 };
+      appState.selectedEdge = { zoneId:'', a:-1, b:-1 };
+      persistActiveLayout();
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
+    } else if(type === 'distribution'){
+      appState.layout.racks = clone(Array.isArray(payload) ? payload : []);
+      appState.selectedRackLayoutId = appState.layout.racks?.[0]?.id || '';
+      appState.selectedRackLayoutIds = appState.selectedRackLayoutId ? [appState.selectedRackLayoutId] : [];
+      if(appState.selectedRackLayoutId){ const activeRack = appState.layout.racks[0]; appState.selectedZoneId = activeRack?.zoneId || appState.selectedZoneId; }
+      persistActiveLayout();
+      if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
     } else if(type === 'racks'){
       appState.models = clone(Array.isArray(payload) ? payload : []);
       if(!appState.models.length){ updateUndoRedoUi(); return; }
@@ -917,7 +961,7 @@
     finally{ bucket.isApplying = false; }
   }
   function updateUndoRedoUi(){
-    ['layout','racks'].forEach(type => {
+    ['layout','structure','distribution','racks'].forEach(type => {
       const bucket = getHistoryBucket(type);
       const undoBtn = document.querySelector(`[data-history-undo="${type}"]`);
       const redoBtn = document.querySelector(`[data-history-redo="${type}"]`);
@@ -1422,20 +1466,20 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
 
   function normalizeAppScreenName(screen){
     const value = String(screen || '').trim();
-    const allowed = ['admin','sheet','layout','racks','dashboard','viewer'];
+    const allowed = ['admin','sheet','layout','distribution','racks','viewer'];
     if(value === 'card' || value === 'products') return 'sheet';
     return allowed.includes(value) ? value : 'viewer';
   }
   function getLastAppScreen(){
     try{
       const saved = normalizeAppScreenName(localStorage.getItem('wms_last_screen_v95') || '');
-      return ['admin','sheet','layout','racks','dashboard','viewer'].includes(saved) ? saved : 'admin';
+      return ['admin','sheet','layout','distribution','racks','viewer'].includes(saved) ? saved : 'admin';
     }catch(_err){ return 'admin'; }
   }
   function persistLastAppScreen(screen){
     try{
       const normalized = normalizeAppScreenName(screen);
-      if(['admin','sheet','layout','racks','dashboard','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
+      if(['admin','sheet','layout','distribution','racks','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
     }catch(_err){}
   }
 
@@ -1496,7 +1540,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
-      const isLayoutScreen = screen === 'layout';
+      const isLayoutScreen = screen === 'layout' || screen === 'distribution';
       const isCardDesigner = false;
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels || isLayoutScreen);
@@ -1520,9 +1564,8 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     try{
       if(screen === 'admin') renderAdminScreen();
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
-      else if(screen === 'layout') renderLayoutEditor();
+      else if(screen === 'layout' || screen === 'distribution') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
-      else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
       console.error('Error al cambiar de pantalla:', err);
@@ -1542,8 +1585,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       const label = escapeHtml(String(item.label || ''));
       const cls = (item.active === false ? 'tag inactive' : 'tag active') + (item.extraClass ? ` ${escapeHtml(String(item.extraClass))}` : '');
       if(item.action){
-        const historyType = item.action === 'history-undo-layout' || item.action === 'history-redo-layout' ? 'layout' : (item.action === 'history-undo-racks' || item.action === 'history-redo-racks' ? 'racks' : '');
-        const historyAttr = item.action.startsWith('history-undo') ? ` data-history-undo="${historyType}"` : (item.action.startsWith('history-redo') ? ` data-history-redo="${historyType}"` : '');
+        const historyMatch = String(item.action).match(/^history-(undo|redo)-(.+)$/);
+        const historyType = historyMatch ? historyMatch[2] : '';
+        const historyAttr = historyMatch ? ` data-history-${historyMatch[1]}="${historyType}"` : '';
         return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}"${historyAttr}>${label}</button>`;
       }
       return `<span class="${cls}">${label}</span>`;
@@ -2139,12 +2183,12 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     syncActiveProductCardHint();
     if(opts.switchScreen !== false){
       setScreen('viewer');
-    } else if(['products','viewer','dashboard'].includes(appState.screen)) {
+    } else if(['products','viewer'].includes(appState.screen)) {
       renderMapView();
     }
     setTimeout(() => {
       if(appState.screen === 'viewer') renderMapView();
-      else if(appState.screen === 'dashboard') renderDashboard();
+      else if(isLayoutWorkspaceScreen()) renderLayoutEditor();
       renderProducts(appState.filtered);
     }, 10);
     return true;
@@ -2586,9 +2630,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       updateActiveProductCard(appState.selectedProduct || null);
       syncActiveProductCardHint();
       renderProducts(appState.filtered);
-      if(appState.screen === 'dashboard') renderDashboard();
+      if(isLayoutWorkspaceScreen()) renderLayoutEditor();
       else if(['products','viewer'].includes(appState.screen)) renderMapView();
-      else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      else if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
       return;
     }
     const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
@@ -2643,9 +2687,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     else { updateActiveProductCard(null); clearSearchHighlights(); }
     syncActiveProductCardHint();
     renderProducts(appState.filtered);
-    if(appState.screen === 'dashboard') renderDashboard();
+    if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     else if(['products','viewer'].includes(appState.screen)) renderMapView();
-    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+    else if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
   }
 
   function selectProduct(p){
@@ -2657,12 +2701,10 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     applyProductSelectionEffects(p);
     updateActiveProductCard(p);
     syncActiveProductCardHint();
-    if(appState.screen === 'dashboard'){
-      renderDashboard();
-    } else if(['products','reports','viewer'].includes(appState.screen)){
+    if(['products','reports','viewer'].includes(appState.screen)){
       renderMapView();
       renderRackDetail(p.rack || p.rackStore, p);
-    } else if (appState.screen === 'layout') {
+    } else if (isLayoutWorkspaceScreen()) {
       renderLayoutEditor();
       renderLayoutInspector();
     } else if (appState.screen === 'racks') {
@@ -2981,16 +3023,7 @@ const DEFAULT_GRID_SIZE = 2;
     if(!delta) return;
     const center = polygonCentroid(zone.pts);
     zone.pts = zone.pts.map(pt => rotatePointAround(pt, center, delta));
-    (appState.layout.racks || []).filter(r => r.zoneId === zone.id).forEach(rack => {
-      const oldCx = (Number(rack.x)||0) + (Number(rack.w)||0) / 2;
-      const oldCy = (Number(rack.y)||0) + (Number(rack.h)||0) / 2;
-      const nextCenter = rotatePointAround({ x:oldCx, y:oldCy }, center, delta);
-      rack.rot = normalizeAngle((Number(rack.rot)||0) + delta);
-      syncRackFootprint(rack, false);
-      rack.x = nextCenter.x - (Number(rack.w)||0) / 2;
-      rack.y = nextCenter.y - (Number(rack.h)||0) / 2;
-      rack.zoneId = zone.id;
-    });
+    // v110: la rotación de estructura no rota ni reposiciona racks.
     appState.selectedZoneId = zone.id;
     clearRackSnapPreview();
     if(persist) persistActiveLayout();
@@ -3451,7 +3484,9 @@ const DEFAULT_GRID_SIZE = 2;
 
 
   function persistActiveLayout(){
-    if(!(appState.history?.layout?.isApplying)) recordHistorySnapshot('layout');
+    const historyType = isRackDistributionScreen() ? 'distribution' : (isStructureLayoutScreen() ? 'structure' : 'layout');
+    const bucket = getHistoryBucket(historyType);
+    if(!bucket?.isApplying) recordHistorySnapshot(historyType);
     const idx = getActiveLayoutBranchIndex();
     if(!appState.branchLayouts) appState.branchLayouts = {};
     normalizeLayoutSectionState();
@@ -3751,6 +3786,7 @@ const DEFAULT_GRID_SIZE = 2;
   function normalizeZoneAndRackIds(){
     const zones = appState.layout.zones || [];
     const zoneRemap = new Map();
+    const preserveRackPlacement = isStructureLayoutScreen();
     zones.forEach((z, zi)=>{
       const previousId = String(z?.id || '').toUpperCase();
       let nextId = previousId;
@@ -3778,6 +3814,7 @@ const DEFAULT_GRID_SIZE = 2;
       syncRackFootprint(r, false);
       if(!Number.isFinite(Number(r.x))) r.x = anchorX;
       if(!Number.isFinite(Number(r.y))) r.y = anchorY;
+      if(preserveRackPlacement) return;
       const probe = { x: anchorX + Math.max(r.w || 0, fallbackW) / 2, y: anchorY + Math.max(r.h || 0, fallbackH) / 2 };
       const host = findZoneById(r.zoneId) || zones.find(z => pointInPoly(probe, z.pts));
       if(host){
@@ -3822,8 +3859,7 @@ const DEFAULT_GRID_SIZE = 2;
     renderLayoutEditor();
   }
   function duplicateSelectedZone(){
-    const zone = findZoneById(appState.selectedZoneId); if(!zone) return;
-    const sourceRacks = (appState.layout.racks||[]).filter(r => r.zoneId === zone.id).sort((a,b)=> (a.x-b.x) || (a.y-b.y));
+    const zone = findZoneById(appState.selectedZoneId); if(!zone || !isStructureLayoutScreen()) return;
     const cloneZone = clone(zone);
     const newId = nextZoneId();
     cloneZone.id = newId;
@@ -3832,17 +3868,8 @@ const DEFAULT_GRID_SIZE = 2;
     cloneZone.pts = cloneZone.pts.map(pt => ({ x:snapGrid(pt.x + 60), y:snapGrid(pt.y + 40) }));
     ensureZoneSectionCuts(cloneZone);
     appState.layout.zones.push(cloneZone);
-    sourceRacks.forEach((rack, idx) => {
-      const copy = clone(rack);
-      copy.zoneId = newId;
-      copy.id = `${newId}-E${idx+1}`;
-      copy.x = snapGrid(rack.x + 60);
-      copy.y = snapGrid(rack.y + 40);
-      keepRackSnapped(copy, cloneZone);
-      appState.layout.racks.push(copy);
-    });
     appState.selectedZoneId = newId;
-    appState.selectedRackLayoutId = appState.layout.racks.find(r => r.zoneId === newId)?.id || '';
+    appState.selectedRackLayoutId = '';
     persistActiveLayout();
     renderLayoutEditor();
   }
@@ -4097,11 +4124,11 @@ const DEFAULT_GRID_SIZE = 2;
           ${renderCompanySectionHeader('B', `Almacenes adicionales (${warehouses.length})`, 'Administra los almacenes vinculados a esta sucursal.')}
           <div class="company-warehouse-list">${rows}</div>
           <button class="company-add-inline" type="button" data-action="add-warehouse" data-index="${index}">＋ Agregar almacén adicional</button>
-          ${renderCompanySectionHeader('C', 'Layout y operación', 'Cada sucursal mantiene su propio plano, racks, productos y diagnóstico.')}
+          ${renderCompanySectionHeader('C', 'Plano y operación', 'La estructura y la distribución de racks se editan por separado para evitar movimientos accidentales.')}
           <div class="branch-layout-actions">
-            <button class="company-mini-action" type="button" data-action="edit-branch-layout" data-index="${index}">Editar layout</button>
+            <button class="company-mini-action" type="button" data-action="edit-branch-layout" data-index="${index}">Editar estructura</button>
+            <button class="company-mini-action" type="button" data-action="distribute-branch-racks" data-index="${index}">Distribuir racks</button>
             <button class="company-mini-action" type="button" data-action="view-branch-products" data-index="${index}">Ver productos</button>
-            <button class="company-mini-action" type="button" data-action="health-branch" data-index="${index}">Salud</button>
           </div>
         </div>
       </article>`;
@@ -4213,8 +4240,8 @@ const DEFAULT_GRID_SIZE = 2;
       if(a==='delete-warehouse'){ if(!confirm('¿Eliminar almacén?')) return; const branch = appState.admin.branches[bi]; const removed = branch.warehouses.splice(wi,1)[0]; if(!branch.warehouses.length) branch.warehouses=['Almacén principal']; if(norm(branch.mainWarehouse)===norm(removed)) branch.mainWarehouse=branch.warehouses[0]; saveAdminState(); renderAdminScreen(); return; }
       if(a==='set-main-warehouse'){ const branch = appState.admin.branches[bi]; branch.mainWarehouse = branch.warehouses[wi] || branch.mainWarehouse; saveAdminState(); renderAdminScreen(); return; }
       if(a==='edit-branch-layout'){ setLayoutBranch(i); appState.admin.activeBranch=i; saveAdminState(); setScreen('layout'); return; }
+      if(a==='distribute-branch-racks'){ setLayoutBranch(i); appState.admin.activeBranch=i; saveAdminState(); setScreen('distribution'); return; }
       if(a==='view-branch-products'){ setGlobalBranch(i, { screen:'viewer' }); return; }
-      if(a==='health-branch'){ setGlobalBranch(i).then(()=>openDataQualityModal()); return; }
     });
     applyBrand();
   }
@@ -4822,8 +4849,7 @@ const DEFAULT_GRID_SIZE = 2;
     if(screen || appState.screen === 'viewer') setScreen(screen || 'viewer');
     else {
       renderViewerBranchHost(idx);
-      if(appState.screen === 'layout') renderLayoutEditor();
-      if(appState.screen === 'dashboard') renderDashboard();
+      if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     }
   }
 
@@ -4856,10 +4882,6 @@ const DEFAULT_GRID_SIZE = 2;
           <select id="globalBranchSelect" title="Cambiar sucursal">${branches.map((b,i)=>`<option value="${i}" ${i===index?'selected':''}>${escapeHtml(b?.name || ('Sucursal '+(i+1)))}</option>`).join('')}</select>
           <select id="globalWarehouseSelect" title="Filtrar almacén"><option value="">Todos los almacenes</option>${warehouses.map(w=>`<option value="${escapeHtml(w)}" ${w===activeWarehouse?'selected':''}>${escapeHtml(w)}</option>`).join('')}</select>
         </div>
-        <div class="branch-switch-actions">
-          <button type="button" class="tiny-btn" id="branchGoLayout">Layout</button>
-          <button type="button" class="tiny-btn" id="branchGoHealth">Salud</button>
-        </div>
       </div>`;
     const branchSelect = document.getElementById('globalBranchSelect');
     if(branchSelect) branchSelect.onchange = e => setGlobalBranch(Number(e.target.value), { screen:'viewer' });
@@ -4869,8 +4891,6 @@ const DEFAULT_GRID_SIZE = 2;
       filterProducts();
       renderViewerBranchHost(index);
     };
-    document.getElementById('branchGoLayout')?.addEventListener('click', () => { setLayoutBranch(index); setScreen('layout'); });
-    document.getElementById('branchGoHealth')?.addEventListener('click', () => openDataQualityModal());
   }
   function getBranchPreviewProducts(branch){
     return Array.isArray(branch?.sheetPreviewProducts) ? branch.sheetPreviewProducts : [];
@@ -5687,189 +5707,6 @@ function getSheetBranchOpenMap(){
   }
 
 
-  function buildDashboardData(){
-    const products = Array.isArray(appState.filtered) && appState.filtered.length ? appState.filtered : (appState.products || []);
-    const racks = appState.layout?.racks || [];
-    const zones = appState.layout?.zones || [];
-    const summary = appState.productSummaryData || {};
-    const remoteRackCounts = summary.rack_counts && typeof summary.rack_counts === 'object' ? summary.rack_counts : null;
-    const byRack = new Map();
-    if(remoteRackCounts){
-      Object.entries(remoteRackCounts).forEach(([rid, count]) => { if(rid) byRack.set(rid, Number(count || 0)); });
-    }else{
-      products.forEach(p => {
-        const rid = p?.rack || p?.rackStore || '';
-        if(!rid) return;
-        byRack.set(rid, (byRack.get(rid) || 0) + 1);
-      });
-    }
-    const rackStats = racks.map(r => {
-      const model = rackModel(r.modelId) || {};
-      const capacity = getRackCapacity(model);
-      const occupied = byRack.get(r.id) || 0;
-      return {
-        id: r.id,
-        zoneId: r.zoneId || '—',
-        model: model.name || r.modelId || '—',
-        capacity,
-        occupied,
-        free: Math.max(0, capacity - occupied),
-        occupancy: Math.min(100, capacity ? (occupied / capacity) * 100 : 0)
-      };
-    }).sort((a,b) => b.occupancy - a.occupancy || b.occupied - a.occupied || String(a.id).localeCompare(String(b.id)));
-    const zoneStats = zones.map(z => {
-      const zr = rackStats.filter(r => r.zoneId === z.id);
-      const slots = zr.reduce((s,r) => s + r.capacity, 0);
-      const occupied = zr.reduce((s,r) => s + r.occupied, 0);
-      return {
-        id: z.id,
-        name: z.name || z.id,
-        racks: zr.length,
-        slots,
-        occupied,
-        free: Math.max(0, slots - occupied),
-        occupancy: slots ? (occupied / slots) * 100 : 0
-      };
-    }).sort((a,b) => b.occupancy - a.occupancy || String(a.id).localeCompare(String(b.id)));
-    const totalSlots = rackStats.reduce((s,r) => s + r.capacity, 0);
-    const occupiedSlots = rackStats.reduce((s,r) => s + r.occupied, 0);
-    const freeSlots = Math.max(0, totalSlots - occupiedSlots);
-    const skuCount = Number(summary.sku_count || 0) || new Set(products.map(p => (p.sku || '').trim()).filter(Boolean)).size;
-    const noRack = Number.isFinite(Number(summary.without_rack)) ? Number(summary.without_rack || 0) : products.filter(p => !(p?.rack || p?.rackStore)).length;
-    const totalProducts = Number(summary.total || 0) || products.length;
-    const racksNoLoad = rackStats.filter(r => r.occupied === 0).length;
-    const topZone = zoneStats[0] || null;
-    const fullestRack = rackStats[0] || null;
-    return {
-      products,
-      racks,
-      zones,
-      skuCount,
-      totalProducts,
-      totalRacks: racks.length,
-      totalZones: zones.length,
-      totalSlots,
-      occupiedSlots,
-      freeSlots,
-      occPct: totalSlots ? (occupiedSlots / totalSlots) * 100 : 0,
-      noRack,
-      racksNoLoad,
-      topZone,
-      fullestRack,
-      zoneStats,
-      rackStats
-    };
-  }
-
-  function dashboardBarClass(value){
-    if(value >= 85) return 'down';
-    if(value >= 65) return 'warn';
-    return 'good';
-  }
-
-  function renderDashboard(){
-    setUnifiedMapLayout(false);
-    const data = buildDashboardData();
-    const selectedRackId = appState.selectedRackLayoutId || appState.selectedRack || data.rackStats[0]?.id || appState.layout?.racks?.[0]?.id || '';
-    const selectedRack = findRackById(selectedRackId) || appState.layout?.racks?.[0] || null;
-    const selectedZone = findZoneById(appState.selectedZoneId) || (selectedRack ? findZoneById(selectedRack.zoneId) : null) || appState.layout?.zones?.[0] || null;
-    if(selectedRack && !appState.selectedRackLayoutId) appState.selectedRackLayoutId = selectedRack.id;
-    if(selectedZone && !appState.selectedZoneId) appState.selectedZoneId = selectedZone.id;
-
-    contentTitle.textContent = 'Dashboard WMS';
-    const branchIdx = getActiveBranchContextIndex();
-    const branchName = appState.admin?.branches?.[branchIdx]?.name || 'Sucursal activa';
-    contentSubtitle.textContent = `Resumen operativo de ${branchName} con ocupación, alertas y foco rápido.`;
-    setTags([`Sucursal: ${branchName}`, 'KPI', 'ocupación', 'alertas', 'racks', 'zonas']);
-
-    const kpis = [
-      { label:'Productos analizados', value:data.totalProducts.toLocaleString('es-PE'), foot:`${data.skuCount.toLocaleString('es-PE')} SKU únicos`, trend:'up', trendText:ensureProductPagingState().mode === 'backend' ? 'D1 global' : 'Inventario' },
-      { label:'Capacidad total', value:data.totalSlots.toLocaleString('es-PE'), foot:`${data.freeSlots.toLocaleString('es-PE')} slots libres`, trend:data.freeSlots ? 'up' : 'down', trendText:data.freeSlots ? 'Disponible' : 'Lleno' },
-      { label:'Ocupación general', value:`${Math.round(data.occPct)}%`, foot:`${data.occupiedSlots.toLocaleString('es-PE')} ocupados`, trend:dashboardBarClass(data.occPct), trendText:data.occPct >= 85 ? 'Crítico' : data.occPct >= 65 ? 'Atención' : 'Saludable' },
-      { label:'Calidad de datos', value:`${data.noRack}`, foot:'productos sin rack', trend:data.noRack ? 'warn' : 'up', trendText:data.noRack ? 'Revisar' : 'OK' }
-    ];
-
-    const alerts = [];
-    if(data.noRack) alerts.push({ cls:'warn', title:'Productos sin ubicación', text:`Hay ${data.noRack} productos sin rack asignado.` });
-    if(data.fullestRack && data.fullestRack.occupancy >= 90) alerts.push({ cls:'down', title:'Rack casi saturado', text:`${data.fullestRack.id} está al ${Math.round(data.fullestRack.occupancy)}% de ocupación.` });
-    if(data.racksNoLoad) alerts.push({ cls:'good', title:'Racks disponibles', text:`${data.racksNoLoad} racks no tienen carga y pueden recibir productos.` });
-    if(!alerts.length) alerts.push({ cls:'good', title:'Sin alertas críticas', text:'La estructura actual no muestra bloqueos evidentes.' });
-
-    contentWrap.innerHTML = `
-      <div class="dashboard-grid">
-        ${kpis.map(k => `<div class="dashboard-card kpi-card"><span class="tiny muted">${k.label}</span><b>${k.value}</b><div class="kpi-foot"><span>${k.foot}</span><span class="kpi-trend ${k.trend}">${k.trendText}</span></div></div>`).join('')}
-        <div class="dashboard-card wide tall">
-          <h4>Ocupación por zona</h4>
-          <span class="tiny muted">Haz clic para enfocar una zona.</span>
-          <div class="dash-zone-grid" style="margin-top:12px;">
-            ${data.zoneStats.map(zone => `<button class="dash-zone-card ${selectedZone?.id===zone.id?'active':''}" data-dash-zone="${zone.id}" type="button"><div class="dash-progress-head"><b>${escapeHtml(zone.id)}</b><span>${Math.round(zone.occupancy)}%</span></div><div class="dash-bar ${dashboardBarClass(zone.occupancy)}"><span style="width:${Math.max(4, Math.min(100, zone.occupancy))}%"></span></div><div class="dash-mini-kv"><span>${zone.racks} racks</span><span>${zone.occupied}/${zone.slots} slots</span></div></button>`).join('') || `<div class="empty">No hay zonas cargadas.</div>`}
-          </div>
-        </div>
-        <div class="dashboard-card wide tall">
-          <h4>Racks con mayor ocupación</h4>
-          <span class="tiny muted">Selecciona uno para verlo en detalle.</span>
-          <div class="dash-top-list" style="margin-top:12px;">
-            ${data.rackStats.slice(0,8).map(rack => `<button class="dash-top-item ${selectedRackId===rack.id?'active':''}" type="button" data-dash-rack="${rack.id}"><div class="dash-top-head"><b>${escapeHtml(rack.id)}</b><span>${Math.round(rack.occupancy)}%</span></div><div class="dash-bar ${dashboardBarClass(rack.occupancy)}"><span style="width:${Math.max(4, Math.min(100, rack.occupancy))}%"></span></div><div class="dash-top-meta"><span>${escapeHtml(rack.zoneId)} · ${escapeHtml(rack.model)}</span><span>${rack.occupied}/${rack.capacity}</span></div></button>`).join('') || `<div class="empty">No hay racks cargados.</div>`}
-          </div>
-        </div>
-        <div class="dashboard-card wide">
-          <h4>Alertas operativas</h4>
-          <div class="dash-alert-list" style="margin-top:12px;">
-            ${alerts.map(a => `<div class="dash-alert-item ${a.cls}"><b>${a.title}</b><span class="tiny muted">${a.text}</span></div>`).join('')}
-          </div>
-        </div>
-        <div class="dashboard-card wide">
-          <h4>Resumen rápido</h4>
-          <div class="dash-alert-list" style="margin-top:12px;">
-            <div class="dash-alert-item good"><b>Zonas activas</b><span class="tiny muted">${data.totalZones} zonas y ${data.totalRacks} racks modelados.</span></div>
-            <div class="dash-alert-item ${dashboardBarClass(data.occPct)}"><b>Ocupación total</b><span class="tiny muted">${data.occupiedSlots} ocupados de ${data.totalSlots} slots.</span></div>
-            <div class="dash-alert-item ${data.topZone ? dashboardBarClass(data.topZone.occupancy) : 'good'}"><b>Zona más exigida</b><span class="tiny muted">${data.topZone ? `${escapeHtml(data.topZone.id)} al ${Math.round(data.topZone.occupancy)}%` : 'Sin datos'}</span></div>
-            <div class="dash-alert-item ${data.noRack ? 'warn' : 'good'}"><b>Integridad</b><span class="tiny muted">${data.noRack ? `${data.noRack} productos requieren ubicación.` : 'Todos los productos visibles tienen rack.'}</span></div>
-          </div>
-        </div>
-      </div>`;
-
-    detailTitle.textContent = selectedRack ? `Rack ${selectedRack.id}` : 'Detalle de rack';
-    detailSubtitle.textContent = selectedRack ? `Zona ${selectedRack.zoneId || '—'} • Vista rápida del rack seleccionado` : 'Selecciona una zona o rack desde el dashboard.';
-    detailWrap.innerHTML = `
-      <div class="dash-detail-grid">
-        <div class="dash-svg-wrap"><svg id="dashboardRackSvg" viewBox="-230 -310 470 520"></svg></div>
-        <div class="dash-alert-list">
-          <div class="dash-alert-item ${selectedRack ? dashboardBarClass((data.rackStats.find(r=>r.id===selectedRack.id)?.occupancy)||0) : 'good'}"><b>Rack activo</b><span class="tiny muted">${selectedRack ? `${escapeHtml(selectedRack.id)} • ${escapeHtml(selectedRack.zoneId || '—')}` : 'No hay rack seleccionado.'}</span></div>
-          <div class="dash-alert-item good"><b>Modelo</b><span class="tiny muted">${selectedRack ? escapeHtml((rackModel(selectedRack.modelId)||{}).name || selectedRack.modelId || '—') : '—'}</span></div>
-          <div class="dash-alert-item good"><b>Capacidad</b><span class="tiny muted">${selectedRack ? (()=>{ const s = data.rackStats.find(r=>r.id===selectedRack.id); return s ? `${s.capacity} slots • ${s.occupied} ocupados` : '—'; })() : '—'}</span></div>
-          <div class="dash-alert-item ${selectedZone ? dashboardBarClass((data.zoneStats.find(z=>z.id===selectedZone.id)?.occupancy)||0) : 'good'}"><b>Zona enfocada</b><span class="tiny muted">${selectedZone ? `${escapeHtml(selectedZone.id)} • ${(data.zoneStats.find(z=>z.id===selectedZone.id)?.racks)||0} racks` : '—'}</span></div>
-        </div>
-      </div>`;
-
-    const dashSvg = document.getElementById('dashboardRackSvg');
-    if(dashSvg && selectedRack){
-      const stat = data.rackStats.find(r => r.id === selectedRack.id);
-      const level = stat?.occupied ? 1 : 0;
-      renderRackDetail(selectedRack.id, { nivel: level, slot: stat?.occupied ? 1 : 0, label:'Rack activo', fullLabel:selectedRack.id }, dashSvg, rackModel(selectedRack.modelId), selectedRack);
-    }
-
-    contentStatus.textContent = `Dashboard listo • ${data.totalProducts.toLocaleString('es-PE')} productos analizados`;
-    contentFootRight.textContent = selectedZone ? `${selectedZone.id} • ${Math.round((data.zoneStats.find(z=>z.id===selectedZone.id)?.occupancy)||0)}% ocupación` : '—';
-    detailStatus.textContent = selectedRack ? `${selectedRack.id} • ${(data.rackStats.find(r=>r.id===selectedRack.id)?.occupied)||0} ocupados` : 'Sin rack seleccionado';
-    detailChip.textContent = selectedRack ? `${(data.rackStats.find(r=>r.id===selectedRack.id)?.capacity)||0} slots` : '—';
-
-    contentWrap.querySelectorAll('[data-dash-zone]').forEach(btn => btn.addEventListener('click', () => {
-      appState.selectedZoneId = btn.dataset.dashZone;
-      const firstRack = appState.layout.racks.find(r => r.zoneId === appState.selectedZoneId);
-      if(firstRack) appState.selectedRackLayoutId = firstRack.id;
-      renderDashboard();
-    }));
-    contentWrap.querySelectorAll('[data-dash-rack]').forEach(btn => btn.addEventListener('click', () => {
-      const rackId = btn.dataset.dashRack;
-      appState.selectedRackLayoutId = rackId;
-      const rack = findRackById(rackId);
-      if(rack?.zoneId) appState.selectedZoneId = rack.zoneId;
-      renderDashboard();
-    }));
-  }
-
-
   function getViewerProductLocationContext(product = appState.selectedProduct){
     const layoutBranchIndex = getActiveLayoutBranchIndex();
     const branches = appState.admin?.branches || [];
@@ -5974,239 +5811,6 @@ function getSheetBranchOpenMap(){
     return { minX, maxX, minY, maxY, w:Math.max(1,maxX-minX), h:Math.max(1,maxY-minY), cx:(minX+maxX)/2, cy:(minY+maxY)/2 };
   }
 
-
-  function productHasValidLocation(product){
-    const p = product || {};
-    return !!String(p.ubicacion || p.location || '').trim();
-  }
-
-  function isProbablyUrl(value){
-    const v = String(value || '').trim();
-    if(!v) return false;
-    if(/^https?:\/\//i.test(v)) return true;
-    if(/^data:image\//i.test(v)) return true;
-    if(/^\/\//.test(v)) return true;
-    if(/^\/[^\s]+\.(png|jpe?g|webp|gif|avif)(\?.*)?$/i.test(v)) return true;
-    return false;
-  }
-
-  function getProductLocationIssue(product, mode='primary'){
-    const p = product || {};
-    const loc = String(mode === 'store' ? (p.almacen || '') : (p.ubicacion || '')).trim();
-    if(!loc) return mode === 'store' ? 'Sin ubicación de almacén' : 'Sin ubicación';
-    const parsed = mode === 'store'
-      ? parseLocationCode(loc, /^Z\d+/i.test(loc) ? 'Z1-E1' : 'ALM-E1')
-      : parseLocationCode(loc, 'Z1-E1');
-    const rackId = mode === 'store' ? (p.rackStore || parsed.rackId || '') : (p.rack || parsed.rackId || '');
-    if(rackId && !findRackById(rackId)) return `Rack no existe: ${rackId}`;
-    if(rackId){
-      const rack = findRackById(rackId);
-      const model = rack ? (appState.models.find(m => m.id === rack.modelId) || appState.models[0] || {}) : {};
-      const levels = Math.max(1, Number(model.levels || 4));
-      const slots = Math.max(1, Number(model.slots || 2));
-      const level = Number(mode === 'store' ? (p.nivelStore || parsed.level || 0) : (p.nivel || parsed.level || 0));
-      const slot = Number(mode === 'store' ? (p.slotStore || parsed.slot || 0) : (p.slot || parsed.slot || 0));
-      if(level && (level < 1 || level > levels)) return `Nivel fuera de rango: N${level} / máximo N${levels}`;
-      if(slot && (slot < 1 || slot > slots)) return `Slot fuera de rango: S${slot} / máximo S${slots}`;
-    }
-    return '';
-  }
-
-  function analyzeInventoryData(){
-    const products = Array.isArray(appState.products) ? appState.products : [];
-    const racks = Array.isArray(appState.layout?.racks) ? appState.layout.racks : [];
-    const zones = Array.isArray(appState.layout?.zones) ? appState.layout.zones : [];
-    const counters = {
-      total:products.length,
-      missingName:0,
-      missingSku:0,
-      missingBarcode:0,
-      missingCategory:0,
-      missingGender:0,
-      missingImage:0,
-      invalidImage:0,
-      missingLocation:0,
-      missingStoreLocation:0,
-      badLocation:0,
-      badStoreLocation:0,
-      rackMissing:0,
-      duplicateSku:0,
-      duplicateBarcode:0,
-      emptyRacks:0,
-      occupiedRacks:0,
-      overCapacityRacks:0,
-      racksTotal:racks.length,
-      zonesTotal:zones.length
-    };
-    const issues = [];
-    const skuMap = new Map();
-    const barcodeMap = new Map();
-    const rackUsage = new Map(racks.map(r => [r.id, { id:r.id, products:0, capacity:0, zoneId:r.zoneId || '', overflow:0 }]));
-    const zoneUsage = new Map(zones.map(z => [z.id, { id:z.id, name:z.name || z.id, products:0, racks:0 }]));
-    racks.forEach(r => {
-      const model = appState.models.find(m => m.id === r.modelId) || appState.models[0] || {};
-      const capacity = Math.max(1, Number(model.levels || 4)) * Math.max(1, Number(model.slots || 2));
-      const item = rackUsage.get(r.id);
-      if(item) item.capacity = capacity;
-      const z = zoneUsage.get(r.zoneId);
-      if(z) z.racks += 1;
-    });
-    const addIssue = (severity, type, detail, product=null, extra={}) => {
-      const row = product?._rowIndex || extra.row || '—';
-      const sku = String(product?.sku || extra.sku || '').trim() || '—';
-      const name = String(product?.nombre || extra.name || '').trim() || '—';
-      issues.push({ severity, row, sku, name, type, detail, ...extra });
-    };
-    products.forEach((p, idx) => {
-      const sku = String(p?.sku || '').trim();
-      const barcode = String(p?.barras || '').trim();
-      const name = String(p?.nombre || '').trim();
-      if(sku){ const key = norm(sku); if(!skuMap.has(key)) skuMap.set(key, []); skuMap.get(key).push(p); }
-      if(barcode){ const key = norm(barcode); if(!barcodeMap.has(key)) barcodeMap.set(key, []); barcodeMap.get(key).push(p); }
-      if(!name){ counters.missingName++; addIssue('Alta','Sin nombre','El producto no tiene nombre. Esto impide mostrarlo correctamente.',p); }
-      if(!sku){ counters.missingSku++; addIssue('Alta','Sin SKU','No se detectó SKU/código. Afecta búsqueda, picking y cruce con Bsale.',p); }
-      if(!barcode){ counters.missingBarcode++; }
-      if(!getProductCategoryValue(p)){ counters.missingCategory++; addIssue('Media','Sin categoría','Completa la columna Categoria/Categoría para que los filtros funcionen.',p); }
-      if(!getProductGenderValue(p)){ counters.missingGender++; addIssue('Media','Sin género','Completa la columna Genero/Género: Mujer, Varón, Niños o Niñas.',p); }
-      const imgs = getProductImageUrls(p);
-      if(!imgs.length){ counters.missingImage++; addIssue('Baja','Sin imagen','No hay Imagen 1–6 para este producto.',p); }
-      else {
-        const badImgs = imgs.filter(v => !isProbablyUrl(v));
-        if(badImgs.length){ counters.invalidImage++; addIssue('Media','Imagen inválida',`Hay ${badImgs.length} imagen(es) con formato no reconocido. Usa URL https o data:image.`,p); }
-      }
-      const locIssue = getProductLocationIssue(p, 'primary');
-      if(locIssue){
-        if(locIssue === 'Sin ubicación') counters.missingLocation++;
-        else counters.badLocation++;
-        if(locIssue.startsWith('Rack no existe')) counters.rackMissing++;
-        addIssue(locIssue === 'Sin ubicación' ? 'Alta' : 'Alta','Ubicación principal',locIssue,p);
-      }
-      const storeIssue = getProductLocationIssue(p, 'store');
-      if(storeIssue){
-        if(storeIssue === 'Sin ubicación de almacén') counters.missingStoreLocation++;
-        else counters.badStoreLocation++;
-        if(storeIssue.startsWith('Rack no existe')) counters.rackMissing++;
-        addIssue(storeIssue === 'Sin ubicación de almacén' ? 'Media' : 'Alta','Ubicación almacén',storeIssue,p);
-      }
-      [p?.rack, p?.rackStore].filter(Boolean).forEach(rid => {
-        const usage = rackUsage.get(rid);
-        if(usage) usage.products += 1;
-      });
-      [p?.zona, p?.zonaStore].filter(Boolean).forEach(zid => {
-        const usage = zoneUsage.get(zid);
-        if(usage) usage.products += 1;
-      });
-    });
-    skuMap.forEach((items, key) => {
-      if(items.length > 1){
-        counters.duplicateSku += items.length;
-        items.slice(0, 30).forEach(p => addIssue('Alta','SKU duplicado',`El SKU aparece ${items.length} veces. Revisa variantes o códigos repetidos.`,p,{ duplicateKey:key }));
-      }
-    });
-    barcodeMap.forEach((items, key) => {
-      if(items.length > 1){
-        counters.duplicateBarcode += items.length;
-        items.slice(0, 30).forEach(p => addIssue('Media','Barras duplicadas',`El código de barras aparece ${items.length} veces.`,p,{ duplicateKey:key }));
-      }
-    });
-    const rackStats = Array.from(rackUsage.values()).map(r => {
-      const overflow = Math.max(0, Number(r.products || 0) - Number(r.capacity || 0));
-      r.overflow = overflow;
-      if(Number(r.products || 0) <= 0) counters.emptyRacks++;
-      else counters.occupiedRacks++;
-      if(overflow > 0){ counters.overCapacityRacks++; addIssue('Media','Rack sobrecapacidad',`${r.id} tiene ${r.products} productos para ${r.capacity} posiciones estimadas.`,null,{ row:'—', sku:r.id, name:'Rack', rackId:r.id }); }
-      return r;
-    }).sort((a,b) => (b.products - a.products) || String(a.id).localeCompare(String(b.id)));
-    const zoneStats = Array.from(zoneUsage.values()).sort((a,b) => (b.products - a.products) || String(a.id).localeCompare(String(b.id)));
-    const high = issues.filter(i => i.severity === 'Alta').length;
-    const medium = issues.filter(i => i.severity === 'Media').length;
-    const low = issues.filter(i => i.severity === 'Baja').length;
-    const weighted = high * 3 + medium * 1.6 + low * .6;
-    const base = Math.max(1, counters.total * 3);
-    const score = Math.max(0, Math.min(100, Math.round(100 - (weighted / base) * 100)));
-    return { counters, issues, rackStats, zoneStats, score, severity:{ high, medium, low } };
-  }
-
-  function exportDataQualityCsv(report){
-    const data = report || analyzeInventoryData();
-    const header = ['Severidad','Fila','SKU','Producto','Tipo','Detalle'];
-    const esc = value => `"${String(value ?? '').replace(/"/g,'""')}"`;
-    const lines = [header.map(esc).join(',')].concat((data.issues || []).map(i => [i.severity,i.row,i.sku,i.name,i.type,i.detail].map(esc).join(',')));
-    const blob = new Blob([lines.join('\n')], { type:'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `diagnostico-wms-${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1200);
-    showToast('Reporte CSV descargado.', 'success');
-  }
-
-  function openDataQualityModal(){
-    const existing = document.getElementById('dataQualityModal');
-    if(existing) existing.remove();
-    const report = analyzeInventoryData();
-    const { counters, issues, rackStats, zoneStats, score, severity } = report;
-    const cards = [
-      ['Productos', counters.total, 'registros importados', 'ok'],
-      ['Calidad', `${score}%`, `${severity.high} altas · ${severity.medium} medias`, score >= 85 ? 'ok' : 'warn'],
-      ['Sin ubicación', counters.missingLocation, 'ubicación principal vacía', 'warn'],
-      ['Ubicación inválida', counters.badLocation + counters.badStoreLocation, 'rack, nivel o slot', 'warn'],
-      ['Racks no encontrados', counters.rackMissing, 'no existen en layout', 'warn'],
-      ['SKU duplicado', counters.duplicateSku, 'registros afectados', 'warn'],
-      ['Barras duplicadas', counters.duplicateBarcode, 'registros afectados', 'warn'],
-      ['Sin nombre', counters.missingName, 'deben corregirse', 'warn'],
-      ['Sin SKU', counters.missingSku, 'afecta búsquedas', 'warn'],
-      ['Sin categoría', counters.missingCategory, 'afecta filtros', 'warn'],
-      ['Sin género', counters.missingGender, 'afecta filtros', 'warn'],
-      ['Imágenes inválidas', counters.invalidImage, 'URL no reconocida', 'warn'],
-      ['Racks vacíos', counters.emptyRacks, `${counters.racksTotal} racks en layout`, counters.emptyRacks ? 'neutral' : 'ok'],
-      ['Sobrecapacidad', counters.overCapacityRacks, 'racks con exceso estimado', 'warn'],
-      ['Zonas', counters.zonesTotal, 'zonas del layout', 'ok'],
-      ['Racks ocupados', counters.occupiedRacks, 'con productos vinculados', 'ok']
-    ].map(([label, value, hint, state]) => `<div class="dq-card ${state === 'warn' && Number(value)>0 ? 'warn' : state === 'neutral' ? 'neutral' : ''}"><b>${typeof value === 'number' ? Number(value||0).toLocaleString('es-PE') : escapeHtml(value)}</b><span>${escapeHtml(label)}</span><small>${escapeHtml(hint)}</small></div>`).join('');
-    const rows = issues.slice(0, 160).map(item => `<tr><td><span class="dq-severity ${norm(item.severity)}">${escapeHtml(item.severity)}</span></td><td>${escapeHtml(String(item.row))}</td><td>${escapeHtml(item.sku)}</td><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.detail)}</td></tr>`).join('');
-    const rackRows = rackStats.slice(0, 18).map(r => `<tr><td>${escapeHtml(r.id)}</td><td>${escapeHtml(r.zoneId || '—')}</td><td>${Number(r.products||0).toLocaleString('es-PE')}</td><td>${Number(r.capacity||0).toLocaleString('es-PE')}</td><td>${r.overflow ? `<span class="dq-severity media">+${r.overflow}</span>` : 'OK'}</td></tr>`).join('');
-    const zoneRows = zoneStats.slice(0, 12).map(z => `<tr><td>${escapeHtml(z.id)}</td><td>${escapeHtml(z.name || z.id)}</td><td>${Number(z.racks||0).toLocaleString('es-PE')}</td><td>${Number(z.products||0).toLocaleString('es-PE')}</td></tr>`).join('');
-    const modal = document.createElement('div');
-    modal.id = 'dataQualityModal';
-    modal.className = 'data-quality-backdrop show';
-    modal.innerHTML = `
-      <div class="data-quality-shell dq-health-shell">
-        <div class="data-quality-head">
-          <div><div class="search-card-kicker">Control de calidad · v53</div><h2>Salud del almacén</h2><p>Sucursal: ${escapeHtml((appState.admin?.branches || [])[getActiveBranchContextIndex()]?.name || 'Sucursal activa')} · valida productos, ubicaciones, racks, duplicados e imágenes antes de operar picking, reposición o Bsale.</p></div>
-          <div class="data-quality-actions"><span class="dq-score ${score < 75 ? 'danger' : score < 90 ? 'warning' : ''}">Calidad ${score}%</span><button class="iso-tool" type="button" data-dq-export>Exportar CSV</button><button class="location-modal-close" type="button" aria-label="Cerrar">✕</button></div>
-        </div>
-        <div class="data-quality-grid dq-health-grid">${cards}</div>
-        <div class="dq-health-tabs">
-          <button class="active" data-dq-tab="issues">Observaciones</button>
-          <button data-dq-tab="racks">Racks</button>
-          <button data-dq-tab="zones">Zonas</button>
-        </div>
-        <div class="data-quality-table-wrap dq-tab-panel active" data-dq-panel="issues">
-          <div class="data-quality-table-head"><b>Observaciones detectadas</b><span>${issues.length.toLocaleString('es-PE')} alertas encontradas · se muestran hasta 160</span></div>
-          <table class="data-quality-table"><thead><tr><th>Severidad</th><th>Fila</th><th>SKU</th><th>Producto</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No se detectaron observaciones críticas.</td></tr>'}</tbody></table>
-        </div>
-        <div class="data-quality-table-wrap dq-tab-panel" data-dq-panel="racks">
-          <div class="data-quality-table-head"><b>Uso por rack</b><span>${rackStats.length.toLocaleString('es-PE')} racks revisados</span></div>
-          <table class="data-quality-table"><thead><tr><th>Rack</th><th>Zona</th><th>Productos</th><th>Capacidad estimada</th><th>Estado</th></tr></thead><tbody>${rackRows || '<tr><td colspan="5">No hay racks creados en el layout.</td></tr>'}</tbody></table>
-        </div>
-        <div class="data-quality-table-wrap dq-tab-panel" data-dq-panel="zones">
-          <div class="data-quality-table-head"><b>Uso por zona</b><span>${zoneStats.length.toLocaleString('es-PE')} zonas revisadas</span></div>
-          <table class="data-quality-table"><thead><tr><th>Zona</th><th>Nombre</th><th>Racks</th><th>Productos vinculados</th></tr></thead><tbody>${zoneRows || '<tr><td colspan="4">No hay zonas creadas en el layout.</td></tr>'}</tbody></table>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    const close = () => modal.remove();
-    modal.querySelector('.location-modal-close')?.addEventListener('click', close);
-    modal.querySelector('[data-dq-export]')?.addEventListener('click', () => exportDataQualityCsv(report));
-    modal.querySelectorAll('[data-dq-tab]').forEach(btn => btn.addEventListener('click', () => {
-      const tab = btn.dataset.dqTab;
-      modal.querySelectorAll('[data-dq-tab]').forEach(b => b.classList.toggle('active', b === btn));
-      modal.querySelectorAll('[data-dq-panel]').forEach(panel => panel.classList.toggle('active', panel.dataset.dqPanel === tab));
-    }));
-    modal.addEventListener('click', e => { if(e.target === modal) close(); });
-  }
 
   function openProductVariantsModal(product = appState.selectedProduct){
     const prod = product || appState.selectedProduct;
@@ -9231,6 +8835,8 @@ function getSheetBranchOpenMap(){
     appState.editor.snapSize = getSnapSize();
     appState.editor.dimFontSize = getDimFontSize();
     if(appState.editor.rightPanelOpen === undefined) appState.editor.rightPanelOpen = true;
+    if(isRackDistributionScreen() && ['zone','wall','opening'].includes(appState.editor.mode)) appState.editor.mode = 'select';
+    if(isStructureLayoutScreen() && appState.editor.mode === 'rack') appState.editor.mode = 'select';
     const vb = appState.editor.viewBox || {};
     if(!Number.isFinite(Number(vb.w)) || !Number.isFinite(Number(vb.h)) || Number(vb.w) > 14000 || Number(vb.h) > 10000){
       appState.editor.viewBox = { x:0, y:0, w:900, h:620 };
@@ -9694,7 +9300,7 @@ function getSheetBranchOpenMap(){
     return next;
   }
   function startOpeningDrag(e, openingId, mode='move'){
-    if(appState.editor.mode !== 'select') return;
+    if(!isStructureLayoutScreen() || appState.editor.mode !== 'select') return;
     e.stopPropagation();
     const opening = findOpeningById(openingId);
     const wall = findWallById(opening?.wallId);
@@ -9772,6 +9378,11 @@ function getSheetBranchOpenMap(){
     const wall = findWallById(appState.selectedWallId);
     const zone = findZoneById(appState.selectedZoneId);
     const rack = findRackById(appState.selectedRackLayoutId);
+    if(isRackDistributionScreen()){
+      if(rack) return { type:'rack', title:rack.id, subtitle:`${rack.zoneId} · ${escapeHtml((rackModel(rack.modelId)||{}).name || rack.modelId || 'Rack')}` };
+      if(zone) return { type:'zone', title:zone.name || zone.id, subtitle:`Estructura bloqueada · ${(appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).length} racks` };
+      return { type:'none', title:'Sin rack seleccionado', subtitle:'Selecciona o agrega un rack; la estructura está bloqueada' };
+    }
     if(opening){
       const host = findWallById(opening.wallId);
       return { type:'opening', title:opening.type === 'window' ? 'Ventana' : 'Puerta / vano', subtitle:`${opening.id} · ${host?.id || 'sin pared'} · ${Math.round(Number(opening.width||90))} u` };
@@ -9779,9 +9390,8 @@ function getSheetBranchOpenMap(){
     if(wall){
       return { type:'wall', title:wall.name || wall.id, subtitle:`${wall.id} · ${Math.round(wallLength(wall))} u · espesor ${Math.round(Number(wall.thickness||12))}` };
     }
-    if(rack) return { type:'rack', title:rack.id, subtitle:`${rack.zoneId} · ${escapeHtml((rackModel(rack.modelId)||{}).name || rack.modelId || 'Rack')}` };
-    if(zone) return { type:'zone', title:zone.name || zone.id, subtitle:`${zone.id} · ${(appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).length} racks` };
-    return { type:'none', title:'Sin selección', subtitle:'Selecciona una zona, rack, pared o vano' };
+    if(zone) return { type:'zone', title:zone.name || zone.id, subtitle:`${zone.id} · ${(appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).length} racks · racks bloqueados` };
+    return { type:'none', title:'Sin selección', subtitle:'Selecciona una zona, pared o vano; los racks están bloqueados' };
   }
 
   function formatUnitNumber(value){
@@ -9811,8 +9421,7 @@ function getSheetBranchOpenMap(){
         y: snapGrid(nextY + ((pt.y - b.minY) / oldH) * nextH)
       }));
     }
-    // Mantener racks contenidos después de redimensionar.
-    (appState.layout.racks||[]).filter(r=>r.zoneId===zone.id).forEach(r => keepRackInsideZone(r, zone));
+    // v110: la estructura no reposiciona racks; se corrigen luego en Distribución de racks.
   }
 
   function addWarehouseTemplate(){
@@ -9913,6 +9522,8 @@ function getSheetBranchOpenMap(){
     const model = rack ? rackModel(rack.modelId) : null;
     const fp = rack ? getRackFootprint(rack.modelId, rack.rot || 0) : null;
     const modelOptions = appState.models.map(m=>`<option value="${escapeHtml(m.id)}" ${rack?.modelId===m.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
+    const rackMode = isRackDistributionScreen();
+    const structureMode = !rackMode;
     return `
       <div class="layout-right-head">
         <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
@@ -9925,12 +9536,9 @@ function getSheetBranchOpenMap(){
           <div class="tiny muted">Modo actual: ${escapeHtml(appState.editor.mode || 'select')}</div>
         </section>
         ${appState.editor.beginnerMode ? `<section class="layout-prop-card beginner-guide-card">
-          <div class="layout-prop-title">Guía rápida</div>
+          <div class="layout-prop-title">${rackMode ? 'Distribución protegida' : 'Edición de estructura'}</div>
           <ol class="beginner-guide-list">
-            <li>Elige una herramienta a la izquierda.</li>
-            <li>Haz clic en el plano para dibujar o seleccionar.</li>
-            <li>Edita solo el objeto seleccionado en este panel.</li>
-            <li>Guarda al terminar.</li>
+            ${rackMode ? '<li>Muros, zonas y vanos están bloqueados.</li><li>Selecciona, mueve o agrega únicamente racks.</li><li>Usa snap para alinear sin alterar el plano.</li><li>Guarda la distribución al terminar.</li>' : '<li>Edita zonas, muros y vanos del plano.</li><li>Los racks se muestran como referencia, pero no se pueden mover.</li><li>Termina la estructura antes de distribuir estantes.</li><li>Guarda la estructura al terminar.</li>'}
           </ol>
         </section>` : ''}
         <section class="layout-prop-card">
@@ -9956,14 +9564,16 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="tiny muted" style="margin-top:8px">Menor número = más precisión. Recomendado: 2, 5 o 10 unidades.</div>
         </section>
-        <section class="layout-prop-card">
-          <div class="layout-prop-title">Plantillas rápidas</div>
+        ${rackMode ? `<section class="layout-prop-card">
+          <div class="layout-prop-title">Distribución rápida</div>
           <div class="layout-template-grid">
-            <button class="seg-btn" id="tplZoneRack">Zona + rack</button>
-            <button class="seg-btn" id="tplWarehouse">Almacén</button>
             <button class="seg-btn" id="tplRackRow">Fila de racks</button>
             <button class="seg-btn" id="tplDistribute">Distribuir racks</button>
           </div>
+          <div class="tiny muted" style="margin-top:8px">Estas acciones solo modifican racks; el plano base permanece bloqueado.</div>
+        </section>` : `<section class="layout-prop-card">
+          <div class="layout-prop-title">Plantillas de estructura</div>
+          <div class="layout-template-grid"><button class="seg-btn" id="tplWarehouse">Agregar almacén / zona</button></div>
         </section>
         <section class="layout-prop-card">
           <div class="layout-prop-title">Plano de fondo</div>
@@ -9972,9 +9582,9 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn" id="btnLayoutBgUpload">Subir imagen</button>
             <button class="seg-btn" id="btnLayoutBgClear" ${appState.layout?.meta?.backgroundImage ? '' : 'disabled'}>Quitar fondo</button>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Úsalo para calcar encima de un plano real. Queda bloqueado detrás de zonas y racks.</div>
-        </section>
-        ${zone ? `<section class="layout-prop-card">
+          <div class="tiny muted" style="margin-top:8px">Úsalo para calcar encima de un plano real. Queda bloqueado detrás de la estructura.</div>
+        </section>`}
+        ${structureMode && zone ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Zona</div>
           <div class="layout-prop-grid two">
             <label>Nombre<input id="rpZoneName" value="${escapeHtml(zone.name||'')}"></label>
@@ -9990,7 +9600,7 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px"><button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → pared</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar paredes zona</button></div>
         </section>` : ''}
-        ${rack ? `<section class="layout-prop-card">
+        ${rackMode && rack ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Rack</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(rack.id)}" disabled></label>
@@ -10004,7 +9614,7 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpDuplicateRack">Duplicar rack</button><button class="seg-btn" id="rpRack45">Girar 45°</button><button class="seg-btn" id="rpRack90">Girar 90°</button><button class="seg-btn" id="rpAddAbove">Agregar encima</button></div>
         </section>` : ''}
-        ${findWallById(appState.selectedWallId) ? `<section class="layout-prop-card">
+        ${structureMode && findWallById(appState.selectedWallId) ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Pared</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(findWallById(appState.selectedWallId).id)}" disabled></label>
@@ -10020,7 +9630,7 @@ function getSheetBranchOpenMap(){
           </div>
           <div class="tiny muted" style="margin-top:8px">La pared puede ir por fuera o por dentro de la zona. Los vanos se recortan también en 3D.</div>
         </section>` : ''}
-        ${findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card opening-editor-card">
+        ${structureMode && findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card opening-editor-card">
           <div class="layout-prop-title">Vano seleccionado</div>
           ${(() => { const op=findOpeningById(appState.selectedOpeningId); const wall=findWallById(op?.wallId); const info=getOpeningPositionInfo(op, wall); const type=normalizeOpeningType(op.type); return `<div class="tiny muted" style="margin-bottom:10px">Arrastra el vano sobre el muro o ajusta su posición exacta. ${wall ? `Pared ${escapeHtml(wall.id)}` : ''}</div>
           <div class="layout-prop-grid two">
@@ -10185,10 +9795,10 @@ function getSheetBranchOpenMap(){
     if($('#rpOpeningFlip')) $('#rpOpeningFlip').onclick = () => { if(!selectedOpening) return; selectedOpening.swing = Number(selectedOpening.swing || 1) * -1; persistActiveLayout(); renderLayoutEditor(); };
     if($('#rpOpeningDelete')) $('#rpOpeningDelete').onclick = () => { if(!selectedOpening) return; appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== selectedOpening.id); appState.selectedOpeningId = ''; persistActiveLayout(); renderLayoutEditor(); };
 
-    if($('#tplZoneRack')) $('#tplZoneRack').onclick = addZoneWithRackTemplate;
-    if($('#tplWarehouse')) $('#tplWarehouse').onclick = addWarehouseTemplate;
-    if($('#tplRackRow')) $('#tplRackRow').onclick = () => addRackRowTemplate(5);
-    if($('#tplDistribute')) $('#tplDistribute').onclick = distributeSelectedZoneRacks;
+    if($('#tplZoneRack')) $('#tplZoneRack').onclick = () => { if(isStructureLayoutScreen()) addZoneWithRackTemplate(); };
+    if($('#tplWarehouse')) $('#tplWarehouse').onclick = () => { if(isStructureLayoutScreen()) addWarehouseTemplate(); };
+    if($('#tplRackRow')) $('#tplRackRow').onclick = () => { if(isRackDistributionScreen()) addRackRowTemplate(5); };
+    if($('#tplDistribute')) $('#tplDistribute').onclick = () => { if(isRackDistributionScreen()) distributeSelectedZoneRacks(); };
     if($('#btnLayoutBgUpload')) $('#btnLayoutBgUpload').onclick = () => $('#layoutBgInput')?.click();
     if($('#layoutBgInput')) $('#layoutBgInput').onchange = e => {
       const file = e.target.files && e.target.files[0];
@@ -10201,24 +9811,28 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v95-layout-fixes';
+    document.body.dataset.wmsLayoutVersion = 'v110-layout-split';
+    document.body.dataset.wmsLayoutWorkspace = isRackDistributionScreen() ? 'racks' : 'structure';
     const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
     appState.editor.rightPanelScrollTop = __layoutRightScrollBefore;
-    if(!(appState.history?.layout?.undoStack?.length)) recordHistorySnapshot('layout');
+    const rackMode = isRackDistributionScreen();
+    const workspaceHistory = rackMode ? 'distribution' : 'structure';
+    if(!(getHistoryBucket(workspaceHistory)?.undoStack?.length)) recordHistorySnapshot(workspaceHistory);
     ensureRackProps();
-    contentTitle.textContent = 'Edición de Layout';
+    const structureMode = !rackMode;
+    contentTitle.textContent = rackMode ? 'Distribución de racks' : 'Plano / Estructura';
     appState.editor.view = 'ortho';
     const isIsoView = false;
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = 'Vista ortogonal editable · Modo CAD';
-    detailTitle.textContent = 'Edición de layout';
-    detailSubtitle.textContent = 'Opciones y propiedades integradas en el panel lateral.';
+    contentSubtitle.textContent = rackMode ? 'Acomoda racks sin alterar muros, zonas ni vanos' : 'Crea el plano base sin riesgo de mover racks';
+    detailTitle.textContent = rackMode ? 'Distribución protegida' : 'Edición de estructura';
+    detailSubtitle.textContent = rackMode ? 'Solo los racks son editables.' : 'Los racks están bloqueados como referencia.';
     setTags([
-      { label:'↶ Undo', active: true, action:'history-undo-layout', extraClass:'history-chip' },
-      { label:'↷ Redo', active: true, action:'history-redo-layout', extraClass:'history-chip' },
+      { label:'↶ Undo', active: true, action:`history-undo-${workspaceHistory}`, extraClass:'history-chip' },
+      { label:'↷ Redo', active: true, action:`history-redo-${workspaceHistory}`, extraClass:'history-chip' },
       { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
@@ -10230,28 +9844,32 @@ function getSheetBranchOpenMap(){
       <div class="stage layout-premium-render layout-cad-v80" style="position:relative;height:100%">
         <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''} ${appState.editor.beginnerMode ? 'beginner-ui' : 'advanced-ui'}">
           <div class="layout-cad-localbar-v80">
-            <button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>
+            ${structureMode ? '<button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>' : '<button class="btn primary v80-zone-btn" data-emode="rack">+ Rack</button>'}
             <select id="layoutBranchSelect" class="seg-btn v80-branch-select">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
             <select class="seg-btn v80-unit-select" aria-label="Unidades"><option>m</option><option>cm</option></select>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
-            <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">Guardar layout</button>
+            <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">${rackMode ? 'Guardar distribución' : 'Guardar estructura'}</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
-            <span class="layout-user-badge">${appState.editor.beginnerMode ? 'Modo usuario' : 'Modo avanzado'}</span>
-            <span class="v90-version-badge">v103</span>
+            <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Estructura bloqueada' : 'Racks bloqueados'}</span>
+            <span class="v90-version-badge">v110</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
               <div class="layout-canvas-wrap v80-canvas-wrap">
                 <div class="layout-canvas-card detail-stage v80-canvas-card">
                   <svg id="layoutSvg"></svg>
-                  <div class="v80-tool-rail" aria-label="Herramientas de layout">
+                  <div class="v80-tool-rail" aria-label="${rackMode ? 'Herramientas de distribución' : 'Herramientas de estructura'}">
+                    ${structureMode ? `
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlusRail" data-tool-proxy="btnZonePlus"><span class="v80-tool-ico">□</span><b>Agregar<br>zona</b></button>
-                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack"><span class="v80-tool-ico">▤</span><b>Agregar<br>rack</b></button>
                     <button class="v80-tool-btn seg-btn" data-layout-tag-action="toggle-walls"><span class="v80-tool-ico">▱</span><b>Paredes</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='opening'?'active':''}" id="btnOpeningPlus"><span class="v80-tool-ico">▭</span><b>Vanos</b></button>
+                    ` : `
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack"><span class="v80-tool-ico">▤</span><b>Agregar<br>rack</b></button>
+                    <button class="v80-tool-btn seg-btn" id="btnDuplicateRackRail"><span class="v80-tool-ico">⧉</span><b>Duplicar<br>rack</b></button>
+                    `}
                     <button class="v80-tool-btn seg-btn" data-layout-tag-action="toggle-dims"><span class="v80-tool-ico">↔</span><b>Cotas</b></button>
                   </div>
                   ${appState.editor.showMiniMap !== false ? `<div class="v80-minimap-card"><div class="v80-minimap-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</div>` : ''}
@@ -10260,7 +9878,7 @@ function getSheetBranchOpenMap(){
                     <span>Rejilla: <b>${formatUnitNumber(getSnapSize() / Math.max(1, getSnapSize()) * 0.25)} m</b></span>
                     <button class="seg-btn" id="btnZoomOut">−</button><span class="zoom-chip" id="zoomLabel">100%</span><button class="seg-btn" id="btnZoomIn">+</button>
                   </div>
-                  <button class="v90-floating-save-layout" id="btnSaveLayoutFloat" type="button">Guardar layout</button>
+                  <button class="v90-floating-save-layout" id="btnSaveLayoutFloat" type="button">${rackMode ? 'Guardar distribución' : 'Guardar estructura'}</button>
                   <div id="layoutStackMenu" class="layout-stack-overlay"></div>
                 </div>
                 <div id="layoutSectionWrap" class="v80-section-floating"></div>
@@ -10673,7 +10291,7 @@ function getSheetBranchOpenMap(){
       path.addEventListener('pointerdown', e => {
         try{ e.currentTarget?.setPointerCapture?.(e.pointerId); }catch(_){}
         startZoneDrag(e, zone.id);
-      }); if(appState.editor.zonesLocked) path.style.cursor='default';
+      }); if(appState.editor.zonesLocked || isRackDistributionScreen()){ path.style.cursor='default'; if(isRackDistributionScreen()) path.classList.add('workspace-locked'); }
       zoneLayer.appendChild(path);
       const c = centroid(zone.pts);
       const zb = zoneBoundsOf(zone);
@@ -10717,7 +10335,7 @@ function getSheetBranchOpenMap(){
           const selectedVertex = appState.selectedVertex.zoneId===zone.id && appState.selectedVertex.idx===idx;
           const hit = svgEl('circle',{cx:hx,cy:hy,r:'14',class:'vertex-hit'});
           const v = svgEl('circle',{cx:hx,cy:hy,r:selectedVertex?'8':'7',class:'vertex' + (selectedVertex ? ' selected' : '')});
-          [hit, v].forEach(el => { el.addEventListener('pointerdown', e => startVertexDrag(e, zone.id, idx)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
+          [hit, v].forEach(el => { el.addEventListener('pointerdown', e => startVertexDrag(e, zone.id, idx)); if(appState.editor.zonesLocked || isRackDistributionScreen()) el.style.pointerEvents='none'; });
           vertexLayer.appendChild(hit);
           vertexLayer.appendChild(v);
         });
@@ -10729,12 +10347,12 @@ function getSheetBranchOpenMap(){
           const hy = my + en.y * handleOffsetUnits;
           const activeEdge = (appState.selectedEdge.zoneId===zone.id && appState.selectedEdge.a===idx);
           const edgeLineHit = svgEl('line',{x1:p.x + en.x*4,y1:p.y + en.y*4,x2:q.x + en.x*4,y2:q.y + en.y*4,class:'edge-hit','stroke-width':'20'});
-          edgeLineHit.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) edgeLineHit.style.pointerEvents='none';
+          edgeLineHit.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked || isRackDistributionScreen()) edgeLineHit.style.pointerEvents='none';
           edgeLayer.appendChild(edgeLineHit);
           if(activeEdge) edgeLayer.appendChild(svgEl('line',{x1:p.x,y1:p.y,x2:q.x,y2:q.y,class:'edge-guide'}));
           const hitBox = svgEl('circle',{cx:hx,cy:hy,r:14,class:'edge-hit'});
           const handle = svgEl('circle',{cx:hx,cy:hy,r:8,class:'edge-handle' + (activeEdge ? ' active' : '')});
-          [hitBox, handle].forEach(el => { el.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked) el.style.pointerEvents='none'; });
+          [hitBox, handle].forEach(el => { el.addEventListener('pointerdown', e => startEdgeDrag(e, zone.id, idx, (idx+1)%zone.pts.length)); if(appState.editor.zonesLocked || isRackDistributionScreen()) el.style.pointerEvents='none'; });
           edgeLayer.appendChild(hitBox);
           edgeLayer.appendChild(handle);
           const edgeWall = getZoneEdgeWall(zone, idx);
@@ -10749,6 +10367,7 @@ function getSheetBranchOpenMap(){
           pillText.textContent = isWallEdge ? 'PARED' : '+ PARED';
           pill.appendChild(pillText);
           pill.addEventListener('pointerdown', e => {
+            if(isRackDistributionScreen()) return;
             e.stopPropagation();
             appState.selectedZoneId = zone.id;
             appState.selectedEdge = { zoneId:zone.id, a:idx, b:(idx+1)%zone.pts.length };
@@ -10794,6 +10413,7 @@ function getSheetBranchOpenMap(){
       const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.4', opacity:selected ? '.99' : '.98', style:'cursor:pointer' });
       const accent = svgEl('line',{ x1:slice.a.x, y1:slice.a.y, x2:slice.b.x, y2:slice.b.y, stroke:innerStroke, 'stroke-width':'1.8', 'stroke-linecap':'round', opacity:'.92', style:'pointer-events:none' });
       const selectWall = evt => {
+        if(isRackDistributionScreen()) return;
         evt.stopPropagation();
         appState.selectedWallId = wall.id;
         appState.selectedOpeningId = '';
@@ -11056,7 +10676,7 @@ function getSheetBranchOpenMap(){
       });
       const hit = svgEl('rect',{
         x:-(bboxW/2)-14,y:-(bboxH/2)-14,width:bboxW+28,height:bboxH+28,rx:'14',
-        class:'ortho-rack-hit',style:'cursor:move'
+        class:'ortho-rack-hit',style:isRackDistributionScreen()?'cursor:move':'cursor:default'
       });
       const geomW = Math.max(8, baseW);
       const geomH = Math.max(8, baseH);
@@ -11070,6 +10690,7 @@ function getSheetBranchOpenMap(){
       if(isRackSearchHit(r.id)) g.classList.add('search-hit');
       if(appState.primaryHighlightedRackId===r.id) g.classList.add('search-primary');
       g.classList.add('ortho-rack-group');
+      if(isStructureLayoutScreen()) g.classList.add('workspace-locked');
       const body = svgEl('rect',{
         x:-(visualW/2),y:-(visualH/2),width:visualW,height:visualH,rx:String(cornerRadius),
         class:'ortho-rack-body'
@@ -11117,7 +10738,7 @@ function getSheetBranchOpenMap(){
       }
       g.append(hit, body, outline, frontLine, frontArrow, t);
       g.addEventListener('pointerdown', e => startRackDrag(e, r.id));
-      g.addEventListener('dblclick', e => { e.stopPropagation(); openStackMenuForRack(r.id, e); renderLayoutStackMenu(); renderLayoutInspector(); });
+      if(isRackDistributionScreen()) g.addEventListener('dblclick', e => { e.stopPropagation(); openStackMenuForRack(r.id, e); renderLayoutStackMenu(); renderLayoutInspector(); });
       rackLayer.appendChild(g);
     });
 
@@ -11369,7 +10990,7 @@ function getSheetBranchOpenMap(){
   }
 
   function bindLayoutToolbar(){
-    $$('.seg-btn[data-emode]').forEach(btn => btn.onclick = () => { markLayoutManualInteraction(); appState.editor.mode = btn.dataset.emode; renderLayoutEditor(); });
+    $$('.seg-btn[data-emode]').forEach(btn => btn.onclick = () => { const nextMode = btn.dataset.emode; if(nextMode === 'rack' && !isRackDistributionScreen()) return; if(['zone','wall','opening'].includes(nextMode) && isRackDistributionScreen()) return; markLayoutManualInteraction(); appState.editor.mode = nextMode; renderLayoutEditor(); });
     $$('[data-layout-tag-action]').forEach(btn => btn.onclick = () => {
       markLayoutManualInteraction();
       const action = btn.getAttribute('data-layout-tag-action');
@@ -11386,35 +11007,38 @@ function getSheetBranchOpenMap(){
       else if(action === 'toggle-rack-props') appState.editor.rackPropsOpen = !appState.editor.rackPropsOpen;
       else if(action === 'toggle-right-props') appState.editor.rightPanelOpen = appState.editor.rightPanelOpen === false ? true : false;
       else if(action === 'noop-layers'){ appState.editor.rightPanelOpen = true; }
-      else if(action === 'history-undo-layout'){ undoHistory('layout'); return; }
-      else if(action === 'history-redo-layout'){ redoHistory('layout'); return; }
-      else if(action === 'history-undo-racks'){ undoHistory('racks'); return; }
-      else if(action === 'history-redo-racks'){ redoHistory('racks'); return; }
+      else if(action.startsWith('history-undo-')){ undoHistory(action.slice('history-undo-'.length)); return; }
+      else if(action.startsWith('history-redo-')){ redoHistory(action.slice('history-redo-'.length)); return; }
       renderLayoutEditor();
     });
     if($('#layoutBranchSelect')) $('#layoutBranchSelect').onchange = e => { markLayoutManualInteraction(); setLayoutBranch(+e.target.value || 0); renderLayoutEditor(); };
-    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { markLayoutManualInteraction(); appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
-    if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { markLayoutManualInteraction(); appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnZonePlus')) $('#btnZonePlus').onclick = () => { if(!isStructureLayoutScreen()) return; markLayoutManualInteraction(); appState.editor.mode = 'zone'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
+    if($('#btnOpeningPlus')) $('#btnOpeningPlus').onclick = () => { if(!isStructureLayoutScreen()) return; markLayoutManualInteraction(); appState.editor.mode = 'opening'; appState.editor.pendingWallPoint = null; renderLayoutEditor(); };
     if($('#btnVertexPlus')) $('#btnVertexPlus').onclick = () => { markLayoutManualInteraction(); insertVertexOnSelectedEdge(); };
-    if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => { markLayoutManualInteraction(); duplicateSelectedRack(); };
-    if($('#btnDuplicateZone')) $('#btnDuplicateZone').onclick = () => { markLayoutManualInteraction(); duplicateSelectedZone(); };
+    if($('#btnDuplicateRack')) $('#btnDuplicateRack').onclick = () => { if(!isRackDistributionScreen()) return; markLayoutManualInteraction(); duplicateSelectedRack(); };
+    if($('#btnDuplicateRackRail')) $('#btnDuplicateRackRail').onclick = () => { if(!isRackDistributionScreen()) return; markLayoutManualInteraction(); duplicateSelectedRack(); };
+    if($('#btnDuplicateZone')) $('#btnDuplicateZone').onclick = () => { if(!isStructureLayoutScreen()) return; markLayoutManualInteraction(); duplicateSelectedZone(); };
     if($('#btnDeleteSelected')) $('#btnDeleteSelected').onclick = () => {
       markLayoutManualInteraction();
       const selectedIds = getSelectedRackIds();
       const rid = appState.selectedRackLayoutId; const zid = appState.selectedZoneId;
       const oid = appState.selectedOpeningId; const wid = appState.selectedWallId;
-      if(selectedIds.length){
-        appState.layout.racks = appState.layout.racks.filter(r => !selectedIds.includes(r.id));
-        clearRackSelection();
+      if(isRackDistributionScreen()){
+        if(selectedIds.length){ appState.layout.racks = appState.layout.racks.filter(r => !selectedIds.includes(r.id)); clearRackSelection(); }
+        else if(rid){ appState.layout.racks = appState.layout.racks.filter(r => r.id !== rid); clearRackSelection(); }
+      } else {
+        if(oid){ appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== oid); appState.selectedOpeningId = ''; }
+        else if(wid){ appState.layout.walls = (appState.layout.walls || []).filter(w => w.id !== wid); appState.layout.openings = (appState.layout.openings || []).filter(o => o.wallId !== wid); appState.selectedWallId = ''; appState.selectedOpeningId = ''; }
+        else if(zid && appState.layout.zones.length > 1){
+          const linkedRacks = (appState.layout.racks || []).filter(r => r.zoneId === zid);
+          if(linkedRacks.length){ showToast(`La zona ${zid} tiene ${linkedRacks.length} rack(s). Muévelos o elimínalos primero desde Distribución de racks.`, 'warning', 3600); return; }
+          appState.layout.zones = appState.layout.zones.filter(z => z.id !== zid); appState.selectedZoneId = appState.layout.zones[0]?.id || ''; normalizeZoneAndRackIds();
+        }
       }
-      else if(oid){ appState.layout.openings = (appState.layout.openings || []).filter(o => o.id !== oid); appState.selectedOpeningId = ''; }
-      else if(wid){ appState.layout.walls = (appState.layout.walls || []).filter(w => w.id !== wid); appState.layout.openings = (appState.layout.openings || []).filter(o => o.wallId !== wid); appState.selectedWallId = ''; appState.selectedOpeningId = ''; }
-      else if(rid){ appState.layout.racks = appState.layout.racks.filter(r => r.id !== rid); clearRackSelection(); }
-      else if(zid && appState.layout.zones.length > 1){ appState.layout.zones = appState.layout.zones.filter(z => z.id !== zid); appState.layout.racks = appState.layout.racks.filter(r => r.zoneId !== zid); appState.selectedZoneId = appState.layout.zones[0]?.id || ''; normalizeZoneAndRackIds(); }
       cleanupDetachedOpenings();
       persistActiveLayout(); renderLayoutEditor();
     };
-    const runSaveLayout = async () => { persistActiveLayout(); if(await saveRemoteAppState('layout')) alert('Layout guardado.'); };
+    const runSaveLayout = async () => { persistActiveLayout(); const label = isRackDistributionScreen() ? 'distribución' : 'estructura'; if(await saveRemoteAppState(label)) showToast(`${label.charAt(0).toUpperCase()+label.slice(1)} guardada.`, 'success'); };
     if($('#btnSaveLayoutRemote')) $('#btnSaveLayoutRemote').onclick = runSaveLayout;
     if($('#btnSaveLayoutTop')) $('#btnSaveLayoutTop').onclick = runSaveLayout;
     if($('#btnSaveLayoutVisible')) $('#btnSaveLayoutVisible').onclick = runSaveLayout;
@@ -11509,6 +11133,8 @@ function getSheetBranchOpenMap(){
 
   function handleLayoutCanvasDown(e){
     const svg = e.currentTarget; const raw = svgPoint(e, svg); const p = { x:snapGrid(raw.x), y:snapGrid(raw.y) };
+    if(isRackDistributionScreen() && ['zone','wall','opening'].includes(appState.editor.mode)) appState.editor.mode = 'select';
+    if(isStructureLayoutScreen() && appState.editor.mode === 'rack') appState.editor.mode = 'select';
     const target = e.target;
     const isPanSurface = target === svg || (target && target.classList && target.classList.contains('layout-pan-surface'));
     if(appState.editor.dragging?.type === 'pan-layout') return;
@@ -11524,7 +11150,7 @@ function getSheetBranchOpenMap(){
       renderLayoutSection();
       return;
     }
-    if(appState.editor.mode === 'wall'){
+    if(appState.editor.mode === 'wall' && isStructureLayoutScreen()){
       if(!appState.editor.pendingWallPoint){
         appState.editor.pendingWallPoint = { x:p.x, y:p.y };
         appState.selectedWallId = '';
@@ -11539,7 +11165,7 @@ function getSheetBranchOpenMap(){
       renderLayoutEditor();
       return;
     }
-    if(appState.editor.mode === 'opening'){
+    if(appState.editor.mode === 'opening' && isStructureLayoutScreen()){
       const created = createOpeningAtPoint(p, 'door');
       if(created){
         appState.editor.mode = 'select';
@@ -11548,13 +11174,13 @@ function getSheetBranchOpenMap(){
       }
       return;
     }
-    if(appState.editor.mode === 'zone'){
+    if(appState.editor.mode === 'zone' && isStructureLayoutScreen()){
       const id = nextZoneId();
       appState.layout.zones.push({ id, name:'Zona ' + id, color:getNextZoneColor(getBranchColor(getActiveLayoutBranchIndex())), wallThickness:14, pts:[{x:p.x-60,y:p.y-40},{x:p.x+60,y:p.y-40},{x:p.x+60,y:p.y+40},{x:p.x-60,y:p.y+40}] });
       normalizeZoneAndRackIds(); persistActiveLayout();
       appState.selectedZoneId = id; appState.editor.mode = 'select'; renderLayoutEditor(); return;
     }
-    if(appState.editor.mode === 'rack'){
+    if(appState.editor.mode === 'rack' && isRackDistributionScreen()){
       const zone = appState.layout.zones.find(z => pointInPoly(p, z.pts)) || findZoneById(appState.selectedZoneId) || appState.layout.zones[0];
       const id = nextRackId(zone.id);
       const fp = getRackFootprint(appState.selectedModelId, 0);
@@ -11605,7 +11231,7 @@ function getSheetBranchOpenMap(){
   }
 
   function startZoneDrag(e, zoneId){
-    if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
+    if(!isStructureLayoutScreen() || appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
     e.stopPropagation();
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
     appState.selectedZoneId = zoneId; appState.selectedRackLayoutId = ''; appState.selectedWallId = ''; appState.selectedOpeningId = '';
@@ -11613,11 +11239,11 @@ function getSheetBranchOpenMap(){
     const zone = findZoneById(zoneId);
     if(!zone) return;
     const zoneIndex = (appState.layout?.zones || []).findIndex(z => z === zone);
-    appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts), racks: clone(appState.layout.racks.filter(r => r.zoneId === zoneId)) };
+    appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts) };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startVertexDrag(e, zoneId, idx){
-    if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
+    if(!isStructureLayoutScreen() || appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
     e.stopPropagation();
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
     const zone = findZoneById(zoneId);
@@ -11629,7 +11255,7 @@ function getSheetBranchOpenMap(){
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
   function startEdgeDrag(e, zoneId, a, b){
-    if(appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
+    if(!isStructureLayoutScreen() || appState.editor.mode !== 'select' || appState.editor.zonesLocked) return;
     e.stopPropagation();
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
     const zone = findZoneById(zoneId);
@@ -11654,7 +11280,7 @@ function getSheetBranchOpenMap(){
   }
 
   function startRackDrag(e, rackId){
-    if(appState.editor.mode !== 'select') return;
+    if(!isRackDistributionScreen() || appState.editor.mode !== 'select') return;
     e.stopPropagation();
     const rack = findRackById(rackId);
     if(!rack) return;
@@ -11706,12 +11332,7 @@ function getSheetBranchOpenMap(){
       const zone = dragZoneFromState(d);
       if(!zone) return;
       zone.pts = d.original.map(pt => ({ x: snapGrid(pt.x + dx), y: snapGrid(pt.y + dy) }));
-      const racks = appState.layout.racks.filter(r => r.zoneId === zone.id);
-      racks.forEach((r, i) => {
-        const base = d.racks[i] || { x:r.x, y:r.y };
-        r.x = snapGrid(base.x + dx);
-        r.y = snapGrid(base.y + dy);
-      });
+      // v110: mover la zona no arrastra los racks.
       clearRackSnapPreview();
       renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'vertex'){
@@ -11774,7 +11395,7 @@ function getSheetBranchOpenMap(){
     if(appState.editor?.dragSelect?.active){
       commitDragSelection();
       persistActiveLayout();
-      if(appState.screen==='layout') renderLayoutEditor();
+      if(isLayoutWorkspaceScreen()) renderLayoutEditor();
       return;
     }
     const d = appState.editor.dragging;
@@ -11808,7 +11429,7 @@ function getSheetBranchOpenMap(){
     clearRackSnapPreview();
     appState.editor.dragging = null;
     persistActiveLayout();
-    if(appState.screen==='layout') renderLayoutEditor();
+    if(isLayoutWorkspaceScreen()) renderLayoutEditor();
   }
 
   function renderLayoutInspector(){
@@ -13295,11 +12916,10 @@ function getSheetBranchOpenMap(){
   function renderCurrentScreen(){
     if(appState.screen === 'admin') return renderAdminScreen();
     if(appState.screen === 'viewer') return renderMapView();
-    if(appState.screen === 'dashboard') return renderDashboard();
     if(appState.screen === 'products') { appState.screen = 'viewer'; setActiveMenu && setActiveMenu('viewer'); return renderMapView(); }
     setUnifiedMapLayout(false);
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
-    else if(appState.screen === 'layout') renderLayoutEditor();
+    else if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     else if(appState.screen === 'racks') renderRackModels();
   }
 
@@ -13792,172 +13412,9 @@ function getSheetBranchOpenMap(){
   }
 
 
-  // WMS v99 - Diagnóstico en tiempo real
-  function ensureRuntimeDiagnostics(){
-    if(window.__wmsDiagnosticsInstalled) return;
-    window.__wmsDiagnosticsInstalled = true;
-    const maxLogs = 120;
-    const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v105',
-      logs: [],
-      startedAt: new Date().toISOString()
-    };
-    const push = (type, message, data={}) => {
-      try{
-        const entry = {
-          time: new Date().toLocaleTimeString('es-PE'),
-          type,
-          message: String(message || ''),
-          data
-        };
-        diag.logs.unshift(entry);
-        if(diag.logs.length > maxLogs) diag.logs.length = maxLogs;
-        const badge = document.getElementById('wmsDiagBadge');
-        if(badge) badge.textContent = String(diag.logs.length);
-      }catch(_err){}
-    };
-    window.__wmsDiagPush = push;
-    const originalConsoleError = console.error.bind(console);
-    console.error = (...args) => {
-      push('console.error', args.map(a => typeof a === 'string' ? a : (a?.message || JSON.stringify(a, null, 0))).join(' '));
-      originalConsoleError(...args);
-    };
-    window.addEventListener('error', evt => {
-      push('error', evt.message || 'Error JS', {
-        file: evt.filename || '',
-        line: evt.lineno || 0,
-        col: evt.colno || 0
-      });
-    });
-    window.addEventListener('unhandledrejection', evt => {
-      const reason = evt.reason || {};
-      push('promise', reason.message || String(reason || 'Promesa rechazada'), { stack: reason.stack || '' });
-    });
-    const originalFetch = window.fetch ? window.fetch.bind(window) : null;
-    if(originalFetch){
-      window.fetch = async (...args) => {
-        const started = Date.now();
-        try{
-          const res = await originalFetch(...args);
-          if(!res.ok) push('fetch', `${res.status} ${res.statusText} · ${args[0]}`, { ms: Date.now() - started });
-          return res;
-        }catch(err){
-          push('fetch', `Fallo fetch · ${args[0]} · ${err.message || err}`, { ms: Date.now() - started });
-          throw err;
-        }
-      };
-    }
-    document.addEventListener('click', evt => {
-      const target = evt.target?.closest?.('button, [data-screen], [data-layout-tag-action], .menu-item');
-      if(!target) return;
-      const label = String(target.textContent || target.id || target.dataset?.screen || target.dataset?.layoutTagAction || 'click').replace(/\s+/g,' ').trim().slice(0,80);
-      push('acción', label || 'click');
-    }, { capture:true });
-
-    window.__wmsDiagSummary = () => {
-      const layout = appState?.layout || {};
-      return {
-        version: 'v105',
-        screen: appState?.screen || '',
-        branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
-        products: Array.isArray(appState?.products) ? appState.products.length : 0,
-        filtered: Array.isArray(appState?.filtered) ? appState.filtered.length : 0,
-        zones: Array.isArray(layout.zones) ? layout.zones.length : 0,
-        racks: Array.isArray(layout.racks) ? layout.racks.length : 0,
-        walls: Array.isArray(layout.walls) ? layout.walls.length : 0,
-        openings: Array.isArray(layout.openings) ? layout.openings.length : 0,
-        selectedOpeningId: appState?.selectedOpeningId || '',
-        selectedWallId: appState?.selectedWallId || '',
-        selectedRackLayoutId: appState?.selectedRackLayoutId || '',
-        viewBox: appState?.editor?.viewBox || null,
-        assets: {
-          js: [...document.scripts].map(s => s.src).filter(Boolean).find(src => src.includes('app-main')) || '',
-          css: [...document.styleSheets].map(s => s.href).filter(Boolean).find(src => src.includes('app.css')) || ''
-        }
-      };
-    };
-    window.__wmsDiagValidate = () => {
-      const warnings = [];
-      const ids = [...document.querySelectorAll('[id]')].reduce((acc, el) => {
-        acc[el.id] = (acc[el.id] || 0) + 1;
-        return acc;
-      }, {});
-      Object.keys(ids).filter(id => ids[id] > 1).forEach(id => warnings.push(`ID duplicado en DOM: ${id} × ${ids[id]}`));
-      ['appRoot','contentWrap','detailWrap','layoutSvg'].forEach(id => {
-        if(id === 'layoutSvg' && appState?.screen !== 'layout') return;
-        if(!document.getElementById(id)) warnings.push(`Elemento no encontrado: #${id}`);
-      });
-      if(appState?.screen === 'layout'){
-        const layout = appState.layout || {};
-        (layout.openings || []).forEach(o => {
-          if(!(layout.walls || []).some(w => w.id === o.wallId)) warnings.push(`Vano ${o.id} apunta a pared inexistente ${o.wallId}`);
-        });
-        (layout.racks || []).forEach(r => {
-          if(!(layout.zones || []).some(z => z.id === r.zoneId)) warnings.push(`Rack ${r.id} apunta a zona inexistente ${r.zoneId}`);
-        });
-        if(typeof getLayoutQualityWarnings === 'function') warnings.push(...getLayoutQualityWarnings());
-      }
-      return [...new Set(warnings)].slice(0, 120);
-    };
-  }
-
-  function ensureDiagnosticsUi(){
-    ensureRuntimeDiagnostics();
-    if(document.getElementById('wmsDiagBtn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'wmsDiagBtn';
-    btn.type = 'button';
-    btn.innerHTML = 'Diagnóstico <span id="wmsDiagBadge">0</span>';
-    btn.setAttribute('aria-label','Abrir diagnóstico de la app');
-    btn.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9999;border:1px solid rgba(125,255,175,.45);background:rgba(5,18,28,.96);color:#eafff3;border-radius:999px;padding:10px 14px;font-weight:900;box-shadow:0 16px 38px rgba(0,0,0,.32);cursor:pointer';
-    document.body.appendChild(btn);
-    const modal = document.createElement('div');
-    modal.id = 'wmsDiagModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;background:rgba(1,8,16,.68);backdrop-filter:blur(6px)';
-    modal.innerHTML = `
-      <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
-        <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v105</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
-          <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
-        </div>
-        <div style="padding:16px 18px;overflow:auto">
-          <div id="wmsDiagSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-            <button id="wmsDiagRefresh" type="button" class="seg-btn">Actualizar</button>
-            <button id="wmsDiagClear" type="button" class="seg-btn">Limpiar errores</button>
-            <button id="wmsDiagCopy" type="button" class="seg-btn">Copiar reporte</button>
-          </div>
-          <div id="wmsDiagWarnings" style="margin-bottom:14px"></div>
-          <pre id="wmsDiagLogs" style="white-space:pre-wrap;background:#020914;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;min-height:160px;max-height:340px;overflow:auto;color:#dff5ff"></pre>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    const render = () => {
-      const summary = window.__wmsDiagSummary ? window.__wmsDiagSummary() : {};
-      const warnings = window.__wmsDiagValidate ? window.__wmsDiagValidate() : [];
-      const logs = window.__wmsDiagnostics?.logs || [];
-      document.getElementById('wmsDiagSummary').innerHTML = Object.entries(summary).map(([k,v]) => `<div style="background:#0b1d2e;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px"><small style="display:block;color:#8ba4bf">${escapeHtml(k)}</small><b>${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}</b></div>`).join('');
-      document.getElementById('wmsDiagWarnings').innerHTML = warnings.length ? `<div style="border:1px solid rgba(255,184,77,.5);background:rgba(255,184,77,.08);border-radius:14px;padding:10px"><b>Advertencias</b><ul>${warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` : `<div style="border:1px solid rgba(125,255,175,.28);background:rgba(125,255,175,.07);border-radius:14px;padding:10px">Sin advertencias detectadas en la vista actual.</div>`;
-      document.getElementById('wmsDiagLogs').textContent = logs.length ? logs.map(l => `[${l.time}] ${l.type}: ${l.message}`).join('\n') : 'Sin errores capturados.';
-      const badge = document.getElementById('wmsDiagBadge'); if(badge) badge.textContent = String(logs.length);
-    };
-    btn.onclick = () => { render(); modal.style.display = 'flex'; };
-    modal.querySelector('#wmsDiagClose').onclick = () => { modal.style.display = 'none'; };
-    modal.querySelector('#wmsDiagRefresh').onclick = render;
-    modal.querySelector('#wmsDiagClear').onclick = () => { if(window.__wmsDiagnostics) window.__wmsDiagnostics.logs = []; render(); };
-    modal.querySelector('#wmsDiagCopy').onclick = async () => {
-      const report = {
-        summary: window.__wmsDiagSummary ? window.__wmsDiagSummary() : {},
-        warnings: window.__wmsDiagValidate ? window.__wmsDiagValidate() : [],
-        logs: window.__wmsDiagnostics?.logs || []
-      };
-      try{ await navigator.clipboard.writeText(JSON.stringify(report, null, 2)); showToast?.('Reporte copiado.', 'success'); }catch(_err){ alert(JSON.stringify(report, null, 2)); }
-    };
-  }
 
 
   ensureRestockUi();
-  ensureDiagnosticsUi();
 
 
   toggleSidebar.addEventListener('click', () => {
@@ -13983,7 +13440,6 @@ function getSheetBranchOpenMap(){
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
   if($('#btnOpenCategoryPinterest')) { $('#btnOpenCategoryPinterest').addEventListener('click', openCategoryPinterestModal); updateCategoryFilterButton(); }
-  if($('#btnOpenDataQuality')) { $('#btnOpenDataQuality').addEventListener('click', openDataQualityModal); }
   if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.add('active'); $('#toggleGroupProducts').textContent = 'Productos'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = true; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);
@@ -14079,7 +13535,7 @@ console.info('*** WMS v109 3D PERFORMANCE ACTIVE ***');
   document.addEventListener('keydown', async (e) => {
     if((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 's'){
       e.preventDefault();
-      if(appState.screen === 'layout'){
+      if(isLayoutWorkspaceScreen()){
         persistActiveLayout();
         await saveRemoteAppState('layout');
       }

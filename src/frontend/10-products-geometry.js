@@ -493,20 +493,20 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
 
   function normalizeAppScreenName(screen){
     const value = String(screen || '').trim();
-    const allowed = ['admin','sheet','layout','racks','dashboard','viewer'];
+    const allowed = ['admin','sheet','layout','distribution','racks','viewer'];
     if(value === 'card' || value === 'products') return 'sheet';
     return allowed.includes(value) ? value : 'viewer';
   }
   function getLastAppScreen(){
     try{
       const saved = normalizeAppScreenName(localStorage.getItem('wms_last_screen_v95') || '');
-      return ['admin','sheet','layout','racks','dashboard','viewer'].includes(saved) ? saved : 'admin';
+      return ['admin','sheet','layout','distribution','racks','viewer'].includes(saved) ? saved : 'admin';
     }catch(_err){ return 'admin'; }
   }
   function persistLastAppScreen(screen){
     try{
       const normalized = normalizeAppScreenName(screen);
-      if(['admin','sheet','layout','racks','dashboard','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
+      if(['admin','sheet','layout','distribution','racks','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
     }catch(_err){}
   }
 
@@ -567,7 +567,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks';
-      const isLayoutScreen = screen === 'layout';
+      const isLayoutScreen = screen === 'layout' || screen === 'distribution';
       const isCardDesigner = false;
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels || isLayoutScreen);
@@ -591,9 +591,8 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     try{
       if(screen === 'admin') renderAdminScreen();
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
-      else if(screen === 'layout') renderLayoutEditor();
+      else if(screen === 'layout' || screen === 'distribution') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
-      else if(screen === 'dashboard') renderDashboard();
       else renderMapView();
     }catch(err){
       console.error('Error al cambiar de pantalla:', err);
@@ -613,8 +612,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       const label = escapeHtml(String(item.label || ''));
       const cls = (item.active === false ? 'tag inactive' : 'tag active') + (item.extraClass ? ` ${escapeHtml(String(item.extraClass))}` : '');
       if(item.action){
-        const historyType = item.action === 'history-undo-layout' || item.action === 'history-redo-layout' ? 'layout' : (item.action === 'history-undo-racks' || item.action === 'history-redo-racks' ? 'racks' : '');
-        const historyAttr = item.action.startsWith('history-undo') ? ` data-history-undo="${historyType}"` : (item.action.startsWith('history-redo') ? ` data-history-redo="${historyType}"` : '');
+        const historyMatch = String(item.action).match(/^history-(undo|redo)-(.+)$/);
+        const historyType = historyMatch ? historyMatch[2] : '';
+        const historyAttr = historyMatch ? ` data-history-${historyMatch[1]}="${historyType}"` : '';
         return `<button type="button" class="${cls}" data-layout-tag-action="${escapeHtml(String(item.action))}"${historyAttr}>${label}</button>`;
       }
       return `<span class="${cls}">${label}</span>`;
@@ -1210,12 +1210,12 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     syncActiveProductCardHint();
     if(opts.switchScreen !== false){
       setScreen('viewer');
-    } else if(['products','viewer','dashboard'].includes(appState.screen)) {
+    } else if(['products','viewer'].includes(appState.screen)) {
       renderMapView();
     }
     setTimeout(() => {
       if(appState.screen === 'viewer') renderMapView();
-      else if(appState.screen === 'dashboard') renderDashboard();
+      else if(isLayoutWorkspaceScreen()) renderLayoutEditor();
       renderProducts(appState.filtered);
     }, 10);
     return true;
@@ -1657,9 +1657,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       updateActiveProductCard(appState.selectedProduct || null);
       syncActiveProductCardHint();
       renderProducts(appState.filtered);
-      if(appState.screen === 'dashboard') renderDashboard();
+      if(isLayoutWorkspaceScreen()) renderLayoutEditor();
       else if(['products','viewer'].includes(appState.screen)) renderMapView();
-      else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+      else if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
       return;
     }
     const tokens = q.split(/\s+/).map(t => t.trim()).filter(Boolean);
@@ -1714,9 +1714,9 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     else { updateActiveProductCard(null); clearSearchHighlights(); }
     syncActiveProductCardHint();
     renderProducts(appState.filtered);
-    if(appState.screen === 'dashboard') renderDashboard();
+    if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     else if(['products','viewer'].includes(appState.screen)) renderMapView();
-    else if(appState.screen === 'layout'){ renderLayoutEditor(); renderLayoutInspector(); }
+    else if(isLayoutWorkspaceScreen()){ renderLayoutEditor(); renderLayoutInspector(); }
   }
 
   function selectProduct(p){
@@ -1728,12 +1728,10 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     applyProductSelectionEffects(p);
     updateActiveProductCard(p);
     syncActiveProductCardHint();
-    if(appState.screen === 'dashboard'){
-      renderDashboard();
-    } else if(['products','reports','viewer'].includes(appState.screen)){
+    if(['products','reports','viewer'].includes(appState.screen)){
       renderMapView();
       renderRackDetail(p.rack || p.rackStore, p);
-    } else if (appState.screen === 'layout') {
+    } else if (isLayoutWorkspaceScreen()) {
       renderLayoutEditor();
       renderLayoutInspector();
     } else if (appState.screen === 'racks') {
@@ -2052,16 +2050,7 @@ const DEFAULT_GRID_SIZE = 2;
     if(!delta) return;
     const center = polygonCentroid(zone.pts);
     zone.pts = zone.pts.map(pt => rotatePointAround(pt, center, delta));
-    (appState.layout.racks || []).filter(r => r.zoneId === zone.id).forEach(rack => {
-      const oldCx = (Number(rack.x)||0) + (Number(rack.w)||0) / 2;
-      const oldCy = (Number(rack.y)||0) + (Number(rack.h)||0) / 2;
-      const nextCenter = rotatePointAround({ x:oldCx, y:oldCy }, center, delta);
-      rack.rot = normalizeAngle((Number(rack.rot)||0) + delta);
-      syncRackFootprint(rack, false);
-      rack.x = nextCenter.x - (Number(rack.w)||0) / 2;
-      rack.y = nextCenter.y - (Number(rack.h)||0) / 2;
-      rack.zoneId = zone.id;
-    });
+    // v110: la rotación de estructura no rota ni reposiciona racks.
     appState.selectedZoneId = zone.id;
     clearRackSnapPreview();
     if(persist) persistActiveLayout();

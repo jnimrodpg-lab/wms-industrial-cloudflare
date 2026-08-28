@@ -378,11 +378,10 @@
   function renderCurrentScreen(){
     if(appState.screen === 'admin') return renderAdminScreen();
     if(appState.screen === 'viewer') return renderMapView();
-    if(appState.screen === 'dashboard') return renderDashboard();
     if(appState.screen === 'products') { appState.screen = 'viewer'; setActiveMenu && setActiveMenu('viewer'); return renderMapView(); }
     setUnifiedMapLayout(false);
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
-    else if(appState.screen === 'layout') renderLayoutEditor();
+    else if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     else if(appState.screen === 'racks') renderRackModels();
   }
 
@@ -875,172 +874,9 @@
   }
 
 
-  // WMS v99 - Diagnóstico en tiempo real
-  function ensureRuntimeDiagnostics(){
-    if(window.__wmsDiagnosticsInstalled) return;
-    window.__wmsDiagnosticsInstalled = true;
-    const maxLogs = 120;
-    const diag = window.__wmsDiagnostics = window.__wmsDiagnostics || {
-      version: 'v105',
-      logs: [],
-      startedAt: new Date().toISOString()
-    };
-    const push = (type, message, data={}) => {
-      try{
-        const entry = {
-          time: new Date().toLocaleTimeString('es-PE'),
-          type,
-          message: String(message || ''),
-          data
-        };
-        diag.logs.unshift(entry);
-        if(diag.logs.length > maxLogs) diag.logs.length = maxLogs;
-        const badge = document.getElementById('wmsDiagBadge');
-        if(badge) badge.textContent = String(diag.logs.length);
-      }catch(_err){}
-    };
-    window.__wmsDiagPush = push;
-    const originalConsoleError = console.error.bind(console);
-    console.error = (...args) => {
-      push('console.error', args.map(a => typeof a === 'string' ? a : (a?.message || JSON.stringify(a, null, 0))).join(' '));
-      originalConsoleError(...args);
-    };
-    window.addEventListener('error', evt => {
-      push('error', evt.message || 'Error JS', {
-        file: evt.filename || '',
-        line: evt.lineno || 0,
-        col: evt.colno || 0
-      });
-    });
-    window.addEventListener('unhandledrejection', evt => {
-      const reason = evt.reason || {};
-      push('promise', reason.message || String(reason || 'Promesa rechazada'), { stack: reason.stack || '' });
-    });
-    const originalFetch = window.fetch ? window.fetch.bind(window) : null;
-    if(originalFetch){
-      window.fetch = async (...args) => {
-        const started = Date.now();
-        try{
-          const res = await originalFetch(...args);
-          if(!res.ok) push('fetch', `${res.status} ${res.statusText} · ${args[0]}`, { ms: Date.now() - started });
-          return res;
-        }catch(err){
-          push('fetch', `Fallo fetch · ${args[0]} · ${err.message || err}`, { ms: Date.now() - started });
-          throw err;
-        }
-      };
-    }
-    document.addEventListener('click', evt => {
-      const target = evt.target?.closest?.('button, [data-screen], [data-layout-tag-action], .menu-item');
-      if(!target) return;
-      const label = String(target.textContent || target.id || target.dataset?.screen || target.dataset?.layoutTagAction || 'click').replace(/\s+/g,' ').trim().slice(0,80);
-      push('acción', label || 'click');
-    }, { capture:true });
-
-    window.__wmsDiagSummary = () => {
-      const layout = appState?.layout || {};
-      return {
-        version: 'v105',
-        screen: appState?.screen || '',
-        branch: typeof getActiveLayoutBranchIndex === 'function' ? getActiveLayoutBranchIndex() : appState?.activeLayoutBranchIndex,
-        products: Array.isArray(appState?.products) ? appState.products.length : 0,
-        filtered: Array.isArray(appState?.filtered) ? appState.filtered.length : 0,
-        zones: Array.isArray(layout.zones) ? layout.zones.length : 0,
-        racks: Array.isArray(layout.racks) ? layout.racks.length : 0,
-        walls: Array.isArray(layout.walls) ? layout.walls.length : 0,
-        openings: Array.isArray(layout.openings) ? layout.openings.length : 0,
-        selectedOpeningId: appState?.selectedOpeningId || '',
-        selectedWallId: appState?.selectedWallId || '',
-        selectedRackLayoutId: appState?.selectedRackLayoutId || '',
-        viewBox: appState?.editor?.viewBox || null,
-        assets: {
-          js: [...document.scripts].map(s => s.src).filter(Boolean).find(src => src.includes('app-main')) || '',
-          css: [...document.styleSheets].map(s => s.href).filter(Boolean).find(src => src.includes('app.css')) || ''
-        }
-      };
-    };
-    window.__wmsDiagValidate = () => {
-      const warnings = [];
-      const ids = [...document.querySelectorAll('[id]')].reduce((acc, el) => {
-        acc[el.id] = (acc[el.id] || 0) + 1;
-        return acc;
-      }, {});
-      Object.keys(ids).filter(id => ids[id] > 1).forEach(id => warnings.push(`ID duplicado en DOM: ${id} × ${ids[id]}`));
-      ['appRoot','contentWrap','detailWrap','layoutSvg'].forEach(id => {
-        if(id === 'layoutSvg' && appState?.screen !== 'layout') return;
-        if(!document.getElementById(id)) warnings.push(`Elemento no encontrado: #${id}`);
-      });
-      if(appState?.screen === 'layout'){
-        const layout = appState.layout || {};
-        (layout.openings || []).forEach(o => {
-          if(!(layout.walls || []).some(w => w.id === o.wallId)) warnings.push(`Vano ${o.id} apunta a pared inexistente ${o.wallId}`);
-        });
-        (layout.racks || []).forEach(r => {
-          if(!(layout.zones || []).some(z => z.id === r.zoneId)) warnings.push(`Rack ${r.id} apunta a zona inexistente ${r.zoneId}`);
-        });
-        if(typeof getLayoutQualityWarnings === 'function') warnings.push(...getLayoutQualityWarnings());
-      }
-      return [...new Set(warnings)].slice(0, 120);
-    };
-  }
-
-  function ensureDiagnosticsUi(){
-    ensureRuntimeDiagnostics();
-    if(document.getElementById('wmsDiagBtn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'wmsDiagBtn';
-    btn.type = 'button';
-    btn.innerHTML = 'Diagnóstico <span id="wmsDiagBadge">0</span>';
-    btn.setAttribute('aria-label','Abrir diagnóstico de la app');
-    btn.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9999;border:1px solid rgba(125,255,175,.45);background:rgba(5,18,28,.96);color:#eafff3;border-radius:999px;padding:10px 14px;font-weight:900;box-shadow:0 16px 38px rgba(0,0,0,.32);cursor:pointer';
-    document.body.appendChild(btn);
-    const modal = document.createElement('div');
-    modal.id = 'wmsDiagModal';
-    modal.style.cssText = 'position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;background:rgba(1,8,16,.68);backdrop-filter:blur(6px)';
-    modal.innerHTML = `
-      <div style="width:min(980px,calc(100vw - 32px));max-height:86vh;overflow:hidden;border:1px solid rgba(125,255,175,.24);border-radius:22px;background:#071421;color:#eaf5ff;box-shadow:0 24px 80px rgba(0,0,0,.55);display:flex;flex-direction:column">
-        <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08)">
-          <div><b style="font-size:18px">Diagnóstico WMS v105</b><div style="font-size:12px;color:#9fb3ca">Errores, versión cargada y estado del layout</div></div>
-          <button id="wmsDiagClose" type="button" style="border:0;border-radius:12px;background:#14283d;color:#fff;padding:8px 12px;font-weight:900;cursor:pointer">Cerrar</button>
-        </div>
-        <div style="padding:16px 18px;overflow:auto">
-          <div id="wmsDiagSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-            <button id="wmsDiagRefresh" type="button" class="seg-btn">Actualizar</button>
-            <button id="wmsDiagClear" type="button" class="seg-btn">Limpiar errores</button>
-            <button id="wmsDiagCopy" type="button" class="seg-btn">Copiar reporte</button>
-          </div>
-          <div id="wmsDiagWarnings" style="margin-bottom:14px"></div>
-          <pre id="wmsDiagLogs" style="white-space:pre-wrap;background:#020914;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;min-height:160px;max-height:340px;overflow:auto;color:#dff5ff"></pre>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-    const render = () => {
-      const summary = window.__wmsDiagSummary ? window.__wmsDiagSummary() : {};
-      const warnings = window.__wmsDiagValidate ? window.__wmsDiagValidate() : [];
-      const logs = window.__wmsDiagnostics?.logs || [];
-      document.getElementById('wmsDiagSummary').innerHTML = Object.entries(summary).map(([k,v]) => `<div style="background:#0b1d2e;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px"><small style="display:block;color:#8ba4bf">${escapeHtml(k)}</small><b>${escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v))}</b></div>`).join('');
-      document.getElementById('wmsDiagWarnings').innerHTML = warnings.length ? `<div style="border:1px solid rgba(255,184,77,.5);background:rgba(255,184,77,.08);border-radius:14px;padding:10px"><b>Advertencias</b><ul>${warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` : `<div style="border:1px solid rgba(125,255,175,.28);background:rgba(125,255,175,.07);border-radius:14px;padding:10px">Sin advertencias detectadas en la vista actual.</div>`;
-      document.getElementById('wmsDiagLogs').textContent = logs.length ? logs.map(l => `[${l.time}] ${l.type}: ${l.message}`).join('\n') : 'Sin errores capturados.';
-      const badge = document.getElementById('wmsDiagBadge'); if(badge) badge.textContent = String(logs.length);
-    };
-    btn.onclick = () => { render(); modal.style.display = 'flex'; };
-    modal.querySelector('#wmsDiagClose').onclick = () => { modal.style.display = 'none'; };
-    modal.querySelector('#wmsDiagRefresh').onclick = render;
-    modal.querySelector('#wmsDiagClear').onclick = () => { if(window.__wmsDiagnostics) window.__wmsDiagnostics.logs = []; render(); };
-    modal.querySelector('#wmsDiagCopy').onclick = async () => {
-      const report = {
-        summary: window.__wmsDiagSummary ? window.__wmsDiagSummary() : {},
-        warnings: window.__wmsDiagValidate ? window.__wmsDiagValidate() : [],
-        logs: window.__wmsDiagnostics?.logs || []
-      };
-      try{ await navigator.clipboard.writeText(JSON.stringify(report, null, 2)); showToast?.('Reporte copiado.', 'success'); }catch(_err){ alert(JSON.stringify(report, null, 2)); }
-    };
-  }
 
 
   ensureRestockUi();
-  ensureDiagnosticsUi();
 
 
   toggleSidebar.addEventListener('click', () => {
@@ -1066,7 +902,6 @@
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
   if($('#btnOpenCategoryPinterest')) { $('#btnOpenCategoryPinterest').addEventListener('click', openCategoryPinterestModal); updateCategoryFilterButton(); }
-  if($('#btnOpenDataQuality')) { $('#btnOpenDataQuality').addEventListener('click', openDataQualityModal); }
   if($('#toggleGroupProducts')) { $('#toggleGroupProducts').classList.add('active'); $('#toggleGroupProducts').textContent = 'Productos'; $('#toggleGroupProducts').onclick = () => { appState.ui.productGroupMode = true; renderProducts(appState.filtered && appState.filtered.length ? appState.filtered : appState.products); }; }
   if(btnScanCode) btnScanCode.addEventListener('click', () => openScanner('qr'));
   btnCloseScanner.addEventListener('click', stopScanner);

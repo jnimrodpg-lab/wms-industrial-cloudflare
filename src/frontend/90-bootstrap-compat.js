@@ -87,7 +87,7 @@ console.info('*** WMS v109 3D PERFORMANCE ACTIVE ***');
   document.addEventListener('keydown', async (e) => {
     if((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 's'){
       e.preventDefault();
-      if(appState.screen === 'layout'){
+      if(isLayoutWorkspaceScreen()){
         persistActiveLayout();
         await saveRemoteAppState('layout');
       }

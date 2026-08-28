@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./assets/app.css?v=wms-v109-3d-performance" />
+  <link rel="stylesheet" href="./assets/app.css?v=wms-v110-layout-split" />
 </head>
 <body>
   <div class="app" id="appRoot">
@@ -26,9 +26,9 @@
           <div class="menu-items">
             <div class="menu-item" data-screen="admin" data-admin-only="1">🏢 <span>Empresa</span></div>
             <div class="menu-item active" data-screen="sheet" data-admin-only="1">🔗 <span>Vincular Sheet</span></div>
-            <div class="menu-item" data-screen="layout" data-admin-only="1">🗺 <span>Edición de Layout</span></div>
-            <div class="menu-item" data-screen="racks" data-admin-only="1">🧱 <span>Edición de Rack</span></div>
-            <div class="menu-item" data-screen="dashboard" data-admin-only="1">📊 <span>Salud / Dashboard</span></div>
+            <div class="menu-item" data-screen="layout" data-admin-only="1">🧭 <span>Plano / Estructura</span></div>
+            <div class="menu-item" data-screen="distribution" data-admin-only="1">▦ <span>Distribución de racks</span></div>
+            <div class="menu-item" data-screen="racks" data-admin-only="1">🧱 <span>Modelos de rack</span></div>
           </div>
         </div>
         <div class="menu-section">
@@ -73,7 +73,6 @@
               <input id="searchInput" placeholder="Buscar por SKU, nombre o código de barras..." />
               <button class="icon-btn" id="btnSearch" title="Buscar">⌕</button>
               <button class="category-filter-btn" id="btnOpenCategoryPinterest" type="button">Categorías</button>
-              <button class="category-filter-btn diagnostic-filter-btn" id="btnOpenDataQuality" type="button">Diagnóstico</button>
               <button class="action-btn primary" id="btnScanCode">Escanear QR / barras</button>
             </div>
           </div>
@@ -241,7 +240,7 @@ function escapeHtml(str){
       </div>
     </div>
   </div>
-<script src="./assets/app-main.runtimefix.js?v=wms-v109-3d-performance"></script>
+<script src="./assets/app-main.runtimefix.js?v=wms-v110-layout-split"></script>
 
 
   
