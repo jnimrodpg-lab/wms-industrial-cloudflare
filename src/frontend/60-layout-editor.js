@@ -1,4 +1,4 @@
-/* WMS_V113_ROOM_MOVE_SHARED_WALLS */
+/* WMS_V117_CAD_ZONES_RACKS_VALIDATION */
   function ensureLayoutEditorState(){
     if(!appState.editor || typeof appState.editor !== 'object') appState.editor = {};
     ensureLayoutDecorations();
@@ -24,6 +24,7 @@
     if(appState.editor.structureClipboard === undefined) appState.editor.structureClipboard = null;
     if(appState.editor.keyboardBoundV111 === undefined) appState.editor.keyboardBoundV111 = false;
     if(appState.editor.wallMergePreview === undefined) appState.editor.wallMergePreview = null;
+    if(!Array.isArray(appState.editor.selectedWallIds)) appState.editor.selectedWallIds = appState.selectedWallId ? [appState.selectedWallId] : [];
     if(appState.editor.roomMovePreview === undefined) appState.editor.roomMovePreview = null;
     // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
     if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
@@ -326,7 +327,7 @@
     layout.zones.forEach(zone => {
       if(!zone?.linkedRoomId) return;
       const room = roomMap.get(zone.linkedRoomId);
-      if(!room){ zone.roomLinkBroken = true; return; }
+      if(!room || room.obsolete){ zone.roomLinkBroken = true; return; }
       const pts = roomPointsRaw(room, layout);
       if(pts.length < 3){ zone.roomLinkBroken = true; return; }
       zone.pts = pts;
@@ -531,6 +532,7 @@
     if(!startNode || !endNode || startNode.id===endNode.id) return null;
     const wall=createWallSegment(startNode,endNode,{startNodeId:startNode.id,endNodeId:endNode.id});
     if(!wall) return null;
+    const v117Splits = v117ResolveWallIntersections();
     const chain=appState.editor.wallChainNodeIds || [];
     if(!chain.length) chain.push(startNode.id);
     chain.push(endNode.id);
@@ -538,8 +540,9 @@
     const closed=appState.editor.wallChainStartNodeId && endNode.id===appState.editor.wallChainStartNodeId && chain.length>=4;
     if(closed){
       const room=createRoomFromWallChain(chain);
+      v117RefreshRooms();
       appState.editor.pendingWallPoint=null; appState.editor.wallCursor=null; appState.editor.wallChainNodeIds=[]; appState.editor.wallChainStartNodeId=''; appState.editor.mode='select';
-      if(room) showToast(`Recinto cerrado: ${room.name}.`, 'success', 2200);
+      if(room || v117Splits) showToast(room ? `Recinto cerrado: ${room.name}.` : 'Intersecciones resueltas y recintos actualizados.', 'success', 2200);
     }else{
       appState.editor.pendingWallPoint={x:endNode.x,y:endNode.y,nodeId:endNode.id};
       appState.editor.wallCursor={x:endNode.x+100,y:endNode.y,type:'grid',label:'Rejilla'};
@@ -561,16 +564,16 @@
   }
   function startWallBodyDrag(e,wallId){
     if(!isStructureLayoutScreen() || appState.editor.mode!=='select') return;
-    e.stopPropagation();
-    ensureWallTopology();
+    e.stopPropagation(); ensureWallTopology();
     const wall=findWallById(wallId); if(!wall) return;
+    if(wall.autoZoneEdge){ appState.selectedWallId=wall.id; renderLayoutEditor(); return; }
+    if(e.shiftKey){ v117ToggleWallSelection(wall.id); renderLayoutEditor(); return; }
+    const selected=v117GetSelectedWallIds(); if(!selected.includes(wall.id))v117SetSelectedWallIds([wall.id]);
     appState.selectedWallId=wall.id; appState.selectedOpeningId=''; appState.selectedRackLayoutId=''; appState.selectedRoomId='';
-    if(wall.autoZoneEdge){ renderLayoutEditor(); return; }
-    const a=getWallNode(wall.startNodeId), b=getWallNode(wall.endNodeId); if(!a||!b){ renderLayoutEditor(); return; }
+    const dragWalls=v117GetSelectedWallIds().map(findWallById).filter(w=>w&&!w.autoZoneEdge); const nodeIds=[...new Set(dragWalls.flatMap(w=>[w.startNodeId,w.endNodeId]).filter(Boolean))]; const originalNodes={}; nodeIds.forEach(id=>{const n=getWallNode(id);if(n)originalNodes[id]={x:n.x,y:n.y};});
     const svg=$('#layoutSvg'), p=svgPoint(e,svg);
-    appState.editor.dragging={type:'wall-body',wallId:wall.id,start:p,originalNodes:{[a.id]:{x:a.x,y:a.y},[b.id]:{x:b.x,y:b.y}},nodeIds:[a.id,b.id],moved:false};
-    appState.editor.wallMergePreview=null;
-    renderLayoutSvg(svg); renderLayoutInspector();
+    appState.editor.dragging=dragWalls.length>1?{type:'wall-group',wallIds:dragWalls.map(w=>w.id),start:p,originalNodes,nodeIds,moved:false}:{type:'wall-body',wallId:wall.id,start:p,originalNodes,nodeIds,moved:false};
+    appState.editor.wallMergePreview=null; renderLayoutSvg(svg); renderLayoutInspector();
   }
   function deleteLayoutSelection(){
     const selectedIds=getSelectedRackIds(); const rid=appState.selectedRackLayoutId; const zid=appState.selectedZoneId;
@@ -581,6 +584,7 @@
     }else{
       if(mid){ appState.layout.measurements=(appState.layout.measurements||[]).filter(m=>m.id!==mid); appState.editor.selectedMeasurementId=''; }
       else if(oid){ appState.layout.openings=(appState.layout.openings||[]).filter(o=>o.id!==oid); appState.selectedOpeningId=''; }
+      else if(v117GetSelectedWallIds().length>1){ v117DeleteSelectedWalls(); }
       else if(wid){
         const wall=findWallById(wid);
         if(wall?.autoZoneEdge){
@@ -597,7 +601,7 @@
         appState.layout.zones=appState.layout.zones.filter(z=>z.id!==zid); appState.selectedZoneId=appState.layout.zones[0]?.id||''; normalizeZoneAndRackIds();
       }
     }
-    cleanupDetachedOpenings(); ensureWallTopology(); persistActiveLayout(); renderLayoutEditor(); return true;
+    cleanupDetachedOpenings(); ensureWallTopology(); if(isStructureLayoutScreen()) v117RefreshRooms(); persistActiveLayout(); renderLayoutEditor(); return true;
   }
   function copySelectedStructure(){
     if(!isStructureLayoutScreen()) return false;
@@ -1394,6 +1398,7 @@
           </div>
           <div class="tiny muted" style="margin-top:8px">Menor número = más precisión. Recomendado: 2, 5 o 10 unidades.</div>
         </section>
+        ${rackMode ? v117RackToolsMarkup() + v117ValidationMarkup() : v117StructureToolsMarkup()}
         ${rackMode ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Distribución rápida</div>
           <div class="layout-template-grid">
@@ -1466,14 +1471,16 @@
             <label>ID<input value="${escapeHtml(sw.id)}" disabled></label>
             <label>Nombre<input id="rpWallName" value="${escapeHtml(sw.name||'Pared')}"></label>
             <label>Longitud (cm)<input id="rpWallLength" type="number" min="10" step="1" value="${Math.round(unitsToCm(wallLength(sw)))}" ${sw.autoZoneEdge?'disabled':''}></label>
+            <label>Ángulo (°)<input id="rpWallAngle" type="number" step="1" value="${Math.round(v117WallAngleDeg(sw))}" ${sw.autoZoneEdge?'disabled':''}></label>
             <label>Espesor (cm)<input id="rpWallThickness" type="number" min="4" max="80" step="1" value="${Math.round(unitsToCm(sw.thickness||12))}"></label>
             <label>Altura 3D (cm)<input id="rpWallHeight" type="number" min="120" max="600" step="5" value="${Math.round(unitsToCm(sw.height||290))}"></label>
             ${sw.autoZoneEdge ? `<label>Lado<select id="rpWallSide"><option value="1" ${getWallSideSign(sw.side)===1?'selected':''}>Fuera de zona</option><option value="-1" ${getWallSideSign(sw.side)===-1?'selected':''}>Dentro de zona</option></select></label>` : `<label>Conexiones<input value="A:${linkedA} · B:${linkedB}" disabled></label>`}
             ${!sw.autoZoneEdge && na ? `<label>Inicio X (cm)<input id="rpWallAX" type="number" step="1" value="${Math.round(unitsToCm(na.x))}"></label><label>Inicio Y (cm)<input id="rpWallAY" type="number" step="1" value="${Math.round(unitsToCm(na.y))}"></label>` : ''}
             ${!sw.autoZoneEdge && nb ? `<label>Final X (cm)<input id="rpWallBX" type="number" step="1" value="${Math.round(unitsToCm(nb.x))}"></label><label>Final Y (cm)<input id="rpWallBY" type="number" step="1" value="${Math.round(unitsToCm(nb.y))}"></label>` : ''}
           </div>
+          ${!sw.autoZoneEdge?`<div class="layout-prop-grid two" style="margin-top:10px"><label>Mover ΔX (cm)<input id="rpWallMoveX" type="number" step="1" value="0"></label><label>Mover ΔY (cm)<input id="rpWallMoveY" type="number" step="1" value="0"></label></div>`:''}
           <div class="layout-template-grid" style="margin-top:10px">
-            ${sw.autoZoneEdge ? `<button class="seg-btn" id="rpWallFlip">Invertir muro</button>` : `<button class="seg-btn" id="rpWallDuplicate">Duplicar muro</button>`}
+            ${sw.autoZoneEdge ? `<button class="seg-btn" id="rpWallFlip">Invertir muro</button>` : `<button class="seg-btn" id="rpWallDuplicate">Duplicar muro</button><button class="seg-btn" id="rpWallMoveExact">Mover exacto</button>`}
             <button class="seg-btn" id="rpWallAddDoor">Agregar puerta</button>
             <button class="seg-btn" id="rpWallAddWindow">Agregar ventana</button>
             <button class="seg-btn danger" id="rpWallDelete">Eliminar muro</button>
@@ -1598,7 +1605,9 @@
     const selectedWall = findWallById(appState.selectedWallId);
     const selectedOpening = findOpeningById(appState.selectedOpeningId);
     if($('#rpWallName')) $('#rpWallName').onchange = e => { if(!selectedWall) return; selectedWall.name = e.target.value || 'Pared'; persistActiveLayout(); renderLayoutEditor(); };
-    if($('#rpWallLength')) $('#rpWallLength').onchange = e => { if(!selectedWall || selectedWall.autoZoneEdge) return; const units=Math.max(10,Number(e.target.value||0))/Math.max(.0001,getScaleCmPerUnit()); if(setManualWallLength(selectedWall,units)){ persistActiveLayout(); renderLayoutEditor(); } };
+    if($('#rpWallLength')) $('#rpWallLength').onchange = e => { if(!selectedWall || selectedWall.autoZoneEdge) return; const units=Math.max(10,Number(e.target.value||0))/Math.max(.0001,getScaleCmPerUnit()); if(setManualWallLength(selectedWall,units)){ v117ResolveWallIntersections(); v117RefreshRooms(); persistActiveLayout(); renderLayoutEditor(); } };
+    if($('#rpWallAngle')) $('#rpWallAngle').onchange = e => { if(v117SetWallAngle(selectedWall,Number(e.target.value||0))){ persistActiveLayout(); renderLayoutEditor(); } };
+    if($('#rpWallMoveExact')) $('#rpWallMoveExact').onclick = () => { if(v117TranslateWallCm(selectedWall,$('#rpWallMoveX')?.value,$('#rpWallMoveY')?.value)){ persistActiveLayout(); renderLayoutEditor(); } };
     if($('#rpWallHeight')) $('#rpWallHeight').onchange = e => { if(!selectedWall) return; const sc=Math.max(.0001,getScaleCmPerUnit()); selectedWall.height=Math.max(120/sc,Math.min(600/sc,Number(e.target.value||290)/sc)); if(selectedWall.autoZoneEdge){ const z=findZoneById(selectedWall.zoneId); if(z) setZoneEdgeWall(z,Number(selectedWall.edgeIndex||0),{height:selectedWall.height}); } persistActiveLayout(); renderLayoutEditor(); };
     const wallNodeCoord=(nodeId,axis,value)=>{ const node=getWallNode(nodeId); if(!node) return; const units=Number(value||0)/Math.max(.0001,getScaleCmPerUnit()); setWallNodePosition(nodeId,axis==='x'?units:node.x,axis==='y'?units:node.y); persistActiveLayout(); renderLayoutEditor(); };
     if(selectedWall && !selectedWall.autoZoneEdge){
@@ -1685,10 +1694,11 @@
       reader.readAsDataURL(file);
     };
     if($('#btnLayoutBgClear')) $('#btnLayoutBgClear').onclick = () => { ensureLayoutMeta(); delete appState.layout.meta.backgroundImage; persistActiveLayout(); renderLayoutEditor(); };
+    v117BindTools();
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v112-architectural-zones';
+    document.body.dataset.wmsLayoutVersion = 'v117-cad-zones-racks';
     document.body.dataset.wmsLayoutWorkspace = isRackDistributionScreen() ? 'racks' : 'structure';
     const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
@@ -1731,7 +1741,7 @@
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
             <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Estructura bloqueada' : 'Racks bloqueados'}</span>
-            <span class="v90-version-badge">v112</span>
+            <span class="v90-version-badge">v117</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -2289,6 +2299,7 @@
       }).sort((a,b) => a.t0 - b.t0);
     };
 
+    const v117ConflictWalls = v117ConflictWallIds();
     const renderWallSlice = (wall, t0, t1, selected) => {
       if(t1 - t0 <= .002) return;
       const isAutoZoneEdge = !!wall.autoZoneEdge;
@@ -2298,7 +2309,8 @@
       if(!slice?.poly) return;
       const d = wallPolygonPath(slice.poly);
       const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
-      const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.4', opacity:selected ? '.99' : '.98', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
+      const conflict=v117ConflictWalls.has(wall.id);
+      const fill = svgEl('path',{ d, class:conflict?'v117-wall-conflict':'', fill:conflict?'rgba(255,96,96,.88)':(selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)'), stroke:conflict?'#ff5d68':outerStroke, 'stroke-width':conflict?'2.5':'1.4', opacity:selected ? '.99' : '.98', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
       const accent = svgEl('line',{ x1:slice.a.x, y1:slice.a.y, x2:slice.b.x, y2:slice.b.y, stroke:innerStroke, 'stroke-width':'1.8', 'stroke-linecap':'round', opacity:'.92', style:'pointer-events:none' });
       const selectWall = evt => {
         if(isRackDistributionScreen() || appState.editor.mode !== 'select') return;
@@ -2314,7 +2326,7 @@
     };
 
     (appState.layout.walls || []).forEach(wall => {
-      const selected = appState.selectedWallId === wall.id;
+      const selected = appState.selectedWallId === wall.id || v117WallSelected(wall.id);
       const label = svgEl('text',{x:(Number(wall.x1)+Number(wall.x2))/2,y:(Number(wall.y1)+Number(wall.y2))/2 - 10,class:'ortho-dim-text','text-anchor':'middle',style:(appState.editor.showLabels===false || wall.autoZoneEdge)?'display:none;pointer-events:none':'pointer-events:none;font-size:11px'});
       label.textContent = wall.id;
       const openings = getRenderableWallOpenings(wall);
@@ -2342,6 +2354,8 @@
         const tx=svgEl('text',{x:mx,y:my-15,'text-anchor':'middle',style:'font-size:11px;font-weight:900;fill:#8dffd0;paint-order:stroke;stroke:#05101c;stroke-width:4px;pointer-events:none'}); tx.textContent='UNIR PARED'; guideLayer.appendChild(tx);
       }
     }
+
+    v117RenderDragMeasurements(guideLayer);
 
     // v102: cierre completo de esquinas en L.
     getAllWallCornerClosurePolygons().forEach(joint => {
@@ -2586,6 +2600,7 @@
       }
     }
 
+    const v117ConflictRacks = v117ConflictRackIds();
     if(appState.editor.racksVisible !== false) appState.layout.racks.forEach(r => {
       r.rot = normalizeAngle(r.rot || 0);
       r.front = r.front || 'top';
@@ -2610,6 +2625,7 @@
       const visualH = Math.max(4, geomH - bodyInset * 2);
       const cornerRadius = Math.min(5, Math.max(2, Math.min(visualW, visualH) / 12));
       if(appState.selectedRackLayoutId===r.id) g.classList.add('selected');
+      if(v117ConflictRacks.has(r.id)) g.classList.add('v117-conflict');
       if(isRackSelected(r.id)) g.classList.add('multi-selected');
       if(isRackSearchHit(r.id)) g.classList.add('search-hit');
       if(appState.primaryHighlightedRackId===r.id) g.classList.add('search-primary');
@@ -3048,12 +3064,9 @@
       return;
     }
     if(appState.editor.mode === 'select' && isPanSurface){
-      closeStackMenu();
-      appState.selectedWallId = '';
-      appState.selectedOpeningId = '';
-      renderLayoutInspector();
-      renderLayoutSection();
-      return;
+      closeStackMenu(); appState.selectedOpeningId='';
+      if(isStructureLayoutScreen()){ if(!(e.ctrlKey||e.metaKey))v117SetSelectedWallIds([]); appState.selectedWallId=''; }
+      startDragSelection(raw,!!(e.ctrlKey||e.metaKey)); renderLayoutSvg(svg); renderLayoutInspector(); renderLayoutSection(); return;
     }
     if(appState.editor.mode === 'wall' && isStructureLayoutScreen()){
       const smart=snapWallPointSmart(raw,{origin:appState.editor.pendingWallPoint,shiftKey:e.shiftKey});
@@ -3209,13 +3222,18 @@
       renderLayoutSvg(activeSvg); renderLayoutSection(); renderLayoutInspector();
       return;
     }
-    setSelectedRackIds([rackId]);
+    const currentIds=getSelectedRackIds();
+    if(!currentIds.includes(rackId)) setSelectedRackIds([rackId]);
+    const dragIds=getSelectedRackIds();
     const svg = $('#layoutSvg'); const p = svgPoint(e, svg);
     const cx = rack.x + rack.w/2, cy = rack.y + rack.h/2;
     appState.selectedZoneId = rack.zoneId;
     appState.selectedWallId = '';
     appState.selectedOpeningId = '';
-    appState.editor.dragging = { type:'rack', rackId, start:p, original: { x:rack.x, y:rack.y, cx, cy, zoneId:rack.zoneId } };
+    if(dragIds.length>1){
+      const originals={}; dragIds.forEach(id=>{const rr=findRackById(id);if(rr)originals[id]={x:rr.x,y:rr.y,zoneId:rr.zoneId};});
+      appState.editor.dragging={type:'rack-group',rackIds:dragIds,start:p,originals};
+    }else appState.editor.dragging = { type:'rack', rackId, start:p, original: { x:rack.x, y:rack.y, cx, cy, zoneId:rack.zoneId } };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
   }
 
@@ -3265,6 +3283,8 @@
       setWallNodesPositionsBulk(Object.entries(d.originalNodes).map(([id,n])=>({id,x:n.x+useDx,y:n.y+useDy})));
       d.mergeCandidate=candidate; d.moved=true; appState.editor.roomMovePreview=candidate;
       clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+    } else if(d.type === 'wall-group'){
+      const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y, moveDx=snapGrid(rawDx), moveDy=snapGrid(rawDy); setWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+moveDx,y:d.originalNodes[id].y+moveDy}))); d.moved=true; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'wall-body'){
       const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y;
       const moveDx=snapGrid(rawDx), moveDy=snapGrid(rawDy);
@@ -3311,6 +3331,10 @@
       else setOpeningPositionFromPoint(opening, p);
       clearRackSnapPreview();
       renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+    } else if(d.type === 'rack-group'){
+      const rawDX=p.x-d.start.x, rawDY=p.y-d.start.y;
+      (d.rackIds||[]).forEach(id=>{ const rack=findRackById(id), orig=d.originals?.[id]; if(!rack||!orig)return; rack.x=snapGrid(orig.x+rawDX); rack.y=snapGrid(orig.y+rawDY); const host=findZoneById(orig.zoneId)||findZoneById(rack.zoneId); if(host){rack.zoneId=host.id; if(!rackFullyInsideZone(rack,host)){rack.x=orig.x;rack.y=orig.y;rack.zoneId=orig.zoneId;}} });
+      clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection();
     } else if(d.type === 'rack'){
       const rack = findRackById(d.rackId);
       const rawDX = p.x - d.start.x;
@@ -3345,6 +3369,9 @@
         cut.dir *= -1;
       }
     }
+    if(d && d.type==='rack-group'){
+      normalizeZoneAndRackIds(); v117RunValidation({quiet:true});
+    }
     if(d && d.type==='rack'){
       const rack = findRackById(d.rackId);
       if(rack){
@@ -3360,14 +3387,14 @@
           if(!rackFullyInsideZone(rack, host) && d.original){ rack.x = d.original.x; rack.y = d.original.y; rack.zoneId = previousZoneId; }
         }
       }
-      normalizeZoneAndRackIds();
+      normalizeZoneAndRackIds(); v117RunValidation({quiet:true});
     }
     if(d && d.type==='zone'){ normalizeZoneAndRackIds(); }
     if(d && d.type==='room-zone'){
       if(d.mergeCandidate && mergeRoomSharedWall(d.mergeCandidate)) showToast('Paredes coincidentes unidas como muro compartido.', 'success', 2400);
-      syncRoomLinkedZones(); normalizeZoneAndRackIds(); appState.editor.roomMovePreview=null;
+      v117ResolveWallIntersections(); v117RefreshRooms(); syncRoomLinkedZones(); normalizeZoneAndRackIds(); appState.editor.roomMovePreview=null;
     }
-    if(d && (d.type==='wall-node' || d.type==='wall-body')){ syncManualWallsFromNodes(); syncRoomLinkedZones(); ensureOpeningAttachmentOffsets(); appState.editor.wallMergePreview=null; }
+    if(d && (d.type==='wall-node' || d.type==='wall-body' || d.type==='wall-group')){ syncManualWallsFromNodes(); v117ResolveWallIntersections(); v117RefreshRooms(); syncRoomLinkedZones(); ensureOpeningAttachmentOffsets(); appState.editor.wallMergePreview=null; }
     clearRackSnapPreview();
     appState.editor.dragging = null;
     persistActiveLayout();

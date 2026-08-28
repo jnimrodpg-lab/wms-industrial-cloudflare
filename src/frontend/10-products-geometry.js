@@ -1784,7 +1784,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
   }
   function startDragSelection(startPoint, additive=false){
     appState.editor.dragSelect = { active:true, additive:!!additive, start:{x:startPoint.x,y:startPoint.y}, end:{x:startPoint.x,y:startPoint.y} };
-    if(!additive) clearRackSelection();
+    if(!additive){ if(typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()){ if(typeof v117SetSelectedWallIds==='function')v117SetSelectedWallIds([]); } else clearRackSelection(); }
   }
   function updateDragSelection(point){
     const ds = appState.editor?.dragSelect;
@@ -1796,11 +1796,12 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     if(!ds?.active) return false;
     const box = getDragSelectionBox();
     if(box && box.w >= 6 && box.h >= 6){
-      const ids = ds.additive ? getSelectedRackIds() : [];
-      (appState.layout.racks || []).forEach(r => { if(rackIntersectsBox(r, box)) ids.push(r.id); });
-      setSelectedRackIds(ids);
-      appState.editor.dragSelect = { active:false, additive:false, start:null, end:null };
-      return true;
+      if(typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()&&typeof v117SetSelectedWallIds==='function'){
+        const ids=ds.additive&&typeof v117GetSelectedWallIds==='function'?v117GetSelectedWallIds():[];
+        (appState.layout.walls||[]).filter(w=>!w.autoZoneEdge).forEach(w=>{const minX=Math.min(w.x1,w.x2),maxX=Math.max(w.x1,w.x2),minY=Math.min(w.y1,w.y2),maxY=Math.max(w.y1,w.y2);if(maxX>=box.x&&minX<=box.x+box.w&&maxY>=box.y&&minY<=box.y+box.h)ids.push(w.id);});
+        v117SetSelectedWallIds(ids);
+      }else{ const ids = ds.additive ? getSelectedRackIds() : []; (appState.layout.racks || []).forEach(r => { if(rackIntersectsBox(r, box)) ids.push(r.id); }); setSelectedRackIds(ids); }
+      appState.editor.dragSelect = { active:false, additive:false, start:null, end:null }; return true;
     }
     appState.editor.dragSelect = { active:false, additive:false, start:null, end:null };
     return false;

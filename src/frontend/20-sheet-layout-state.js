@@ -419,6 +419,8 @@
         if(rackStore && !rackIds.has(rackStore)) invalidLocations += 1;
       });
       if(invalidLocations) warnings.push(`${invalidLocations} referencia(s) de producto apuntan a racks no encontrados en el layout activo.`);
+      const operationalIssues = Array.isArray(appState.editor?.validationIssues) ? appState.editor.validationIssues : [];
+      operationalIssues.slice(0,30).forEach(issue => { if(issue?.message) warnings.push(issue.message); });
     }catch(err){
       warnings.push(`No se pudo validar layout: ${err.message || err}`);
     }

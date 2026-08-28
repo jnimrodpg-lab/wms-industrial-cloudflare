@@ -1,5 +1,5 @@
 {
-  "version": "113",
+  "version": "117",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -9,9 +9,10 @@
     "40-sheet-viewer-tools.js",
     "50-viewer-3d.js",
     "60-layout-editor.js",
+    "65-layout-pro-v117.js",
     "70-rack-editor.js",
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v113: whole-wall dragging, movable room-linked zones, and automatic shared-wall merging when compatible rooms/zones collide."
+  "notes": "v117 acumulativa: CAD T/X, recintos y zonas inteligentes, matriz/alineación de racks y validación de colisiones/pasillos."
 }

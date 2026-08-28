@@ -5782,3 +5782,17 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 .room-zone-card{border-color:rgba(111,240,168,.26)!important;background:linear-gradient(180deg,rgba(111,240,168,.07),rgba(255,255,255,.012))!important}
 .room-zone-card .btn.primary{width:100%;min-height:42px}
 .layout-prop-card input:disabled{cursor:not-allowed}
+
+
+/* WMS v117 — CAD + zonas inteligentes + racks + validación */
+.v117-rack-tools .layout-prop-grid input,.v117-validation-card .layout-prop-grid input{min-width:0}
+.v117-align-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.v117-issue-list{display:grid;gap:7px;margin-top:10px;max-height:250px;overflow:auto;padding-right:2px}
+.v117-issue{display:grid;gap:3px;width:100%;text-align:left;padding:9px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.035);color:inherit;cursor:pointer}
+.v117-issue span{font-size:10px;line-height:1.35;color:var(--muted,#94a8bc)}
+.v117-issue.error{border-color:rgba(255,89,103,.42);background:rgba(255,70,86,.08)}
+.v117-issue.warning{border-color:rgba(255,194,77,.35);background:rgba(255,186,64,.07)}
+.layout-rack-wrap.v117-conflict .ortho-rack-body{fill:rgba(255,67,85,.28)!important;stroke:#ff5668!important;stroke-width:3!important}
+.layout-rack-wrap.v117-conflict .ortho-rack-outline{stroke:#ff5668!important;stroke-width:2.4!important;filter:drop-shadow(0 0 6px rgba(255,70,90,.55))}
+.v117-wall-conflict{filter:drop-shadow(0 0 5px rgba(255,70,90,.55))}
+.v117-cad-tools .btn,.v117-cad-tools .seg-btn,.v117-rack-tools .btn,.v117-rack-tools .seg-btn{min-height:36px}
