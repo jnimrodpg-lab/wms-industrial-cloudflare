@@ -1,5 +1,5 @@
 {
-  "version": "112",
+  "version": "113",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -13,5 +13,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v112: rooms can become wall-linked dynamic WMS zones; architectural 3D adds room/zone slabs and optional opening frames."
+  "notes": "v113: whole-wall dragging, movable room-linked zones, and automatic shared-wall merging when compatible rooms/zones collide."
 }

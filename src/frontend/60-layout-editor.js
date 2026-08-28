@@ -1,3 +1,4 @@
+/* WMS_V113_ROOM_MOVE_SHARED_WALLS */
   function ensureLayoutEditorState(){
     if(!appState.editor || typeof appState.editor !== 'object') appState.editor = {};
     ensureLayoutDecorations();
@@ -22,6 +23,8 @@
     if(appState.selectedRoomId === undefined) appState.selectedRoomId = '';
     if(appState.editor.structureClipboard === undefined) appState.editor.structureClipboard = null;
     if(appState.editor.keyboardBoundV111 === undefined) appState.editor.keyboardBoundV111 = false;
+    if(appState.editor.wallMergePreview === undefined) appState.editor.wallMergePreview = null;
+    if(appState.editor.roomMovePreview === undefined) appState.editor.roomMovePreview = null;
     // Migración: versiones antiguas dejaban el snap en 20 unidades; ahora se baja a 2 para precisión fina.
     if(!appState.editor.snapPrecisionMigrated && Number(appState.editor.snapSize || 0) >= 20){
       appState.editor.snapSize = DEFAULT_GRID_SIZE;
@@ -198,6 +201,125 @@
     return findRoomById(zone.linkedRoomId, layout);
   }
   function isRoomLinkedZone(zoneOrId, layout=appState.layout){ return !!getRoomForZone(zoneOrId, layout); }
+  function roomNodeIds(room){ return [...new Set((room?.nodeIds || []).filter(Boolean))]; }
+  function roomWallEdges(room, layout=appState.layout){
+    if(!room) return [];
+    const ids=room.nodeIds || [];
+    const walls=(layout?.walls||[]).filter(w=>!w?.autoZoneEdge);
+    const out=[];
+    for(let i=0;i<ids.length;i++){
+      const aId=ids[i], bId=ids[(i+1)%ids.length];
+      const a=getWallNode(aId,layout), b=getWallNode(bId,layout);
+      if(!a||!b) continue;
+      const wall=walls.find(w=>(w.startNodeId===aId&&w.endNodeId===bId)||(w.startNodeId===bId&&w.endNodeId===aId))||null;
+      out.push({index:i,aId,bId,a:{x:Number(a.x||0),y:Number(a.y||0)},b:{x:Number(b.x||0),y:Number(b.y||0)},wall});
+    }
+    return out;
+  }
+  function setWallNodesPositionsBulk(items, layout=appState.layout){
+    if(!layout || !Array.isArray(layout.wallNodes)) return false;
+    const map=new Map(layout.wallNodes.map(n=>[n.id,n]));
+    let changed=false;
+    (items||[]).forEach(item=>{ const n=map.get(item.id); if(!n) return; n.x=Number(item.x||0); n.y=Number(item.y||0); changed=true; });
+    if(changed){ syncManualWallsFromNodes(layout); syncRoomLinkedZones(layout); ensureOpeningAttachmentOffsets(layout); }
+    return changed;
+  }
+  function translateRoomGeometry(roomOrId, dx, dy, {snap=false}={}){
+    const room=typeof roomOrId==='string'?findRoomById(roomOrId):roomOrId;
+    if(!room) return false;
+    ensureWallTopology();
+    const updates=roomNodeIds(room).map(id=>{ const n=getWallNode(id); return n?{id,x:(snap?snapGrid(n.x+dx):n.x+dx),y:(snap?snapGrid(n.y+dy):n.y+dy)}:null; }).filter(Boolean);
+    return setWallNodesPositionsBulk(updates);
+  }
+  function mergeWallNodeInto(sourceId,targetId,layout=appState.layout){
+    if(!sourceId||!targetId||sourceId===targetId) return targetId;
+    const source=getWallNode(sourceId,layout), target=getWallNode(targetId,layout);
+    if(!source||!target) return targetId;
+    (layout.walls||[]).forEach(w=>{ if(w.autoZoneEdge) return; if(w.startNodeId===sourceId) w.startNodeId=targetId; if(w.endNodeId===sourceId) w.endNodeId=targetId; });
+    (layout.rooms||[]).forEach(room=>{ room.nodeIds=(room.nodeIds||[]).map(id=>id===sourceId?targetId:id); });
+    layout.wallNodes=(layout.wallNodes||[]).filter(n=>n.id!==sourceId);
+    return targetId;
+  }
+  function transferWallOpenings(sourceWall,targetWall,reversed=false,layout=appState.layout){
+    if(!sourceWall||!targetWall||sourceWall.id===targetWall.id) return;
+    const targetLen=Math.max(1,wallLength(targetWall));
+    (layout.openings||[]).forEach(o=>{
+      if(o.wallId!==sourceWall.id) return;
+      const off=Number(o.offset);
+      o.wallId=targetWall.id;
+      if(Number.isFinite(off)) o.offset=reversed?Math.max(0,targetLen-off):off;
+      o.t=Math.max(.001,Math.min(.999,Number(o.offset||targetLen*.5)/targetLen));
+    });
+  }
+  function dedupeManualWalls({preferWallId=''}={}){
+    const groups=new Map();
+    manualWalls().forEach(w=>{ const key=[w.startNodeId,w.endNodeId].sort().join('|'); if(!groups.has(key)) groups.set(key,[]); groups.get(key).push(w); });
+    groups.forEach(group=>{
+      if(group.length<2) return;
+      const keeper=group.find(w=>w.id===preferWallId)||group[0];
+      group.filter(w=>w!==keeper).forEach(w=>{
+        const reversed=w.startNodeId===keeper.endNodeId && w.endNodeId===keeper.startNodeId;
+        transferWallOpenings(w,keeper,reversed);
+        appState.layout.walls=appState.layout.walls.filter(x=>x!==w);
+        if(appState.selectedWallId===w.id) appState.selectedWallId=keeper.id;
+      });
+    });
+    syncManualWallsFromNodes(); ensureOpeningAttachmentOffsets();
+  }
+  function findRoomWallCollisionSnap(room, originalNodes, dx, dy){
+    if(!room || !originalNodes) return null;
+    const threshold=Math.max(8,Math.min(22,getSnapSize()*3.4));
+    const cosTol=Math.cos(7*Math.PI/180);
+    const movingEdges=roomWallEdges(room).map(edge=>{
+      const oa=originalNodes[edge.aId], ob=originalNodes[edge.bId];
+      return oa&&ob?{...edge,a:{x:oa.x+dx,y:oa.y+dy},b:{x:ob.x+dx,y:ob.y+dy}}:null;
+    }).filter(Boolean);
+    let best=null;
+    (appState.layout.rooms||[]).forEach(targetRoom=>{
+      if(targetRoom.id===room.id) return;
+      roomWallEdges(targetRoom).forEach(target=>{
+        const tl=Math.hypot(target.b.x-target.a.x,target.b.y-target.a.y)||1;
+        movingEdges.forEach(moving=>{
+          if([moving.aId,moving.bId].some(id=>id===target.aId||id===target.bId)) return;
+          const ml=Math.hypot(moving.b.x-moving.a.x,moving.b.y-moving.a.y)||1;
+          if(Math.abs(ml-tl)>Math.max(threshold*1.6,Math.min(ml,tl)*.08)) return;
+          const mdx=(moving.b.x-moving.a.x)/ml, mdy=(moving.b.y-moving.a.y)/ml;
+          const tdx=(target.b.x-target.a.x)/tl, tdy=(target.b.y-target.a.y)/tl;
+          if(Math.abs(mdx*tdx+mdy*tdy)<cosTol) return;
+          [false,true].forEach(reversed=>{
+            const ta=reversed?target.b:target.a, tb=reversed?target.a:target.b;
+            const adx=((ta.x-moving.a.x)+(tb.x-moving.b.x))/2;
+            const ady=((ta.y-moving.a.y)+(tb.y-moving.b.y))/2;
+            const aa={x:moving.a.x+adx,y:moving.a.y+ady}, bb={x:moving.b.x+adx,y:moving.b.y+ady};
+            const residual=Math.max(Math.hypot(aa.x-ta.x,aa.y-ta.y),Math.hypot(bb.x-tb.x,bb.y-tb.y));
+            const shift=Math.hypot(adx,ady);
+            if(residual>threshold*.8 || shift>threshold*1.5) return;
+            const score=residual+shift*.18;
+            if(!best||score<best.score) best={score,roomId:room.id,targetRoomId:targetRoom.id,movingAId:moving.aId,movingBId:moving.bId,targetAId:target.aId,targetBId:target.bId,movingWallId:moving.wall?.id||'',targetWallId:target.wall?.id||'',reversed,dx:dx+adx,dy:dy+ady};
+          });
+        });
+      });
+    });
+    return best;
+  }
+  function mergeRoomSharedWall(candidate){
+    if(!candidate) return false;
+    ensureWallTopology();
+    const movingWall=findWallById(candidate.movingWallId), targetWall=findWallById(candidate.targetWallId);
+    const mapA=candidate.reversed?candidate.targetBId:candidate.targetAId;
+    const mapB=candidate.reversed?candidate.targetAId:candidate.targetBId;
+    mergeWallNodeInto(candidate.movingAId,mapA);
+    mergeWallNodeInto(candidate.movingBId,mapB);
+    syncManualWallsFromNodes();
+    if(movingWall&&targetWall&&movingWall!==targetWall){
+      transferWallOpenings(movingWall,targetWall,!!candidate.reversed);
+      appState.layout.walls=(appState.layout.walls||[]).filter(w=>w.id!==movingWall.id);
+      if(appState.selectedWallId===movingWall.id) appState.selectedWallId=targetWall.id;
+    }
+    dedupeManualWalls({preferWallId:targetWall?.id||''});
+    pruneOrphanWallNodes(); syncManualWallsFromNodes(); syncRoomLinkedZones(); ensureOpeningAttachmentOffsets();
+    return true;
+  }
   function syncRoomLinkedZones(layout=appState.layout){
     if(!layout || !Array.isArray(layout.zones) || !Array.isArray(layout.rooms)) return layout;
     const roomMap = new Map(layout.rooms.map(r => [r.id,r]));
@@ -435,6 +557,19 @@
     const svg=$('#layoutSvg'), p=svgPoint(e,svg);
     appState.editor.dragging={type:'wall-node',nodeId,start:p,original:{x:node.x,y:node.y}};
     appState.selectedWallNodeId=nodeId; appState.selectedRoomId='';
+    renderLayoutSvg(svg); renderLayoutInspector();
+  }
+  function startWallBodyDrag(e,wallId){
+    if(!isStructureLayoutScreen() || appState.editor.mode!=='select') return;
+    e.stopPropagation();
+    ensureWallTopology();
+    const wall=findWallById(wallId); if(!wall) return;
+    appState.selectedWallId=wall.id; appState.selectedOpeningId=''; appState.selectedRackLayoutId=''; appState.selectedRoomId='';
+    if(wall.autoZoneEdge){ renderLayoutEditor(); return; }
+    const a=getWallNode(wall.startNodeId), b=getWallNode(wall.endNodeId); if(!a||!b){ renderLayoutEditor(); return; }
+    const svg=$('#layoutSvg'), p=svgPoint(e,svg);
+    appState.editor.dragging={type:'wall-body',wallId:wall.id,start:p,originalNodes:{[a.id]:{x:a.x,y:a.y},[b.id]:{x:b.x,y:b.y}},nodeIds:[a.id,b.id],moved:false};
+    appState.editor.wallMergePreview=null;
     renderLayoutSvg(svg); renderLayoutInspector();
   }
   function deleteLayoutSelection(){
@@ -1292,24 +1427,24 @@
           <div class="layout-template-grid" style="margin-top:10px">
             ${rz ? `<button class="seg-btn active" id="rpSelectLinkedZone">Seleccionar zona ${escapeHtml(rz.id)}</button>` : `<button class="btn primary" id="rpRoomToZone">Convertir recinto en zona</button>`}
           </div>
-          <div class="tiny muted" style="margin-top:8px">Al convertirlo, la geometría de la zona queda enlazada a los nodos del recinto. Mover una pared o esquina actualiza la zona automáticamente.</div>
+          <div class="tiny muted" style="margin-top:8px">Al convertirlo, la zona queda enlazada al recinto. Puedes mover paredes completas, esquinas o arrastrar la zona; al acercarla a otra zona, las paredes coincidentes pueden unirse automáticamente.</div>
         </section>`; })() : ''}
         ${structureMode && zone ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Zona</div>
           <div class="layout-prop-grid two">
             <label>Nombre<input id="rpZoneName" value="${escapeHtml(zone.name||'')}"></label>
             <label>Código<input id="rpZoneCode" value="${escapeHtml(zone.id||'')}"></label>
-            <label>X<input id="rpZoneX" type="number" value="${formatUnitNumber(zoneB.minX)}" ${isRoomLinkedZone(zone)?'disabled':''}></label>
-            <label>Y<input id="rpZoneY" type="number" value="${formatUnitNumber(zoneB.minY)}" ${isRoomLinkedZone(zone)?'disabled':''}></label>
+            <label>X<input id="rpZoneX" type="number" value="${formatUnitNumber(zoneB.minX)}"></label>
+            <label>Y<input id="rpZoneY" type="number" value="${formatUnitNumber(zoneB.minY)}"></label>
             <label>Ancho<input id="rpZoneW" type="number" min="40" value="${formatUnitNumber(zoneB.maxX-zoneB.minX)}" ${isRoomLinkedZone(zone)?'disabled':''}></label>
             <label>Alto<input id="rpZoneH" type="number" min="40" value="${formatUnitNumber(zoneB.maxY-zoneB.minY)}" ${isRoomLinkedZone(zone)?'disabled':''}></label>
             <label>Color<input id="rpZoneColor" type="color" value="${escapeHtml(zone.color||'#6ff0a8')}"></label>
             <label>Escala cm/u<input id="rpScaleCm" type="number" min="0.1" step="0.1" value="${getScaleCmPerUnit()}"></label>
             <label>Rotación zona<input id="rpZoneRot" type="number" step="1" value="${Math.round(getZoneRotationDegrees(zone))}" ${isRoomLinkedZone(zone)?'disabled':''}></label>
             <label>Contenido<input value="${(appState.layout.racks||[]).filter(r => r.zoneId === zone.id).length} racks vinculados" disabled></label>
-            ${isRoomLinkedZone(zone)?`<label>Geometría<input value="Vinculada a ${escapeHtml(zone.linkedRoomId)}" disabled></label>`:''}
+            ${isRoomLinkedZone(zone)?`<label>Geometría<input value="Vinculada · arrastrable" disabled></label>`:''}
           </div>
-          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px">${isRoomLinkedZone(zone)?`<button class="seg-btn active" id="rpSelectZoneRoom">Editar paredes del recinto</button><button class="seg-btn" id="rpDetachRoomZone">Desvincular geometría</button>`:`<button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → pared</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar paredes zona</button>`}</div>
+          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px">${isRoomLinkedZone(zone)?`<button class="seg-btn active" id="rpSelectZoneRoom">Editar paredes del recinto</button><button class="seg-btn" id="rpDetachRoomZone">Desvincular geometría</button><div class="tiny muted" style="grid-column:1/-1">Arrastra la zona para mover el recinto completo. Al tocar otra zona compatible, sus paredes se ajustan y se convierten en un muro compartido.</div>`:`<button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → pared</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar paredes zona</button>`}</div>
         </section>` : ''}
         ${rackMode && rack ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Rack</div>
@@ -1408,8 +1543,16 @@
     if($('#rpSelectZoneRoom')) $('#rpSelectZoneRoom').onclick = () => { const rr=zone?getRoomForZone(zone):null; if(!rr) return; appState.selectedRoomId=rr.id; appState.selectedWallId=''; appState.selectedOpeningId=''; renderLayoutEditor(); };
     if($('#rpDetachRoomZone')) $('#rpDetachRoomZone').onclick = () => { if(zone && detachRoomZone(zone)){ renderLayoutEditor(); } };
     const applyZoneGeometry = () => {
-      if(!zone || isRoomLinkedZone(zone)) return;
-      setRectZoneBounds(zone, { x:$('#rpZoneX')?.value, y:$('#rpZoneY')?.value, w:$('#rpZoneW')?.value, h:$('#rpZoneH')?.value });
+      if(!zone) return;
+      const linkedRoom=getRoomForZone(zone);
+      if(linkedRoom){
+        const b=zoneBoundsOf(zone);
+        const nx=Number($('#rpZoneX')?.value); const ny=Number($('#rpZoneY')?.value);
+        const dx=Number.isFinite(nx)?nx-b.minX:0; const dy=Number.isFinite(ny)?ny-b.minY:0;
+        if(dx||dy) translateRoomGeometry(linkedRoom,dx,dy,{snap:false});
+      }else{
+        setRectZoneBounds(zone, { x:$('#rpZoneX')?.value, y:$('#rpZoneY')?.value, w:$('#rpZoneW')?.value, h:$('#rpZoneH')?.value });
+      }
       persistActiveLayout(); renderLayoutEditor();
     };
     if($('#rpZoneName')) $('#rpZoneName').onchange = e => { zone.name = e.target.value; persistActiveLayout(); renderLayoutEditor(); };
@@ -2154,11 +2297,12 @@
       const slice = getWallSlicePolygon(wall, t0, t1, 1);
       if(!slice?.poly) return;
       const d = wallPolygonPath(slice.poly);
-      const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:'cursor:pointer' });
-      const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.4', opacity:selected ? '.99' : '.98', style:'cursor:pointer' });
+      const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
+      const fill = svgEl('path',{ d, fill:selected ? 'rgba(255,224,138,.90)' : 'rgba(231,239,247,.95)', stroke:outerStroke, 'stroke-width':'1.4', opacity:selected ? '.99' : '.98', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
       const accent = svgEl('line',{ x1:slice.a.x, y1:slice.a.y, x2:slice.b.x, y2:slice.b.y, stroke:innerStroke, 'stroke-width':'1.8', 'stroke-linecap':'round', opacity:'.92', style:'pointer-events:none' });
       const selectWall = evt => {
         if(isRackDistributionScreen() || appState.editor.mode !== 'select') return;
+        if(!wall.autoZoneEdge){ startWallBodyDrag(evt,wall.id); return; }
         evt.stopPropagation();
         appState.selectedWallId = wall.id;
         appState.selectedOpeningId = '';
@@ -2188,6 +2332,16 @@
       }
       wallLayer.appendChild(label);
     });
+
+    const roomMergePreview=appState.editor?.roomMovePreview;
+    if(roomMergePreview){
+      const tw=findWallById(roomMergePreview.targetWallId);
+      if(tw){
+        guideLayer.appendChild(svgEl('line',{x1:tw.x1,y1:tw.y1,x2:tw.x2,y2:tw.y2,stroke:'#55f3ad','stroke-width':'7','stroke-linecap':'round',opacity:'.78','stroke-dasharray':'14 8',style:'pointer-events:none'}));
+        const mx=(Number(tw.x1)+Number(tw.x2))/2, my=(Number(tw.y1)+Number(tw.y2))/2;
+        const tx=svgEl('text',{x:mx,y:my-15,'text-anchor':'middle',style:'font-size:11px;font-weight:900;fill:#8dffd0;paint-order:stroke;stroke:#05101c;stroke-width:4px;pointer-events:none'}); tx.textContent='UNIR PARED'; guideLayer.appendChild(tx);
+      }
+    }
 
     // v102: cierre completo de esquinas en L.
     getAllWallCornerClosurePolygons().forEach(joint => {
@@ -2991,7 +3145,14 @@
     const zone = findZoneById(zoneId);
     if(!zone) return;
     appState.selectedRoomId = zone.linkedRoomId || '';
-    if(isRoomLinkedZone(zone)){ showToast('Esta zona sigue al recinto. Modifica las paredes o esquinas para cambiar su forma.', 'warning', 2600); renderLayoutSvg(svg); renderLayoutInspector(); return; }
+    const linkedRoom=getRoomForZone(zone);
+    if(linkedRoom){
+      ensureWallTopology();
+      const originalNodes={}; roomNodeIds(linkedRoom).forEach(id=>{ const n=getWallNode(id); if(n) originalNodes[id]={x:n.x,y:n.y}; });
+      appState.editor.dragging={type:'room-zone',zoneId,roomId:linkedRoom.id,start:p,originalNodes,mergeCandidate:null,moved:false};
+      appState.editor.roomMovePreview=null;
+      renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector(); return;
+    }
     const zoneIndex = (appState.layout?.zones || []).findIndex(z => z === zone);
     appState.editor.dragging = { type:'zone', zoneId, zoneIndex, start:p, original: clone(zone.pts) };
     renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
@@ -3095,6 +3256,20 @@
       // v110: mover la zona no arrastra los racks.
       clearRackSnapPreview();
       renderLayoutSvg(svg); renderLayoutSection();
+    } else if(d.type === 'room-zone'){
+      const room=findRoomById(d.roomId); if(!room) return;
+      const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y;
+      const baseDx=snapGrid(rawDx), baseDy=snapGrid(rawDy);
+      const candidate=findRoomWallCollisionSnap(room,d.originalNodes,baseDx,baseDy);
+      const useDx=candidate?candidate.dx:baseDx, useDy=candidate?candidate.dy:baseDy;
+      setWallNodesPositionsBulk(Object.entries(d.originalNodes).map(([id,n])=>({id,x:n.x+useDx,y:n.y+useDy})));
+      d.mergeCandidate=candidate; d.moved=true; appState.editor.roomMovePreview=candidate;
+      clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
+    } else if(d.type === 'wall-body'){
+      const rawDx=p.x-d.start.x, rawDy=p.y-d.start.y;
+      const moveDx=snapGrid(rawDx), moveDy=snapGrid(rawDy);
+      setWallNodesPositionsBulk(d.nodeIds.map(id=>({id,x:d.originalNodes[id].x+moveDx,y:d.originalNodes[id].y+moveDy})));
+      d.moved=true; clearRackSnapPreview(); renderLayoutSvg(svg); renderLayoutSection(); renderLayoutInspector();
     } else if(d.type === 'vertex'){
       const zone = dragZoneFromState(d);
       if(!zone) return;
@@ -3188,7 +3363,11 @@
       normalizeZoneAndRackIds();
     }
     if(d && d.type==='zone'){ normalizeZoneAndRackIds(); }
-    if(d && d.type==='wall-node'){ syncManualWallsFromNodes(); ensureOpeningAttachmentOffsets(); }
+    if(d && d.type==='room-zone'){
+      if(d.mergeCandidate && mergeRoomSharedWall(d.mergeCandidate)) showToast('Paredes coincidentes unidas como muro compartido.', 'success', 2400);
+      syncRoomLinkedZones(); normalizeZoneAndRackIds(); appState.editor.roomMovePreview=null;
+    }
+    if(d && (d.type==='wall-node' || d.type==='wall-body')){ syncManualWallsFromNodes(); syncRoomLinkedZones(); ensureOpeningAttachmentOffsets(); appState.editor.wallMergePreview=null; }
     clearRackSnapPreview();
     appState.editor.dragging = null;
     persistActiveLayout();
