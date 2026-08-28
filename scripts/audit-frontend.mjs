@@ -28,8 +28,8 @@ if (duplicateDeclarations.length || duplicateOverrides.length) {
   process.exit(1);
 }
 
-if (!source.startsWith('/* WMS_V128_DYNAMIC_TOPOLOGY */')) {
-  console.error('Falta la marca de bundle v128.');
+if (!source.startsWith('/* WMS_V130_UNIFIED_WALLS_VIEWS */')) {
+  console.error('Falta la marca de bundle v130.');
   process.exit(1);
 }
 console.log(`Auditoría frontend OK: ${declarations.size} funciones declaradas, sin overrides protegidos duplicados.`);

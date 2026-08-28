@@ -5625,7 +5625,7 @@ body.theme-light #layoutSvg .opening-dim-title{fill:rgba(28,41,58,.78)!important
 
 
 
-/* WMS v101 - unión de paredes tipo Revit/SketchUp */
+/* WMS v101 - unión de muros tipo Revit/SketchUp */
 .v90-version-badge{
   border-color:rgba(54,245,141,.62)!important;
 }
@@ -5796,3 +5796,13 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 .layout-rack-wrap.v117-conflict .ortho-rack-outline{stroke:#ff5668!important;stroke-width:2.4!important;filter:drop-shadow(0 0 6px rgba(255,70,90,.55))}
 .v117-wall-conflict{filter:drop-shadow(0 0 5px rgba(255,70,90,.55))}
 .v117-cad-tools .btn,.v117-cad-tools .seg-btn,.v117-rack-tools .btn,.v117-rack-tools .seg-btn{min-height:36px}
+
+/* WMS v130 — vistas profesionales, cortes XYZ y navegación en primera persona */
+.nav3d-pro-panel{position:absolute;z-index:22;top:86px;right:18px;width:min(390px,calc(100% - 36px));max-height:calc(100% - 120px);overflow:auto;padding:14px;border:1px solid rgba(112,255,188,.24);border-radius:16px;background:rgba(5,16,26,.94);box-shadow:0 20px 56px rgba(0,0,0,.38);backdrop-filter:blur(16px)}
+.nav3d-pro-panel[hidden]{display:none!important}.nav3d-pro-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.nav3d-pro-head>b{font-size:14px}.nav3d-pro-head>button{width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:inherit;cursor:pointer}
+.nav3d-cut-row{display:grid;grid-template-columns:36px minmax(120px,1fr) 48px 38px;align-items:center;gap:8px;margin:8px 0}.nav3d-cut-row>button,.nav3d-view-grid button,.nav3d-saved-row button{min-height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.045);color:inherit;font-weight:800;cursor:pointer}.nav3d-cut-row>button.active,.nav3d-box-head .active{border-color:#55f3ad;background:rgba(55,218,142,.16);color:#a9ffd6}.nav3d-cut-row input,.nav3d-box-grid input{width:100%;accent-color:#59ecaa}.nav3d-cut-row>span{text-align:center;font-size:11px;font-weight:900;color:#9fb4c3}
+.nav3d-box-head{display:flex;gap:8px;margin:12px 0 8px}.nav3d-box-head>*{flex:1}.nav3d-box-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:10px;border-radius:12px;background:rgba(255,255,255,.025);margin-bottom:10px}.nav3d-box-grid label{display:grid;gap:4px;font-size:10px;font-weight:800;color:#9fb4c3}
+.nav3d-view-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.nav3d-view-grid button:hover,.nav3d-saved-row button:first-child:hover{border-color:rgba(89,236,170,.55);background:rgba(89,236,170,.09)}.nav3d-saved-title{display:flex;align-items:end;justify-content:space-between;gap:8px;margin:16px 0 8px}.nav3d-saved-list{display:grid;gap:7px}.nav3d-saved-row{display:grid;grid-template-columns:1fr 34px;gap:6px}.nav3d-saved-row button:first-child{text-align:left;padding:7px 10px}.nav3d-saved-delete{font-size:18px;color:#ff9da4!important}
+.nav3d-first-person #nav3dCanvas{cursor:crosshair!important}.nav3d-first-person .nav3d-hud{border-color:rgba(89,236,170,.45);background:rgba(5,25,20,.88)}
+@media(max-width:760px){.nav3d-pro-panel{top:116px;right:10px;width:calc(100% - 20px)}.nav3d-view-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nav3d-cut-row{grid-template-columns:34px 1fr 44px 34px}}
+.nav3d-presentation-clean .nav3d-side,.nav3d-presentation-clean .nav3d-product-card,.nav3d-presentation-clean .nav3d-minimap{display:none!important}.nav3d-presentation-clean .nav3d-body{grid-template-columns:minmax(0,1fr)!important}.nav3d-presentation-clean .nav3d-stage{min-height:calc(100vh - 150px)}.nav3d-presentation-clean .nav3d-hud{opacity:.62}

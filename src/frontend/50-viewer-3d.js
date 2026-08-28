@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v119-openings-zone-guards';
+      const localUrl = './vendor/three.module.min.js?v=wms-v130-unified-walls-views';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -79,7 +79,11 @@
             </div>
             <button class="iso-tool nav3d-solo-location active" data-nav3d-action="solo">Solo ubicación</button>
             <button class="iso-tool" data-nav3d-action="focus">Centrar</button>
-            <button class="iso-tool ${appState.ui?.nav3DWallCut ? 'active' : ''}" data-nav3d-action="wall-cut">Vista corte</button>
+            <button class="iso-tool ${appState.ui?.nav3DWallCut ? 'active' : ''}" data-nav3d-action="wall-cut">Corte rápido</button>
+            <button class="iso-tool" data-nav3d-action="section-panel">Cortes X/Y/Z</button>
+            <button class="iso-tool" data-nav3d-action="views-panel">Vistas</button>
+            <button class="iso-tool" data-nav3d-action="first-person">Primera persona</button>
+            <button class="iso-tool" data-nav3d-action="save-view">Guardar vista</button>
             <button class="iso-tool ${appState.ui?.nav3DArchitectural ? 'active' : ''}" data-nav3d-action="arch-mode">Arquitectónico</button>
             <button class="iso-tool ${appState.ui?.nav3DPresentation ? 'active' : ''}" data-nav3d-action="presentation-mode">Presentación</button>
             <button class="iso-tool ${appState.ui?.nav3DRoof ? 'active' : ''}" data-nav3d-action="roof-toggle">Techo</button>
@@ -98,11 +102,34 @@
         <div class="nav3d-body">
           <div class="nav3d-stage">
             <canvas id="nav3dCanvas"></canvas>
-            <div class="nav3d-hud">
+            <div class="nav3d-hud" id="nav3dHud">
               <b>Controles</b>
               <span>Arrastrar: orbitar suave</span>
               <span>Rueda: zoom progresivo</span>
               <span>Shift + arrastrar: pan</span>
+            </div>
+            <div class="nav3d-pro-panel nav3d-section-panel" id="nav3dSectionPanel" hidden>
+              <div class="nav3d-pro-head"><b>Cortes profesionales</b><button type="button" data-panel-close="section">✕</button></div>
+              <div class="nav3d-cut-row"><button type="button" data-section-axis="x">X</button><input type="range" min="0" max="100" step="1" data-section-range="x"><span data-section-value="x">50%</span><button type="button" data-section-dir="x">⇄</button></div>
+              <div class="nav3d-cut-row"><button type="button" data-section-axis="y">Y</button><input type="range" min="0" max="100" step="1" data-section-range="y"><span data-section-value="y">50%</span><button type="button" data-section-dir="y">⇄</button></div>
+              <div class="nav3d-cut-row"><button type="button" data-section-axis="z">Z</button><input type="range" min="0" max="100" step="1" data-section-range="z"><span data-section-value="z">70%</span><button type="button" data-section-dir="z">⇅</button></div>
+              <div class="nav3d-box-head"><button type="button" class="iso-tool" data-section-box> Caja de sección </button><button type="button" class="iso-tool" data-section-reset>Restablecer</button></div>
+              <div class="nav3d-box-grid">
+                <label>X mín<input type="range" min="0" max="95" step="1" data-box-range="xMin"></label><label>X máx<input type="range" min="5" max="100" step="1" data-box-range="xMax"></label>
+                <label>Y mín<input type="range" min="0" max="95" step="1" data-box-range="yMin"></label><label>Y máx<input type="range" min="5" max="100" step="1" data-box-range="yMax"></label>
+                <label>Z mín<input type="range" min="0" max="95" step="1" data-box-range="zMin"></label><label>Z máx<input type="range" min="5" max="100" step="1" data-box-range="zMax"></label>
+              </div>
+              <div class="tiny muted">Al activar un corte, el techo se oculta automáticamente. X/Y cortan la planta; Z corta la altura.</div>
+            </div>
+            <div class="nav3d-pro-panel nav3d-views-panel" id="nav3dViewsPanel" hidden>
+              <div class="nav3d-pro-head"><b>Vistas profesionales</b><button type="button" data-panel-close="views">✕</button></div>
+              <div class="nav3d-view-grid">
+                <button type="button" data-view-preset="top">Planta</button><button type="button" data-view-preset="front">Frontal</button><button type="button" data-view-preset="back">Posterior</button>
+                <button type="button" data-view-preset="left">Izquierda</button><button type="button" data-view-preset="right">Derecha</button><button type="button" data-view-preset="iso-ne">ISO NE</button>
+                <button type="button" data-view-preset="iso-nw">ISO NO</button><button type="button" data-view-preset="perspective">Perspectiva</button>
+              </div>
+              <div class="nav3d-saved-title"><b>Vistas guardadas</b><span class="tiny muted">Se guardan con el layout</span></div>
+              <div class="nav3d-saved-list" id="nav3dSavedViews"></div>
             </div>
             <div class="nav3d-compass" id="nav3dCompass">N</div>
             <div class="nav3d-loading" id="nav3dLoading">Cargando motor 3D…</div>
@@ -142,6 +169,7 @@
         </div>
       </div>`;
     document.body.appendChild(modal);
+    modal.classList.toggle('nav3d-presentation-clean', !!appState.ui?.nav3DPresentation);
 
     const canvas = modal.querySelector('#nav3dCanvas');
     const loading = modal.querySelector('#nav3dLoading');
@@ -150,6 +178,10 @@
     const hoverLabel = modal.querySelector('#nav3dHoverLabel');
     const productCard = modal.querySelector('#nav3dProductCard');
     const miniMap = modal.querySelector('#nav3dMiniMap');
+    const nav3dHud = modal.querySelector('#nav3dHud');
+    const sectionPanel = modal.querySelector('#nav3dSectionPanel');
+    const viewsPanel = modal.querySelector('#nav3dViewsPanel');
+    const savedViewsList = modal.querySelector('#nav3dSavedViews');
     const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
     const rackStoreSvg = modal.querySelector('#nav3dRackStore');
     const rackZoom = modal.querySelector('#nav3dRackZoom');
@@ -251,7 +283,7 @@
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
-    let pulseTimer = 0, isClosed = false, visibilityHandler = null;
+    let pulseTimer = 0, isClosed = false, visibilityHandler = null, nav3dKeyDownHandler = null, nav3dKeyUpHandler = null;
     const activePulseTargets = [];
     const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation };
     const close = () => {
@@ -261,6 +293,8 @@
       clearTimeout(pulseTimer);
       resizeObserver?.disconnect();
       if(visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
+      if(nav3dKeyDownHandler) document.removeEventListener('keydown', nav3dKeyDownHandler);
+      if(nav3dKeyUpHandler) document.removeEventListener('keyup', nav3dKeyUpHandler);
       disposeThreeScene(scene, renderer);
       scene = null; camera = null; renderer = null;
       if(modal.isConnected) modal.remove();
@@ -283,6 +317,10 @@
       modal.querySelector('[data-nav3d-action="presentation-mode"]')?.classList.toggle('active', !!appState.ui?.nav3DPresentation);
       modal.querySelector('[data-nav3d-action="roof-toggle"]')?.classList.toggle('active', !!appState.ui?.nav3DRoof);
       modal.querySelector('[data-nav3d-action="arch-details"]')?.classList.toggle('active', appState.ui?.nav3DShowArchitecturalDetails !== false);
+      const sectionUi=appState.ui?.nav3DSection||{}; const sectionActive=!!(sectionUi.box||sectionUi.axes?.x||sectionUi.axes?.y||sectionUi.axes?.z);
+      modal.querySelector('[data-nav3d-action="section-panel"]')?.classList.toggle('active', sectionActive || !sectionPanel?.hidden);
+      modal.querySelector('[data-nav3d-action="views-panel"]')?.classList.toggle('active', !viewsPanel?.hidden);
+      modal.querySelector('[data-nav3d-action="first-person"]')?.classList.toggle('active', modal.classList.contains('nav3d-first-person'));
       modal.querySelectorAll('[data-nav3d-target]').forEach(b => b.classList.toggle('active', b.dataset.nav3dTarget === ui.target));
     };
 
@@ -438,6 +476,57 @@
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorW, floorD), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; world.add(floor);
       const grid = new THREE.GridHelper(Math.max(floorW,floorD), Math.max(12, Math.round(Math.max(floorW,floorD)*2.6)), 0x6ff0b4, 0x2f6680); grid.position.y=.028; grid.material.transparent = true; grid.material.opacity = presentationMode ? 0 : (appState.ui?.nav3DArchitectural ? Math.min(.16, visual.grid*.24) : Math.min(.34, visual.grid*.48)); world.add(grid);
 
+      // v130 — cortes X/Y/Z y caja de sección en coordenadas reales del mundo 3D.
+      const defaultSectionState = () => ({
+        axes:{x:false,y:false,z:false}, values:{x:50,y:50,z:70}, dirs:{x:1,y:1,z:-1}, box:false,
+        boxValues:{xMin:5,xMax:95,yMin:5,yMax:95,zMin:0,zMax:100}
+      });
+      const sectionState = (() => {
+        const current=appState.ui?.nav3DSection;
+        const base=defaultSectionState();
+        if(!current || typeof current!=='object'){ appState.ui.nav3DSection=base; return base; }
+        current.axes={...base.axes,...(current.axes||{})}; current.values={...base.values,...(current.values||{})}; current.dirs={...base.dirs,...(current.dirs||{})}; current.boxValues={...base.boxValues,...(current.boxValues||{})}; current.box=!!current.box;
+        return current;
+      })();
+      const sectionWorldBounds={xMin:-floorW/2,xMax:floorW/2,zMin:-floorD/2,zMax:floorD/2,yMin:-.06,yMax:12};
+      const pctRange=(a,b,p)=>a+(b-a)*(Math.max(0,Math.min(100,Number(p||0)))/100);
+      const sectionIsActive=()=>!!(sectionState.box||sectionState.axes.x||sectionState.axes.y||sectionState.axes.z);
+      const buildSectionPlanes=()=>{
+        const planes=[];
+        if(sectionState.box){
+          const v=sectionState.boxValues;
+          const xmin=pctRange(sectionWorldBounds.xMin,sectionWorldBounds.xMax,v.xMin), xmax=pctRange(sectionWorldBounds.xMin,sectionWorldBounds.xMax,v.xMax);
+          const zmin=pctRange(sectionWorldBounds.zMin,sectionWorldBounds.zMax,v.yMin), zmax=pctRange(sectionWorldBounds.zMin,sectionWorldBounds.zMax,v.yMax);
+          const ymin=pctRange(sectionWorldBounds.yMin,sectionWorldBounds.yMax,v.zMin), ymax=pctRange(sectionWorldBounds.yMin,sectionWorldBounds.yMax,v.zMax);
+          planes.push(new THREE.Plane(new THREE.Vector3(1,0,0),-xmin),new THREE.Plane(new THREE.Vector3(-1,0,0),xmax),new THREE.Plane(new THREE.Vector3(0,0,1),-zmin),new THREE.Plane(new THREE.Vector3(0,0,-1),zmax),new THREE.Plane(new THREE.Vector3(0,1,0),-ymin),new THREE.Plane(new THREE.Vector3(0,-1,0),ymax));
+        }else{
+          if(sectionState.axes.x){ const c=pctRange(sectionWorldBounds.xMin,sectionWorldBounds.xMax,sectionState.values.x),d=sectionState.dirs.x<0?-1:1; planes.push(new THREE.Plane(new THREE.Vector3(d,0,0),-d*c)); }
+          if(sectionState.axes.y){ const c=pctRange(sectionWorldBounds.zMin,sectionWorldBounds.zMax,sectionState.values.y),d=sectionState.dirs.y<0?-1:1; planes.push(new THREE.Plane(new THREE.Vector3(0,0,d),-d*c)); }
+          if(sectionState.axes.z){ const c=pctRange(sectionWorldBounds.yMin,sectionWorldBounds.yMax,sectionState.values.z),d=sectionState.dirs.z<0?-1:1; planes.push(new THREE.Plane(new THREE.Vector3(0,d,0),-d*c)); }
+        }
+        return planes;
+      };
+      const applySectionClipping=()=>{
+        const planes=buildSectionPlanes(); renderer.localClippingEnabled=planes.length>0;
+        world.traverse(obj=>{
+          if(obj?.userData?.isArchitecturalRoof) obj.visible=!sectionIsActive() && !!appState.ui?.nav3DRoof;
+          const mats=Array.isArray(obj?.material)?obj.material:(obj?.material?[obj.material]:[]);
+          mats.forEach(mat=>{ if(!mat)return; mat.clippingPlanes=planes; mat.clipShadows=true; mat.needsUpdate=true; });
+        });
+        if(sectionIsActive()) appState.ui.nav3DRoof=false;
+      };
+      const renderSectionPanel=()=>{
+        if(!sectionPanel)return;
+        ['x','y','z'].forEach(axis=>{
+          sectionPanel.querySelector(`[data-section-axis="${axis}"]`)?.classList.toggle('active',!!sectionState.axes[axis]);
+          const range=sectionPanel.querySelector(`[data-section-range="${axis}"]`); if(range)range.value=String(sectionState.values[axis]);
+          const value=sectionPanel.querySelector(`[data-section-value="${axis}"]`); if(value)value.textContent=`${Math.round(Number(sectionState.values[axis]||0))}%`;
+          const dir=sectionPanel.querySelector(`[data-section-dir="${axis}"]`); if(dir)dir.classList.toggle('active',sectionState.dirs[axis]<0);
+        });
+        sectionPanel.querySelector('[data-section-box]')?.classList.toggle('active',!!sectionState.box);
+        Object.entries(sectionState.boxValues).forEach(([key,val])=>{ const el=sectionPanel.querySelector(`[data-box-range="${key}"]`); if(el)el.value=String(val); });
+      };
+
       const DEFAULT_WALL_HEIGHT = 290;
       const DEFAULT_WALL_THICKNESS = 14;
       const buildWallSegmentsFromLayout = () => {
@@ -587,6 +676,7 @@
       };
       const buildArchitecturalRoofGroup = (zones=[], activeZoneIds=new Set(), wallHeight=2.8, segments=[]) => {
         const group = new THREE.Group();
+        group.userData.isArchitecturalRoof = true;
         if(!appState.ui?.nav3DRoof) return group;
         zones.forEach(z => {
           const pts = (z.pts || []).map(layoutToShapePoint);
@@ -802,6 +892,7 @@
       zoneWallsGroup.position.y = .01;
       world.add(zoneWallsGroup);
       const maxWallHeight = Math.max(2.8, ...zoneWallSegments.map(s => (Number(s.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale));
+      sectionWorldBounds.yMax = Math.max(5.5, maxWallHeight + 2.2, ...getNav3DRacks().map(r => (Number(r.baseHeight||0)+Number(r.rackHeight||240))*hScale + 1.2));
       const roofZones = layoutZones.length ? layoutZones : (appState.layout?.rooms||[]).map(r=>({id:r.id,pts:roomPointsRaw(r)}));
       const roofGroup = buildArchitecturalRoofGroup(roofZones, focusZoneIds, appState.ui?.nav3DWallCut ? Math.min(1.25, maxWallHeight) : maxWallHeight, zoneWallSegments);
       world.add(roofGroup);
@@ -1001,15 +1092,83 @@
         }
       }
 
+      applySectionClipping();
+      renderSectionPanel();
+
       const cameraFocusRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
       const initialPan = cameraFocusRack
         ? targetFocusForRack(cameraFocusRack, 'slot')
         : new THREE.Vector3(0,0,0);
       const initialDistance = Math.max(4.6, Math.max(floorW,floorD) * (ui.isolation === 'solo' ? .29 : .54));
       const controls = { yaw:-Math.PI/4, pitch:.68, distance:initialDistance, pan:initialPan.clone(), targetYaw:-Math.PI/4, targetPitch:.68, targetDistance:initialDistance, targetPan:initialPan.clone(), dragging:false, lastX:0, lastY:0 };
+      const fp = {active:false,position:new THREE.Vector3(initialPan.x,1.65,initialPan.z),yaw:Math.PI*.75,pitch:0,speed:.075,keys:new Set()};
+      const savedViews = () => {
+        if(!appState.layout.meta || typeof appState.layout.meta!=='object') appState.layout.meta={};
+        if(!Array.isArray(appState.layout.meta.saved3DViews)) appState.layout.meta.saved3DViews=[];
+        return appState.layout.meta.saved3DViews;
+      };
+      const syncNavigationHud = () => {
+        if(!nav3dHud)return;
+        nav3dHud.innerHTML=fp.active
+          ? '<b>Primera persona</b><span>W A S D: caminar</span><span>Mouse arrastrando: mirar</span><span>Shift: rápido · ESC: salir</span>'
+          : '<b>Controles</b><span>Arrastrar: orbitar suave</span><span>Rueda: zoom progresivo</span><span>Shift + arrastrar: pan</span>';
+      };
+      const setOrbitView = (yaw,pitch,distance=initialDistance,pan=initialPan) => {
+        if(fp.active){ fp.active=false; fp.keys.clear(); modal.classList.remove('nav3d-first-person'); }
+        controls.targetYaw=yaw; controls.targetPitch=pitch; controls.targetDistance=Math.max(3.8,distance); controls.targetPan.copy(pan||initialPan); syncNavigationHud(); syncToolbar();
+      };
+      const applyCameraPreset = (name) => {
+        const d=Math.max(6.2,initialDistance*.92), p=initialPan.clone();
+        const presets={
+          top:[0,1.535,d*.92],front:[0,.08,d],back:[Math.PI,.08,d],left:[-Math.PI/2,.08,d],right:[Math.PI/2,.08,d],
+          'iso-ne':[-Math.PI/4,.66,d*.88],'iso-nw':[Math.PI/4,.66,d*.88],perspective:[-Math.PI/4,.46,d*.82]
+        };
+        const v=presets[name]||presets.perspective; setOrbitView(v[0],v[1],v[2],p); requestRender(true);
+      };
+      const renderSavedViews = () => {
+        if(!savedViewsList)return;
+        const items=savedViews();
+        savedViewsList.innerHTML=items.length?items.map(v=>`<div class="nav3d-saved-row"><button type="button" data-saved-view="${escapeHtml(v.id)}">${escapeHtml(v.name||'Vista')}</button><button type="button" class="nav3d-saved-delete" data-delete-view="${escapeHtml(v.id)}">×</button></div>`).join(''):'<div class="tiny muted">Todavía no hay vistas guardadas.</div>';
+      };
+      const saveCurrentView = () => {
+        const name=window.prompt('Nombre de la vista',`Vista ${savedViews().length+1}`); if(!name)return;
+        const views=savedViews(); const id=`V3D-${Date.now().toString(36)}`;
+        views.push({id,name:String(name).trim()||'Vista',yaw:Number(controls.targetYaw),pitch:Number(controls.targetPitch),distance:Number(controls.targetDistance),pan:{x:Number(controls.targetPan.x),y:Number(controls.targetPan.y),z:Number(controls.targetPan.z)}});
+        if(views.length>24)views.splice(0,views.length-24); persistActiveLayout(); renderSavedViews(); showToast('Vista 3D guardada.','success',1800);
+      };
+      const applySavedView = (id) => {
+        const v=savedViews().find(x=>x.id===id); if(!v)return;
+        setOrbitView(Number(v.yaw||0),Number(v.pitch||.5),Number(v.distance||initialDistance),new THREE.Vector3(Number(v.pan?.x||0),Number(v.pan?.y||0),Number(v.pan?.z||0))); requestRender(true);
+      };
+      const enterFirstPerson = () => {
+        fp.active=true; fp.keys.clear(); fp.position.set(controls.targetPan.x,Math.max(1.45,Math.min(1.85,controls.targetPan.y+1.65)),controls.targetPan.z); fp.yaw=controls.targetYaw+Math.PI; fp.pitch=0; modal.classList.add('nav3d-first-person'); syncNavigationHud(); syncToolbar(); requestRender(true);
+      };
+      const exitFirstPerson = () => {
+        if(!fp.active)return; fp.active=false; fp.keys.clear(); modal.classList.remove('nav3d-first-person'); controls.targetPan.set(fp.position.x,Math.max(.5,fp.position.y-.8),fp.position.z); controls.targetYaw=fp.yaw-Math.PI; controls.targetPitch=.48; controls.targetDistance=Math.max(5.2,initialDistance*.42); syncNavigationHud(); syncToolbar(); requestRender(true);
+      };
+      const toggleFirstPerson = () => fp.active ? exitFirstPerson() : enterFirstPerson();
+      renderSavedViews(); syncNavigationHud();
       const selectedInitial = getTargetRackId() || ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
       if(selectedInitial) { ui.selectedRackId = selectedInitial; appState.ui.nav3DSelectedRackId = selectedInitial; if(rackPopover) rackPopover.hidden = true; }
       const updateCamera = () => {
+        if(fp.active){
+          let moving=false; const fast=fp.keys.has('shift')?2.35:1; const step=fp.speed*fast;
+          const fwd=new THREE.Vector3(Math.sin(fp.yaw),0,Math.cos(fp.yaw)); const right=new THREE.Vector3(Math.cos(fp.yaw),0,-Math.sin(fp.yaw));
+          const move=new THREE.Vector3();
+          if(fp.keys.has('w')||fp.keys.has('arrowup'))move.add(fwd);
+          if(fp.keys.has('s')||fp.keys.has('arrowdown'))move.sub(fwd);
+          if(fp.keys.has('d')||fp.keys.has('arrowright'))move.add(right);
+          if(fp.keys.has('a')||fp.keys.has('arrowleft'))move.sub(right);
+          if(move.lengthSq()>0){ move.normalize().multiplyScalar(step); fp.position.add(move); moving=true; }
+          fp.position.x=Math.max(sectionWorldBounds.xMin+.25,Math.min(sectionWorldBounds.xMax-.25,fp.position.x));
+          fp.position.z=Math.max(sectionWorldBounds.zMin+.25,Math.min(sectionWorldBounds.zMax-.25,fp.position.z));
+          fp.position.y=Math.max(1.35,Math.min(Math.max(2.2,sectionWorldBounds.yMax-.25),fp.position.y));
+          camera.position.copy(fp.position);
+          const cp=Math.cos(fp.pitch), dir=new THREE.Vector3(Math.sin(fp.yaw)*cp,Math.sin(fp.pitch),Math.cos(fp.yaw)*cp);
+          camera.lookAt(fp.position.clone().add(dir));
+          if(compass){ const deg=Math.round((((fp.yaw*180/Math.PI)%360)+360)%360); compass.textContent=`N · ${deg}° · FP`; }
+          return moving;
+        }
         const yawDelta = controls.targetYaw-controls.yaw;
         const pitchDelta = controls.targetPitch-controls.pitch;
         const distanceDelta = controls.targetDistance-controls.distance;
@@ -1103,6 +1262,16 @@
         }else requestRender(true);
       };
       document.addEventListener('visibilitychange', visibilityHandler);
+      nav3dKeyDownHandler = e => {
+        if(!fp.active) return;
+        const tag=String(e.target?.tagName||'').toLowerCase(); if(['input','textarea','select'].includes(tag)) return;
+        const key=String(e.key||'').toLowerCase();
+        if(key==='escape'){ e.preventDefault(); exitFirstPerson(); return; }
+        if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright','shift'].includes(key)){ e.preventDefault(); fp.keys.add(key); requestRender(); }
+      };
+      nav3dKeyUpHandler = e => { if(!fp.active)return; fp.keys.delete(String(e.key||'').toLowerCase()); requestRender(); };
+      document.addEventListener('keydown', nav3dKeyDownHandler);
+      document.addEventListener('keyup', nav3dKeyUpHandler);
       const resize = () => {
         if(isClosed || !renderer || !camera) return;
         const stage = modal.querySelector('.nav3d-stage');
@@ -1140,8 +1309,9 @@
         }
         const dx=e.clientX-controls.lastX, dy=e.clientY-controls.lastY; controls.lastX=e.clientX; controls.lastY=e.clientY;
         if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 6) downMoved = true;
-        if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
-        else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.28, Math.min(1.16, controls.targetPitch + dy*.0022)); }
+        if(fp.active){ fp.yaw -= dx*.0032; fp.pitch = Math.max(-1.15, Math.min(1.15, fp.pitch - dy*.0022)); }
+        else if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
+        else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.08, Math.min(1.535, controls.targetPitch + dy*.0022)); }
         requestRender();
       });
       canvas.addEventListener('pointerup', e => {
@@ -1154,7 +1324,7 @@
       });
       canvas.addEventListener('dblclick', e => { const rid = pickRackId(e); if(rid) selectRackFromScene(rid, true); });
       canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; requestRender(); });
-      canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); requestRender(); }, { passive:false });
+      canvas.addEventListener('wheel', e => { e.preventDefault(); if(fp.active){ const dir=new THREE.Vector3(Math.sin(fp.yaw),0,Math.cos(fp.yaw)); fp.position.addScaledVector(dir,e.deltaY>0?-.35:.35); } else controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); requestRender(); }, { passive:false });
       modal.querySelectorAll('[data-nav3d-target]').forEach(btn => btn.addEventListener('click', () => {
         ui.target = btn.dataset.nav3dTarget || 'primary';
         appState.ui.nav3DTarget = ui.target;
@@ -1169,8 +1339,32 @@
         if(action === 'center') focusRackCamera(getTargetRackId(), true);
         if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); close(); openNavigable3DModal(prod); }
       });
+      const updateSectionNow = () => { applySectionClipping(); renderSectionPanel(); syncToolbar(); requestRender(true); };
+      sectionPanel?.addEventListener('click', e => {
+        const axis=e.target?.dataset?.sectionAxis, dirAxis=e.target?.dataset?.sectionDir;
+        if(axis){ sectionState.axes[axis]=!sectionState.axes[axis]; if(sectionState.axes[axis]){sectionState.box=false;appState.ui.nav3DRoof=false;} updateSectionNow(); return; }
+        if(dirAxis){ sectionState.dirs[dirAxis]=(sectionState.dirs[dirAxis]||1)*-1; updateSectionNow(); return; }
+        if(e.target?.hasAttribute?.('data-section-box')){ sectionState.box=!sectionState.box; if(sectionState.box){sectionState.axes={x:false,y:false,z:false};appState.ui.nav3DRoof=false;} updateSectionNow(); return; }
+        if(e.target?.hasAttribute?.('data-section-reset')){ const fresh=defaultSectionState(); Object.assign(sectionState,fresh); sectionState.axes={...fresh.axes};sectionState.values={...fresh.values};sectionState.dirs={...fresh.dirs};sectionState.boxValues={...fresh.boxValues}; updateSectionNow(); return; }
+        if(e.target?.dataset?.panelClose==='section'){ sectionPanel.hidden=true; syncToolbar(); }
+      });
+      sectionPanel?.addEventListener('input', e => {
+        const axis=e.target?.dataset?.sectionRange; if(axis){ sectionState.values[axis]=Number(e.target.value||0); sectionState.axes[axis]=true; sectionState.box=false; appState.ui.nav3DRoof=false; updateSectionNow(); return; }
+        const boxKey=e.target?.dataset?.boxRange; if(boxKey){ sectionState.boxValues[boxKey]=Number(e.target.value||0); const v=sectionState.boxValues; if(v.xMin>=v.xMax)v[boxKey==='xMin'?'xMin':'xMax']=boxKey==='xMin'?Math.max(0,v.xMax-1):Math.min(100,v.xMin+1); if(v.yMin>=v.yMax)v[boxKey==='yMin'?'yMin':'yMax']=boxKey==='yMin'?Math.max(0,v.yMax-1):Math.min(100,v.yMin+1); if(v.zMin>=v.zMax)v[boxKey==='zMin'?'zMin':'zMax']=boxKey==='zMin'?Math.max(0,v.zMax-1):Math.min(100,v.zMin+1); sectionState.box=true; sectionState.axes={x:false,y:false,z:false}; appState.ui.nav3DRoof=false; updateSectionNow(); }
+      });
+      viewsPanel?.addEventListener('click', e => {
+        const preset=e.target?.dataset?.viewPreset; if(preset){ applyCameraPreset(preset); return; }
+        const saved=e.target?.dataset?.savedView; if(saved){ applySavedView(saved); return; }
+        const del=e.target?.dataset?.deleteView; if(del){ const arr=savedViews(),idx=arr.findIndex(v=>v.id===del); if(idx>=0){arr.splice(idx,1);persistActiveLayout();renderSavedViews();} return; }
+        if(e.target?.dataset?.panelClose==='views'){ viewsPanel.hidden=true; syncToolbar(); }
+      });
       modal.querySelectorAll('[data-nav3d-action]').forEach(btn => btn.addEventListener('click', () => {
         const action = btn.dataset.nav3dAction;
+        if(action==='section-panel'){ sectionPanel.hidden=!sectionPanel.hidden; if(!sectionPanel.hidden)viewsPanel.hidden=true; renderSectionPanel(); syncToolbar(); return; }
+        if(action==='views-panel'){ viewsPanel.hidden=!viewsPanel.hidden; if(!viewsPanel.hidden)sectionPanel.hidden=true; renderSavedViews(); syncToolbar(); return; }
+        if(action==='first-person'){ toggleFirstPerson(); return; }
+        if(action==='save-view'){ saveCurrentView(); return; }
+        if(action==='camera-top'){ applyCameraPreset('top'); return; }
         if(action === 'focus' || action === 'slot'){
           controls.targetYaw = -Math.PI/4;
           controls.targetPitch = .68;
@@ -1209,12 +1403,7 @@
         }
         if(action === 'room-slabs'){ appState.ui.nav3DShowRoomSlabs = appState.ui.nav3DShowRoomSlabs === false; }
         if(action === 'opening-frames'){ appState.ui.nav3DShowOpeningFrames = appState.ui.nav3DShowOpeningFrames === false; }
-      if(action === 'camera-top'){
-          controls.targetYaw = 0;
-          controls.targetPitch = 1.20;
-          controls.targetDistance = Math.max(7.2, initialDistance*.78);
-          controls.targetPan.copy(initialPan);
-        }
+
         if(action === 'all' || action === 'zone' || action === 'rack' || action === 'solo') ui.isolation = action;
         if(action === 'ghost') ui.ghost = !ui.ghost;
         if(action === 'labels') ui.labels = !ui.labels;

@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.2.8",
+  "version": "1.3.0",
   "private": true,
-  "description": "WMS Industrial v128: topología dinámica, muros compartidos reversibles, fusión parcial, snaps CAD, openings y zonas sin solapes.",
+  "description": "WMS Industrial v130: muros CAD unificados, topología dinámica y visor 3D profesional con cortes, vistas y primera persona.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

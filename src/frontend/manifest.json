@@ -1,5 +1,5 @@
 {
-  "version": "128",
+  "version": "130",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v128 acumulativa: paredes compartidas reversibles y parciales, snaps topológicos, colisiones sin solape, nodos multizona, ownership de openings y adyacencias automáticas."
+  "notes": "v130 acumulativa: un solo sistema de Muros CAD, migración automática de muros legacy, cortes X/Y/Z, caja de sección, vistas guardadas y primera persona WASD."
 }

@@ -1,4 +1,4 @@
-console.info('*** WMS v128 DYNAMIC TOPOLOGY ACTIVE ***');
+console.info('*** WMS v130 UNIFIED WALLS + PROFESSIONAL 3D VIEWS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

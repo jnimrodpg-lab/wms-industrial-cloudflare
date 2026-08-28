@@ -390,12 +390,12 @@
         if(!Number.isFinite(Number(r.x)) || !Number.isFinite(Number(r.y))) warnings.push(`Rack ${r.id || 'sin ID'} tiene coordenadas inválidas.`);
       });
       walls.forEach(w => {
-        if(!w.id) warnings.push('Pared sin ID.');
-        if(w.autoZoneEdge && w.zoneId && !zoneIds.has(String(w.zoneId))) warnings.push(`Pared ${w.id || 'sin ID'} apunta a zona inexistente: ${w.zoneId}`);
+        if(!w.id) warnings.push('Muro sin ID.');
+        if(w.autoZoneEdge && w.zoneId && !zoneIds.has(String(w.zoneId))) warnings.push(`Muro ${w.id || 'sin ID'} apunta a zona inexistente: ${w.zoneId}`);
       });
       openings.forEach(o => {
         if(!o.id) warnings.push('Vano sin ID.');
-        if(o.wallId && !wallIds.has(String(o.wallId))) warnings.push(`Vano ${o.id || 'sin ID'} apunta a pared inexistente: ${o.wallId}`);
+        if(o.wallId && !wallIds.has(String(o.wallId))) warnings.push(`Vano ${o.id || 'sin ID'} apunta a muro inexistente: ${o.wallId}`);
         const width = Number(o.width || 0);
         if(!Number.isFinite(width) || width <= 0) warnings.push(`Vano ${o.id || 'sin ID'} tiene ancho inválido.`);
       });

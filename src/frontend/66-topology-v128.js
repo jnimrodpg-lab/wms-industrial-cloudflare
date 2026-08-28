@@ -1,5 +1,5 @@
 /* WMS_V128_DYNAMIC_TOPOLOGY */
-  // v128 acumulativa — paredes compartidas reversibles, fusión parcial, topología multizona y adyacencias.
+  // v128 acumulativa — muros compartidas reversibles, fusión parcial, topología multizona y adyacencias.
   function v128EnsureTopologyState(layout=appState.layout){
     if(!layout || typeof layout !== 'object') return layout;
     if(!Array.isArray(layout.sharedWalls)) layout.sharedWalls=[];
@@ -106,7 +106,7 @@
         const info=v128SegmentOverlapInfo(aa,bb,t.a,t.b,{lineTol:1.3,angleDeg:6}); if(!info) return;
         const endpointDistances=[Math.hypot(aa.x-t.a.x,aa.y-t.a.y),Math.hypot(aa.x-t.b.x,aa.y-t.b.y),Math.hypot(bb.x-t.a.x,bb.y-t.a.y),Math.hypot(bb.x-t.b.x,bb.y-t.b.y)];
         const endpointBonus=Math.min(...endpointDistances)<threshold*.8?-2:0; const score=Math.abs(signed)-Math.min(info.overlap,80)*.012+endpointBonus;
-        if(!best||score<best.score) best={score,roomId:room.id,targetRoomId:targetRoom.id,movingWallId:m.wall?.id||'',targetWallId:t.wall?.id||'',dx:dx+pdx,dy:dy+pdy,overlap:info.overlap,point:{x:(info.start.x+info.end.x)/2,y:(info.start.y+info.end.y)/2},label:info.overlap>=Math.min(ml,tl)*.92?'Pared coincidente':'Tramo compartido'};
+        if(!best||score<best.score) best={score,roomId:room.id,targetRoomId:targetRoom.id,movingWallId:m.wall?.id||'',targetWallId:t.wall?.id||'',dx:dx+pdx,dy:dy+pdy,overlap:info.overlap,point:{x:(info.start.x+info.end.x)/2,y:(info.start.y+info.end.y)/2},label:info.overlap>=Math.min(ml,tl)*.92?'Muro coincidente':'Tramo compartido'};
       });
     }));
     return best;
@@ -155,13 +155,13 @@
       if(!changed) break;
     }
     pruneOrphanWallNodes(); syncManualWallsFromNodes(); ensureOpeningAttachmentOffsets(); syncRoomLinkedZones(); v128RebuildSharedWallRegistry();
-    if(notify&&merged) showToast(`${merged} tramo(s) fusionados como pared compartida${split?` · ${split} división(es)`:''}.`,'success',2200);
+    if(notify&&merged) showToast(`${merged} tramo(s) fusionados como muro compartida${split?` · ${split} división(es)`:''}.`,'success',2200);
     return {merged,split};
   }
   function v128FuseAllTouchingRooms({notify=false}={}){
     let merged=0,split=0; const ids=(appState.layout.rooms||[]).filter(r=>!r.obsolete).map(r=>r.id);
     ids.forEach(id=>{const r=v128FuseTouchingRoomWalls(id);merged+=r.merged;split+=r.split;});
-    v128RebuildSharedWallRegistry(); if(notify)showToast(merged?`${merged} pared(es) compartidas actualizadas.`:'No hay paredes nuevas para fusionar.',merged?'success':'info',2000); return {merged,split};
+    v128RebuildSharedWallRegistry(); if(notify)showToast(merged?`${merged} muro(es) compartidas actualizadas.`:'No hay muros nuevas para fusionar.',merged?'success':'info',2000); return {merged,split};
   }
   function v128ZoneMetrics(zoneOrId){
     const zone=typeof zoneOrId==='string'?findZoneById(zoneOrId):zoneOrId;if(!zone||!Array.isArray(zone.pts)||zone.pts.length<3)return null;
@@ -181,6 +181,6 @@
   function v128FinalizeRoomMove(roomOrId,{targetRoomId='',notify=true}={}){
     const room=typeof roomOrId==='string'?findRoomById(roomOrId):roomOrId;if(!room)return {merged:0,split:0};
     v117ResolveWallIntersections(); const result=v128FuseTouchingRoomWalls(room,{targetRoomId,notify:false}); v117RefreshRooms(); syncRoomLinkedZones(); v128RebuildSharedWallRegistry();
-    if(notify&&result.merged)showToast(result.split?`Pared compartida creada (${result.split} corte(s) automático(s)).`:'Paredes fusionadas como muro compartido reversible.','success',2300);
+    if(notify&&result.merged)showToast(result.split?`Muro compartida creada (${result.split} corte(s) automático(s)).`:'Muros fusionadas como muro compartido reversible.','success',2300);
     return result;
   }
