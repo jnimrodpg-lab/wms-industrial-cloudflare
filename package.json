@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
-  "description": "WMS Industrial v110 con estructura y distribución de racks separadas para Cloudflare Pages Functions + D1.",
+  "description": "WMS Industrial v111 Layout Pro con muros conectados, snap inteligente, medidas exactas y vanos vinculados.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

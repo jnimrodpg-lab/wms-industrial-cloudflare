@@ -1,5 +1,5 @@
 {
-  "version": "110",
+  "version": "111",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -13,5 +13,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v110 UX: remove health/diagnostics UI and split structural layout editing from rack distribution with mutual locking."
+  "notes": "v111 Layout Pro: connected wall nodes, chained wall drawing, smart snaps, numeric lengths, persistent measurements, room closure and linked openings."
 }

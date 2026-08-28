@@ -399,6 +399,16 @@
         const width = Number(o.width || 0);
         if(!Number.isFinite(width) || width <= 0) warnings.push(`Vano ${o.id || 'sin ID'} tiene ancho inválido.`);
       });
+      const wallNodes = Array.isArray(layout.wallNodes) ? layout.wallNodes : [];
+      const nodeIds = new Set(wallNodes.map(n => String(n.id || '')));
+      walls.filter(w => !w.autoZoneEdge).forEach(w => {
+        if(w.startNodeId && !nodeIds.has(String(w.startNodeId))) warnings.push(`Muro ${w.id || 'sin ID'} tiene nodo inicial inexistente.`);
+        if(w.endNodeId && !nodeIds.has(String(w.endNodeId))) warnings.push(`Muro ${w.id || 'sin ID'} tiene nodo final inexistente.`);
+        if(w.startNodeId && w.startNodeId === w.endNodeId) warnings.push(`Muro ${w.id || 'sin ID'} tiene longitud nula.`);
+      });
+      (layout.rooms || []).forEach(room => {
+        if((room.nodeIds || []).some(id => !nodeIds.has(String(id)))) warnings.push(`Recinto ${room.id || 'sin ID'} tiene nodos inexistentes.`);
+      });
       const products = Array.isArray(appState.products) ? appState.products : [];
       const locationProducts = products.slice(0, 15000);
       let invalidLocations = 0;

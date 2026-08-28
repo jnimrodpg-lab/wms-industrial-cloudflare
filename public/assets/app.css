@@ -5756,3 +5756,18 @@ body[data-wms-layout-workspace="racks"] .edge-handle,
 body[data-wms-layout-workspace="racks"] .edge-wall-pill{pointer-events:none!important}
 body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-events:none!important}
 @media(max-width:1180px){.branch-switch-card.v53{grid-template-columns:1fr}}
+
+
+/* WMS v111 — Layout Pro */
+.layout-room-fill{pointer-events:none}
+.layout-room-label{fill:rgba(126,241,196,.55);font-size:11px;font-weight:700;pointer-events:none;paint-order:stroke;stroke:#06131d;stroke-width:3px}
+.wall-node-label,.wall-snap-label{fill:#dff7ff;font-size:10px;font-weight:800;paint-order:stroke;stroke:#06131d;stroke-width:3px;pointer-events:none}
+.wall-preview-dim,.layout-measure-text{fill:#ffd84d;font-size:12px;font-weight:900;paint-order:stroke;stroke:#06131d;stroke-width:4px;pointer-events:none}
+.layout-measure-text{fill:#8fe1ff}.layout-measure-text.active{fill:#ffd84d}
+.layout-measure-line{pointer-events:stroke}.layout-measure-line.selected{filter:drop-shadow(0 0 5px rgba(255,216,77,.5))}
+.wall-length-hud{position:absolute;left:50%;bottom:62px;transform:translateX(-50%);z-index:12;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(5,18,28,.96);border:1px solid rgba(255,216,77,.48);box-shadow:0 10px 28px rgba(0,0,0,.35);color:#edf7ff;font-size:11px}
+.wall-length-hud span{font-weight:800;color:#ffd84d}.wall-length-hud input{width:94px;background:#081725;border:1px solid rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:7px 9px;font-weight:800}.wall-length-hud b{color:#9db8d4}.wall-length-hud small{color:#8ea4ba;white-space:nowrap}
+.wall-draw-help{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:10;padding:7px 11px;border-radius:999px;background:rgba(5,18,28,.9);border:1px solid rgba(88,197,255,.22);font-size:10px;font-weight:700;color:#a9c5db;pointer-events:none;white-space:nowrap}
+.wall-pro-card .layout-prop-grid input:not(:disabled){font-variant-numeric:tabular-nums}
+.v80-tool-rail{gap:6px!important}.v80-tool-btn{min-height:54px!important}.v80-tool-btn.active{border-color:rgba(101,240,168,.75)!important;box-shadow:0 0 0 1px rgba(101,240,168,.18),0 8px 24px rgba(0,0,0,.18)!important;background:linear-gradient(180deg,rgba(35,113,82,.34),rgba(11,37,32,.72))!important}
+@media(max-width:1180px){.wall-draw-help{display:none}.wall-length-hud small{display:none}}
