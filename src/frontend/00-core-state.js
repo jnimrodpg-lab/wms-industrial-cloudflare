@@ -1,4 +1,4 @@
-/* WMS_V107_MODULAR_SOURCE */
+/* WMS_V108_D1_PRODUCTS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
@@ -154,7 +154,7 @@
     productFacets: { brands:[], categories:[], warehouses:[], zones:[], racks:[] },
     productSummaryData: null,
     searchIndex: [],
-    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'' },
+    productPaging: { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', requestSeq:0 },
     history: {
       layout: { undoStack: [], redoStack: [], isApplying: false, max: 80 },
       racks: { undoStack: [], redoStack: [], isApplying: false, max: 80 }
@@ -177,7 +177,7 @@
   let modalResolver = null;
 
   function ensureProductPagingState(){
-    const base = { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', backendUnavailable:false };
+    const base = { mode:'local', page:1, limit:120, total:0, totalPages:1, branchId:0, query:'', loading:false, lastError:'', backendUnavailable:false, requestSeq:0 };
     if(!appState.productPaging || typeof appState.productPaging !== 'object'){
       appState.productPaging = { ...base };
     }else{
@@ -387,6 +387,16 @@
       renderMapView();
     }
     saveAdminState();
+    if(appState.auth?.loggedIn && Number(branch.id || 0) > 0){
+      try{
+        await persistBranchSheet(index, { includeProducts:true });
+        appState.productSummaryData = null;
+        appState.productSummaryBranchId = 0;
+      }catch(err){
+        console.warn('No se pudo limpiar productos remotos:', err);
+        showToast('Se limpió la vista local, pero no se pudo confirmar el borrado remoto.', 'error', 3600);
+      }
+    }
     renderSheetScreen();
     showToast(branch.sheetStatusText, 'warn', 3200);
   }
@@ -733,9 +743,11 @@
     try{
       const data = await apiGetJson(`/api/branches/${branch.id}/products-summary`);
       appState.productSummaryData = data?.summary || null;
+      appState.productSummaryBranchId = Number(branch.id || 0);
       if(data?.facets) appState.productFacets = data.facets;
       syncProductFilterUi();
       updateProductAnalyticsSummary();
+      if(appState.screen === 'dashboard') renderDashboard();
       return data;
     }catch(_err){
       return null;
@@ -766,12 +778,15 @@
       filterProducts();
       return false;
     }
+    const requestSeq = Number(paging.requestSeq || 0) + 1;
+    appState.productPaging.requestSeq = requestSeq;
     try{
       appState.productPaging.loading = true;
       appState.productPaging.branchId = Number(branch.id || 0);
       updateProductPagerUi();
       const activeFilters = getActiveProductFilters();
       const data = await fetchBranchProductsPage(targetBranchIndex, { query: nextQuery, page: nextPage, filters: activeFilters });
+      if(Number(ensureProductPagingState().requestSeq || 0) !== requestSeq) return false;
       const items = Array.isArray(data?.items) ? data.items : [];
       if(data?.facets) appState.productFacets = data.facets;
       appState.productPaging = {
@@ -785,7 +800,8 @@
         loading:false,
         branchId:Number(branch.id || 0),
         filters:activeFilters,
-        lastError:''
+        lastError:'',
+        requestSeq
       };
       setProductDataset(items, { keepOrder:true });
       appState.filtered = appState.products.filter(p => productMatchesLocalFilters(p));
@@ -798,10 +814,11 @@
       else if(items[0]) selectProduct(items[0]);
       else updateActiveProductCard(null);
       if(!silent) syncActiveProductCardHint();
-      if(!silent || !appState.productSummaryData) fetchProductsSummary(targetBranchIndex);
+      if(!appState.productSummaryData || Number(appState.productSummaryBranchId || 0) !== Number(branch.id || 0)) fetchProductsSummary(targetBranchIndex);
       updateProductPagerUi();
       return true;
     }catch(err){
+      if(Number(ensureProductPagingState().requestSeq || 0) !== requestSeq) return false;
       const status = Number(err?.status || 0);
       if(status === 404){
         appState.productPaging = {

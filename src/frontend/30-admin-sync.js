@@ -437,12 +437,13 @@
         branch.lastImportStatus = cfg.last_import_status || '';
         branch.lastImportSource = cfg.last_import_source || '';
         branch.lastImportError = cfg.last_import_error || '';
-        if(Array.isArray(cfg.imported_products) && cfg.imported_products.length){
-          branch.sheetPreviewProducts = cfg.imported_products.slice(0,50000);
-          branch.lastSheetCount = Number(cfg.last_sheet_count || cfg.imported_products.length || 0);
-          branch.sheetConnected = true;
-          branch.sheetStatusText = branch.sheetStatusText || `Importados: ${branch.sheetPreviewProducts.length.toLocaleString('es-PE')}`;
-          changed = true
+        const remoteProductCount = Number(cfg.product_count || cfg.last_sheet_count || 0);
+        branch.lastSheetCount = remoteProductCount;
+        branch.sheetConnected = remoteProductCount > 0 || !!String(cfg.sheet_id || '').trim();
+        branch.sheetPreviewProducts = [];
+        if(remoteProductCount > 0){
+          branch.sheetStatusText = `Importados: ${remoteProductCount.toLocaleString('es-PE')} · D1`;
+          changed = true;
         }
       }catch(_err){}
     }
@@ -509,6 +510,12 @@
   }
   function saveProductsLocal(branchIndex){
     try{
+      const branch = (appState.admin?.branches || [])[Number(branchIndex)] || null;
+      if(appState.auth?.loggedIn && Number(branch?.id || 0) > 0){
+        const keys = [getBranchStorageKey(branchIndex), `wms_products_branch_${branchIndex}`, 'wms_products_v2'];
+        keys.forEach(key => { try{ localStorage.removeItem(key); }catch{} });
+        return;
+      }
       const payload = JSON.stringify((appState.products || []));
       const key = (Number.isFinite(branchIndex) && branchIndex >= 0) ? getBranchStorageKey(branchIndex) : 'wms_products_v2';
       localStorage.setItem(key, payload);
@@ -556,6 +563,11 @@
     if(Number.isFinite(Number(branchIndex))) appState.activeLayoutBranchIndex = Number(branchIndex);
     const branch = (appState.admin?.branches || [])[branchIndex];
     if(!branch) return false;
+    if(branch.id && appState.auth?.loggedIn){
+      ensureProductPagingState().backendUnavailable = false;
+      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
+      if(ok) return true;
+    }
     if(loadBranchProducts(branchIndex)) {
       appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'', backendUnavailable:true };
       updateProductPagerUi();
@@ -566,10 +578,6 @@
       appState.productPaging = { ...appState.productPaging, mode:'local', page:1, total:appState.products.length, totalPages:1, query:String(searchInput?.value || '').trim(), branchId:Number(branch.id || 0), lastError:'', backendUnavailable:true };
       updateProductPagerUi();
       return true;
-    }
-    if(branch.id && appState.auth?.loggedIn && !ensureProductPagingState().backendUnavailable){
-      const ok = await requestProductsPage({ branchIndex, query:String(searchInput?.value || '').trim(), page:1, silent:true });
-      if(ok) return true;
     }
     const hasLink = String(branch.sheetUrl||'').trim() && String(branch.sheetName||'').trim();
     if(hasLink){
@@ -1248,9 +1256,9 @@ function getSheetBranchOpenMap(){
       sheet_header_index: Number(branch.sheetHeaderIndex || 0)
     };
     if(includeProducts){
-      payload.imported_products = (Array.isArray(branch.sheetPreviewProducts) && branch.sheetPreviewProducts.length)
+      payload.imported_products = Array.isArray(branch.sheetPreviewProducts)
         ? branch.sheetPreviewProducts.slice(0,50000)
-        : ((Array.isArray(appState.products) && appState.products.length) ? appState.products.slice(0,50000) : []);
+        : [];
       payload.import_source = 'google-sheet-ui';
     }
     await httpJson(`/api/branches/${branchId}/sheet`, {
@@ -1398,7 +1406,10 @@ function getSheetBranchOpenMap(){
     }
 
     try{
-      if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())) await persistBranchSheetMetadataOnly(index);
+      if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
+        if(sourceChanged) await persistBranchSheet(index, { includeProducts:true });
+        else await persistBranchSheetMetadataOnly(index);
+      }
       if(sourceChanged){
         setBranchMetaStatus(branch, deriveBranchStatusAfterCleanup(branch), { headerCount:getSheetBranchHeaderCount(branch), productCount:getSheetBranchProductCount(branch) });
         renderProducts(appState.filtered || []);
@@ -1599,8 +1610,11 @@ function getSheetBranchOpenMap(){
       saveAdminState();
       if(!(typeof isLocalRuntimeForAuth === 'function' && isLocalRuntimeForAuth())){
         await persistBranchSheet(index, { includeProducts:true });
+        branch.sheetPreviewProducts = [];
+        ensureProductPagingState().backendUnavailable = false;
+        await requestProductsPage({ branchIndex:index, query:'', page:1, silent:true });
         await fetchProductsSummary(index);
-        contentStatus.textContent = 'Productos importados y guardados en servidor.';
+        contentStatus.textContent = 'Productos importados en D1 y cargados por páginas.';
       }else{
         contentStatus.textContent = 'Productos importados y guardados localmente.';
       }

@@ -1062,7 +1062,7 @@
   });
   if(btnSearch) btnSearch.addEventListener('click', (e)=>{ e.preventDefault(); filterProducts(); });
   if(searchInput){
-    searchInput.addEventListener('input', debounce(filterProducts, 90));
+    searchInput.addEventListener('input', debounce(filterProducts, 260));
     searchInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); filterProducts(); } });
   }
   if($('#btnOpenCategoryPinterest')) { $('#btnOpenCategoryPinterest').addEventListener('click', openCategoryPinterestModal); updateCategoryFilterButton(); }

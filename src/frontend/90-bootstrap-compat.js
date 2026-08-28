@@ -1,4 +1,4 @@
-console.info('*** WMS v107 MODULAR SOURCE ACTIVE ***');
+console.info('*** WMS v108 D1 PRODUCTS ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

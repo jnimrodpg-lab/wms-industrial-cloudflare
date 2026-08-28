@@ -1631,7 +1631,15 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     ensureAppRuntimeState();
     const rawQ = String(searchInput?.value || '').trim();
     const q = norm(rawQ);
-    // En esta versión estable el buscador trabaja localmente para evitar fallos por endpoints remotos incompletos.
+    const activeBranch = getBranchByIndex(getActiveBranchIndex());
+    if(appState.auth?.loggedIn && Number(activeBranch?.id || 0) > 0){
+      const paging = ensureProductPagingState();
+      paging.backendUnavailable = false;
+      paging.query = rawQ;
+      paging.page = 1;
+      requestProductsPage({ branchIndex:getActiveBranchIndex(), query:rawQ, page:1 }).catch(() => {});
+      return;
+    }
     appState.productPaging = {
       ...ensureProductPagingState(),
       mode:'local',

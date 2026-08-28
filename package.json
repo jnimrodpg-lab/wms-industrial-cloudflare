@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
-  "description": "WMS Industrial v107 modular source para Cloudflare Pages Functions + D1.",
+  "description": "WMS Industrial v108 D1 products para Cloudflare Pages Functions + D1.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v106-stabilization';
+const BUILD_MARK = 'cloudflare-v108-products-d1';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -315,6 +315,7 @@ export async function onRequest(context) {
         await env.DB.batch([
           env.DB.prepare('DELETE FROM viewer_links WHERE branch_id = ?').bind(branchId),
           env.DB.prepare('DELETE FROM branch_layouts WHERE branch_id = ?').bind(branchId),
+          env.DB.prepare('DELETE FROM products WHERE branch_id = ? AND company_id = ?').bind(branchId, session.company_id),
           env.DB.prepare('DELETE FROM branch_sheet_config WHERE branch_id = ?').bind(branchId),
           env.DB.prepare('DELETE FROM branches WHERE id = ? AND company_id = ?').bind(branchId, session.company_id)
         ]);
@@ -411,12 +412,21 @@ export async function onRequest(context) {
           sheet_header_index: 0
         };
 
+        const normalizedCount = await countNormalizedProducts(env.DB, session.company_id, branchId);
+        const reportedCount = Number(normalizedCount || config.last_sheet_count || 0);
+        const includeProducts = url.searchParams.get('include_products') === '1';
+        const legacyProducts = includeProducts ? safeJsonParse(config.imported_products_json, []) : [];
+        const { imported_products_json: _legacyProductJson, ...publicConfig } = config;
+
         return withJson({
           ok: true,
           config: {
-            ...config,
+            ...publicConfig,
             sheet_map_rows: safeJsonParse(config.sheet_map_json, null),
-            imported_products: safeJsonParse(config.imported_products_json, []),
+            imported_products: Array.isArray(legacyProducts) ? legacyProducts : [],
+            product_count: reportedCount,
+            migration_pending: normalizedCount === 0 && Number(config.last_sheet_count || 0) > 0,
+            product_storage: 'd1',
             sheet_headers: safeJsonParse(config.sheet_headers_json, []),
             sheet_header_index: Number(config.sheet_header_index || 0)
           },
@@ -454,6 +464,9 @@ export async function onRequest(context) {
         const sheet_headers = has('sheet_headers') ? body.sheet_headers : safeJsonParse(current.sheet_headers_json, []);
         const sheet_header_index = has('sheet_header_index') ? Number(body.sheet_header_index || 0) : Number(current.sheet_header_index || 0);
 
+        const importList = Array.isArray(imported_products) ? imported_products.slice(0, 50000) : [];
+        const storedCount = has('imported_products') ? importList.length : last_sheet_count;
+
         await env.DB.prepare(`
           UPDATE branch_sheet_config
           SET sheet_id = ?, sheet_name = ?, source_type = ?, sheet_map_json = ?, imported_products_json = ?,
@@ -464,14 +477,23 @@ export async function onRequest(context) {
           sheet_name,
           source_type,
           JSON.stringify(sheet_map_rows),
-          JSON.stringify(Array.isArray(imported_products) ? imported_products.slice(0, 50000) : []),
-          last_sheet_count,
+          JSON.stringify(importList),
+          Number(storedCount || 0),
           JSON.stringify(Array.isArray(sheet_headers) ? sheet_headers : []),
           sheet_header_index,
           branchId
         ).run();
 
-        return withJson({ ok: true, build: BUILD_MARK });
+        if (has('imported_products')) {
+          await replaceBranchProducts(env.DB, session.company_id, branchId, importList);
+        }
+
+        return withJson({
+          ok: true,
+          product_count: has('imported_products') ? importList.length : await countNormalizedProducts(env.DB, session.company_id, branchId),
+          product_storage: 'd1',
+          build: BUILD_MARK
+        });
       }
 
       if (tail === '/sheet-metadata' && request.method === 'POST') {
@@ -534,12 +556,15 @@ export async function onRequest(context) {
         const branch = await getOwnedBranch(env.DB, effectiveCompanyId, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
 
+        await ensureNormalizedProductsForBranch(env.DB, effectiveCompanyId, branchId);
+
         const page = Math.max(1, Number(url.searchParams.get('page') || 1));
         const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') || 120) || 120));
         const q = String(url.searchParams.get('q') || '').trim();
         const filters = {
           brand: url.searchParams.get('brand') || '',
           category: url.searchParams.get('category') || '',
+          gender: url.searchParams.get('gender') || '',
           zone: url.searchParams.get('zone') || '',
           warehouse: url.searchParams.get('warehouse') || '',
           rack: url.searchParams.get('rack') || '',
@@ -548,25 +573,8 @@ export async function onRequest(context) {
           stock_state: url.searchParams.get('stock_state') || ''
         };
 
-        const products = await getImportedProductsForBranch(env.DB, branchId);
-        const filtered = filterImportedProducts(products, q, filters);
-        const total = filtered.length;
-        const totalPages = Math.max(1, Math.ceil(total / limit));
-        const safePage = Math.min(page, totalPages);
-        const start = (safePage - 1) * limit;
-        const items = filtered.slice(start, start + limit);
-
-        return withJson({
-          ok: true,
-          items,
-          total,
-          page: safePage,
-          limit,
-          total_pages: totalPages,
-          facets: buildProductFacets(products),
-          summary: buildProductSummary(products),
-          build: BUILD_MARK
-        });
+        const result = await queryProductsPage(env.DB, effectiveCompanyId, branchId, { q, filters, page, limit });
+        return withJson({ ...result, ok: true, product_storage: 'd1', build: BUILD_MARK });
       }
 
       if (tail === '/products-summary' && request.method === 'GET') {
@@ -575,13 +583,9 @@ export async function onRequest(context) {
         const effectiveCompanyId = session.company_id || 1;
         const branch = await getOwnedBranch(env.DB, effectiveCompanyId, branchId);
         if (!branch) return withJson({ error: 'Sucursal no encontrada', build: BUILD_MARK }, 404);
-        const products = await getImportedProductsForBranch(env.DB, branchId);
-        return withJson({
-          ok: true,
-          summary: buildProductSummary(products),
-          facets: buildProductFacets(products),
-          build: BUILD_MARK
-        });
+        await ensureNormalizedProductsForBranch(env.DB, effectiveCompanyId, branchId);
+        const analytics = await getProductAnalytics(env.DB, effectiveCompanyId, branchId);
+        return withJson({ ok: true, ...analytics, product_storage: 'd1', build: BUILD_MARK });
       }
 
       if (tail === '/view-link' && request.method === 'POST') {
@@ -632,6 +636,7 @@ export async function onRequest(context) {
       );
 
       const importedProducts = safeJsonParse(sheet?.imported_products_json, []);
+      const { imported_products_json: _viewerLegacyJson, ...publicSheet } = sheet || {};
       return withJson({
         ok: true,
         branch,
@@ -645,7 +650,7 @@ export async function onRequest(context) {
           })
         },
         sheet: {
-          ...(sheet || { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet' }),
+          ...(Object.keys(publicSheet).length ? publicSheet : { sheet_id: '', sheet_name: 'Productos', source_type: 'google_sheet' }),
           imported_products: importedProducts,
           last_sheet_count: Number(sheet?.last_sheet_count || importedProducts.length || 0),
           sheet_map_rows: safeJsonParse(sheet?.sheet_map_json, null),
@@ -761,6 +766,39 @@ async function ensureSchema(db, env) {
       sheet_header_index INTEGER NOT NULL DEFAULT 0
     )`),
 
+    db.prepare(`CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id INTEGER NOT NULL,
+      branch_id INTEGER NOT NULL,
+      source_row INTEGER NOT NULL DEFAULT 0,
+      sku TEXT,
+      name TEXT,
+      variant TEXT,
+      barcode TEXT,
+      location TEXT,
+      warehouse TEXT,
+      zone TEXT,
+      rack TEXT,
+      level INTEGER,
+      slot INTEGER,
+      store_zone TEXT,
+      store_rack TEXT,
+      store_level INTEGER,
+      store_slot INTEGER,
+      size TEXT,
+      color TEXT,
+      brand TEXT,
+      category TEXT,
+      gender TEXT,
+      stock_value REAL,
+      has_image INTEGER NOT NULL DEFAULT 0,
+      has_location INTEGER NOT NULL DEFAULT 0,
+      has_stock INTEGER NOT NULL DEFAULT 0,
+      search_text TEXT NOT NULL DEFAULT '',
+      raw_json TEXT NOT NULL,
+      imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+
     db.prepare(`CREATE TABLE IF NOT EXISTS branch_layouts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       branch_id INTEGER NOT NULL UNIQUE,
@@ -798,6 +836,17 @@ async function ensureSchema(db, env) {
       expires_at INTEGER NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`)
+  ]);
+
+  await db.batch([
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_company_branch ON products(company_id, branch_id)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_sku ON products(branch_id, sku)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_barcode ON products(branch_id, barcode)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_brand ON products(branch_id, brand)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_category ON products(branch_id, category)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_warehouse ON products(branch_id, warehouse)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_zone ON products(branch_id, zone)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_products_branch_rack ON products(branch_id, rack)')
   ]);
 
   await db.prepare(`
@@ -1615,6 +1664,270 @@ async function getSheetRowsPayload(id, sheet, limit = 200, headerOnly = false) {
   throw new Error('La hoja está vacía o no se pudo leer');
 }
 
+
+function productRawValue(product, aliases) {
+  const raw = product && typeof product._raw === 'object' ? product._raw : null;
+  if (!raw) return '';
+  const lookup = new Map(Object.entries(raw).map(([key, value]) => [normalizeSearchText(key), value]));
+  for (const alias of aliases || []) {
+    const value = lookup.get(normalizeSearchText(alias));
+    if (value != null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function productDeepValue(product, keys) {
+  return productValue(product, keys) || productRawValue(product, keys);
+}
+
+function productNumericValue(product, keys) {
+  const raw = productDeepValue(product, keys);
+  if (!raw) return null;
+  const numeric = Number(String(raw).replace(',', '.').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizedProductPayload(product, companyId, branchId, fallbackRow = 0) {
+  const sku = productDeepValue(product, ['sku', 'Sku', 'SKU', 'codigo', 'código']);
+  const name = productDeepValue(product, ['nombre', 'Nombre', 'name', 'producto', 'descripcion', 'descripción']);
+  const variant = productDeepValue(product, ['variante', 'Variante', 'variant']);
+  const barcode = productDeepValue(product, ['barras', 'barcode', 'codigoBarras', 'código de barras']);
+  const location = productDeepValue(product, ['ubicacion', 'ubicación', 'location', 'ubicacion final']);
+  const warehouse = productDeepValue(product, ['almacen', 'almacén', 'warehouse']);
+  const zone = productDeepValue(product, ['zona', 'zone']);
+  const rack = productDeepValue(product, ['rack', 'estante']);
+  const level = productNumericValue(product, ['nivel', 'level']);
+  const slot = productNumericValue(product, ['slot', 'posicion', 'posición']);
+  const storeZone = productDeepValue(product, ['zonaStore', 'zona2', 'zona 2', 'zona almacen', 'zona almacén']);
+  const storeRack = productDeepValue(product, ['rackStore', 'estanteStore', 'estante2', 'estante 2', 'rack2', 'rack 2', 'rack almacen']);
+  const storeLevel = productNumericValue(product, ['nivelStore', 'nivel2', 'nivel 2', 'nivel almacen']);
+  const storeSlot = productNumericValue(product, ['slotStore', 'slot2', 'slot 2', 'slot almacen']);
+  const size = productDeepValue(product, ['talla', 'size']);
+  const color = productDeepValue(product, ['color', 'colour']);
+  const brand = productDeepValue(product, ['marca', 'brand']);
+  const category = productDeepValue(product, ['categoria', 'categoría', 'category']);
+  const gender = productDeepValue(product, ['genero', 'género', 'gender']);
+  const stockValue = productNumericValue(product, ['stock', 'cantidad', 'cant', 'Cant. Restock', 'cantRestock', 'cantidadRestock', 'restock']);
+  const hasImage = productHasImage(product) ? 1 : 0;
+  const hasLocation = [location, warehouse, zone, rack, storeZone, storeRack].some((value) => String(value || '').trim()) ? 1 : 0;
+  const hasStock = stockValue != null ? (stockValue > 0 ? 1 : 0) : (productHasStock(product) ? 1 : 0);
+  const sourceRow = Number(product?._rowIndex || fallbackRow || 0) || 0;
+  const searchText = normalizeSearchText([
+    sku, name, variant, barcode, location, warehouse, zone, rack, level, slot,
+    storeZone, storeRack, storeLevel, storeSlot, size, color, brand, category, gender
+  ].filter((value) => value != null && String(value).trim() !== '').join(' '));
+  return {
+    c:Number(companyId), b:Number(branchId), sr:sourceRow,
+    s:sku, n:name, v:variant, bc:barcode, l:location, w:warehouse, z:zone, r:rack,
+    lv:level, sl:slot, sz:storeZone, srk:storeRack, slv:storeLevel, ssl:storeSlot,
+    si:size, co:color, br:brand, ca:category, g:gender, sv:stockValue,
+    hi:hasImage, hl:hasLocation, hs:hasStock, st:searchText, raw:product || {}
+  };
+}
+
+function productPayloadInsertSql(payloadCount) {
+  const sources = Array.from({ length: payloadCount }, (_, index) =>
+    `${index ? 'UNION ALL ' : ''}SELECT value FROM json_each(?${index + 1})`
+  ).join('\n');
+  return `WITH src(value) AS (${sources})
+    INSERT INTO products (
+      company_id, branch_id, source_row, sku, name, variant, barcode, location, warehouse, zone, rack,
+      level, slot, store_zone, store_rack, store_level, store_slot, size, color, brand, category, gender,
+      stock_value, has_image, has_location, has_stock, search_text, raw_json
+    )
+    SELECT
+      CAST(json_extract(value,'$.c') AS INTEGER), CAST(json_extract(value,'$.b') AS INTEGER),
+      CAST(json_extract(value,'$.sr') AS INTEGER), json_extract(value,'$.s'), json_extract(value,'$.n'),
+      json_extract(value,'$.v'), json_extract(value,'$.bc'), json_extract(value,'$.l'), json_extract(value,'$.w'),
+      json_extract(value,'$.z'), json_extract(value,'$.r'), CAST(json_extract(value,'$.lv') AS INTEGER),
+      CAST(json_extract(value,'$.sl') AS INTEGER), json_extract(value,'$.sz'), json_extract(value,'$.srk'),
+      CAST(json_extract(value,'$.slv') AS INTEGER), CAST(json_extract(value,'$.ssl') AS INTEGER),
+      json_extract(value,'$.si'), json_extract(value,'$.co'), json_extract(value,'$.br'), json_extract(value,'$.ca'),
+      json_extract(value,'$.g'), CAST(json_extract(value,'$.sv') AS REAL), CAST(json_extract(value,'$.hi') AS INTEGER),
+      CAST(json_extract(value,'$.hl') AS INTEGER), CAST(json_extract(value,'$.hs') AS INTEGER),
+      COALESCE(json_extract(value,'$.st'), ''), json_extract(value,'$.raw')
+    FROM src`;
+}
+
+async function countNormalizedProducts(db, companyId, branchId) {
+  return Number(await firstValue(
+    db.prepare('SELECT COUNT(*) AS total FROM products WHERE company_id = ? AND branch_id = ?').bind(companyId, branchId),
+    'total'
+  ) || 0);
+}
+
+async function replaceBranchProducts(db, companyId, branchId, products) {
+  const list = Array.isArray(products) ? products.slice(0, 50000) : [];
+  await db.prepare('DELETE FROM products WHERE company_id = ? AND branch_id = ?').bind(companyId, branchId).run();
+  if (!list.length) return 0;
+
+  // D1 limita cada valor de texto a 2 MB y el plan Free a 50 queries por invocación.
+  // Empaquetamos muchos productos en parámetros JSON y json_each() los expande dentro de SQLite.
+  const targetEstimatedBytes = 1_600_000;
+  const payloadsPerQuery = 16;
+  let currentItems = [];
+  let currentEstimatedBytes = 2;
+  let payloadGroup = [];
+
+  const flushPayloadGroup = async () => {
+    if (!payloadGroup.length) return;
+    const stmt = db.prepare(productPayloadInsertSql(payloadGroup.length)).bind(...payloadGroup);
+    payloadGroup = [];
+    await stmt.run();
+  };
+  const flushCurrentItems = async () => {
+    if (!currentItems.length) return;
+    payloadGroup.push(`[${currentItems.join(',')}]`);
+    currentItems = [];
+    currentEstimatedBytes = 2;
+    if (payloadGroup.length >= payloadsPerQuery) await flushPayloadGroup();
+  };
+
+  for (let index = 0; index < list.length; index += 1) {
+    const itemJson = JSON.stringify(normalizedProductPayload(list[index], companyId, branchId, index + 1));
+    // x4 is a conservative UTF-8 estimate (worst case) so each bound string stays comfortably below 2 MB.
+    const estimated = itemJson.length * 4 + 1;
+    if (currentItems.length && currentEstimatedBytes + estimated > targetEstimatedBytes) await flushCurrentItems();
+    currentItems.push(itemJson);
+    currentEstimatedBytes += estimated;
+  }
+  await flushCurrentItems();
+  await flushPayloadGroup();
+  return list.length;
+}
+
+async function ensureNormalizedProductsForBranch(db, companyId, branchId, knownLegacyJson = null) {
+  const existing = await countNormalizedProducts(db, companyId, branchId);
+  let rawJson = knownLegacyJson;
+  if (rawJson == null) {
+    const row = await first(
+      db.prepare('SELECT imported_products_json FROM branch_sheet_config WHERE branch_id = ?').bind(branchId)
+    );
+    rawJson = row?.imported_products_json;
+  }
+  const legacy = safeJsonParse(rawJson, []);
+  if (!Array.isArray(legacy) || !legacy.length) return existing;
+  const expected = Math.min(50000, legacy.length);
+  if (existing === expected) return existing;
+  return replaceBranchProducts(db, companyId, branchId, legacy);
+}
+
+function escapeLike(value) {
+  return String(value || '').replace(/[\\%_]/g, (m) => `\\${m}`);
+}
+
+function makeSafeLikePattern(value, maxBytes = 46) {
+  const encoder = new TextEncoder();
+  let out = '';
+  for (const ch of escapeLike(value)) {
+    const candidate = out + ch;
+    if (encoder.encode(candidate).length > maxBytes) break;
+    out = candidate;
+  }
+  return `%${out}%`;
+}
+
+function buildProductSqlWhere(companyId, branchId, q = '', filters = {}) {
+  const where = ['company_id = ?', 'branch_id = ?'];
+  const binds = [Number(companyId), Number(branchId)];
+  const terms = normalizeSearchText(q).split(/\s+/).filter(Boolean).slice(0, 8);
+  for (const term of terms) {
+    where.push("search_text LIKE ? ESCAPE '\\'");
+    binds.push(makeSafeLikePattern(term));
+  }
+  const exactMap = [
+    ['brand', 'brand'], ['category', 'category'], ['gender', 'gender'], ['zone', 'zone'],
+    ['warehouse', 'warehouse'], ['rack', 'rack']
+  ];
+  for (const [filterKey, column] of exactMap) {
+    const value = String(filters?.[filterKey] || '').trim();
+    if (!value) continue;
+    where.push(`LOWER(COALESCE(${column}, '')) = LOWER(?)`);
+    binds.push(value);
+  }
+  const stateMap = [
+    ['image_state', 'has_image'], ['location_state', 'has_location'], ['stock_state', 'has_stock']
+  ];
+  for (const [filterKey, column] of stateMap) {
+    const state = String(filters?.[filterKey] || '').trim();
+    if (state === 'with') where.push(`${column} = 1`);
+    if (state === 'without') where.push(`${column} = 0`);
+  }
+  return { sql: where.join(' AND '), binds };
+}
+
+async function getProductAnalytics(db, companyId, branchId) {
+  const summary = await first(
+    db.prepare(`SELECT COUNT(*) AS total,
+      COUNT(DISTINCT NULLIF(TRIM(sku), '')) AS sku_count,
+      COALESCE(SUM(has_location), 0) AS with_location,
+      COALESCE(SUM(has_image), 0) AS with_image,
+      COALESCE(SUM(has_stock), 0) AS with_stock,
+      COALESCE(SUM(CASE WHEN TRIM(COALESCE(rack, '')) <> '' OR TRIM(COALESCE(store_rack, '')) <> '' THEN 1 ELSE 0 END), 0) AS with_rack
+      FROM products WHERE company_id = ? AND branch_id = ?`).bind(companyId, branchId)
+  ) || {};
+  const facetColumn = async (column) => {
+    const rows = await all(
+      db.prepare(`SELECT ${column} AS value, COUNT(*) AS count FROM products
+        WHERE company_id = ? AND branch_id = ? AND TRIM(COALESCE(${column}, '')) <> ''
+        GROUP BY ${column} ORDER BY ${column} COLLATE NOCASE ASC LIMIT 1000`).bind(companyId, branchId)
+    );
+    return rows.map((row) => ({ value: String(row.value || ''), count: Number(row.count || 0) }));
+  };
+  const [brands, categories, zones, warehouses, racks] = await Promise.all([
+    facetColumn('brand'), facetColumn('category'), facetColumn('zone'), facetColumn('warehouse'), facetColumn('rack')
+  ]);
+  const rackRows = await all(
+    db.prepare(`SELECT COALESCE(NULLIF(TRIM(rack), ''), NULLIF(TRIM(store_rack), '')) AS value, COUNT(*) AS count
+      FROM products WHERE company_id = ? AND branch_id = ?
+      AND (TRIM(COALESCE(rack, '')) <> '' OR TRIM(COALESCE(store_rack, '')) <> '')
+      GROUP BY value`).bind(companyId, branchId)
+  );
+  const rackCounts = Object.fromEntries(rackRows.filter(row => row.value).map(row => [String(row.value), Number(row.count || 0)]));
+  const values = (items) => items.map((item) => item.value);
+  const total = Number(summary.total || 0);
+  const withRack = Number(summary.with_rack || 0);
+  return {
+    summary: {
+      total,
+      sku_count: Number(summary.sku_count || 0),
+      with_location: Number(summary.with_location || 0),
+      with_image: Number(summary.with_image || 0),
+      with_stock: Number(summary.with_stock || 0),
+      with_rack: withRack,
+      without_rack: Math.max(0, total - withRack),
+      rack_counts: rackCounts
+    },
+    facets: {
+      brands: values(brands), brand_options: brands,
+      categories: values(categories), category_options: categories,
+      zones: values(zones), zone_options: zones,
+      warehouses: values(warehouses), warehouse_options: warehouses,
+      racks: values(racks), rack_options: racks
+    }
+  };
+}
+
+async function queryProductsPage(db, companyId, branchId, { q = '', filters = {}, page = 1, limit = 120 } = {}) {
+  const where = buildProductSqlWhere(companyId, branchId, q, filters);
+  const total = Number(await firstValue(
+    db.prepare(`SELECT COUNT(*) AS total FROM products WHERE ${where.sql}`).bind(...where.binds), 'total'
+  ) || 0);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(Math.max(1, Number(page || 1)), totalPages);
+  const offset = (safePage - 1) * limit;
+  const exact = String(q || '').trim();
+  const orderSql = exact
+    ? "CASE WHEN LOWER(COALESCE(sku,'')) = LOWER(?) THEN 0 WHEN LOWER(COALESCE(barcode,'')) = LOWER(?) THEN 1 ELSE 2 END, sku COLLATE NOCASE ASC, id ASC"
+    : "CASE WHEN sku IS NULL OR sku = '' THEN 1 ELSE 0 END, sku COLLATE NOCASE ASC, id ASC";
+  const orderBinds = exact ? [exact, exact] : [];
+  const rows = await all(
+    db.prepare(`SELECT raw_json FROM products WHERE ${where.sql}
+      ORDER BY ${orderSql} LIMIT ? OFFSET ?`).bind(...where.binds, ...orderBinds, limit, offset)
+  );
+  const items = rows.map((row) => safeJsonParse(row.raw_json, null)).filter(Boolean);
+  return { items, total, page: safePage, limit, total_pages: totalPages };
+}
 
 async function getImportedProductsForBranch(db, branchId) {
   const row = await first(

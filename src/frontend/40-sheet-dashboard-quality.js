@@ -84,12 +84,18 @@
     const products = Array.isArray(appState.filtered) && appState.filtered.length ? appState.filtered : (appState.products || []);
     const racks = appState.layout?.racks || [];
     const zones = appState.layout?.zones || [];
+    const summary = appState.productSummaryData || {};
+    const remoteRackCounts = summary.rack_counts && typeof summary.rack_counts === 'object' ? summary.rack_counts : null;
     const byRack = new Map();
-    products.forEach(p => {
-      const rid = p?.rack || p?.rackStore || '';
-      if(!rid) return;
-      byRack.set(rid, (byRack.get(rid) || 0) + 1);
-    });
+    if(remoteRackCounts){
+      Object.entries(remoteRackCounts).forEach(([rid, count]) => { if(rid) byRack.set(rid, Number(count || 0)); });
+    }else{
+      products.forEach(p => {
+        const rid = p?.rack || p?.rackStore || '';
+        if(!rid) return;
+        byRack.set(rid, (byRack.get(rid) || 0) + 1);
+      });
+    }
     const rackStats = racks.map(r => {
       const model = rackModel(r.modelId) || {};
       const capacity = getRackCapacity(model);
@@ -121,8 +127,9 @@
     const totalSlots = rackStats.reduce((s,r) => s + r.capacity, 0);
     const occupiedSlots = rackStats.reduce((s,r) => s + r.occupied, 0);
     const freeSlots = Math.max(0, totalSlots - occupiedSlots);
-    const skuCount = new Set(products.map(p => (p.sku || '').trim()).filter(Boolean)).size;
-    const noRack = products.filter(p => !(p?.rack || p?.rackStore)).length;
+    const skuCount = Number(summary.sku_count || 0) || new Set(products.map(p => (p.sku || '').trim()).filter(Boolean)).size;
+    const noRack = Number.isFinite(Number(summary.without_rack)) ? Number(summary.without_rack || 0) : products.filter(p => !(p?.rack || p?.rackStore)).length;
+    const totalProducts = Number(summary.total || 0) || products.length;
     const racksNoLoad = rackStats.filter(r => r.occupied === 0).length;
     const topZone = zoneStats[0] || null;
     const fullestRack = rackStats[0] || null;
@@ -131,7 +138,7 @@
       racks,
       zones,
       skuCount,
-      totalProducts: products.length,
+      totalProducts,
       totalRacks: racks.length,
       totalZones: zones.length,
       totalSlots,
@@ -169,7 +176,7 @@
     setTags([`Sucursal: ${branchName}`, 'KPI', 'ocupación', 'alertas', 'racks', 'zonas']);
 
     const kpis = [
-      { label:'Productos analizados', value:data.totalProducts.toLocaleString('es-PE'), foot:`${data.skuCount.toLocaleString('es-PE')} SKU únicos`, trend:'up', trendText:'Inventario' },
+      { label:'Productos analizados', value:data.totalProducts.toLocaleString('es-PE'), foot:`${data.skuCount.toLocaleString('es-PE')} SKU únicos`, trend:'up', trendText:ensureProductPagingState().mode === 'backend' ? 'D1 global' : 'Inventario' },
       { label:'Capacidad total', value:data.totalSlots.toLocaleString('es-PE'), foot:`${data.freeSlots.toLocaleString('es-PE')} slots libres`, trend:data.freeSlots ? 'up' : 'down', trendText:data.freeSlots ? 'Disponible' : 'Lleno' },
       { label:'Ocupación general', value:`${Math.round(data.occPct)}%`, foot:`${data.occupiedSlots.toLocaleString('es-PE')} ocupados`, trend:dashboardBarClass(data.occPct), trendText:data.occPct >= 85 ? 'Crítico' : data.occPct >= 65 ? 'Atención' : 'Saludable' },
       { label:'Calidad de datos', value:`${data.noRack}`, foot:'productos sin rack', trend:data.noRack ? 'warn' : 'up', trendText:data.noRack ? 'Revisar' : 'OK' }
