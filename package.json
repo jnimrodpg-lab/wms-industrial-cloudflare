@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.1.9",
+  "version": "1.2.8",
   "private": true,
-  "description": "WMS Industrial v119: openings configurables, snaps geométricos y zonas sin solapes.",
+  "description": "WMS Industrial v128: topología dinámica, muros compartidos reversibles, fusión parcial, snaps CAD, openings y zonas sin solapes.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

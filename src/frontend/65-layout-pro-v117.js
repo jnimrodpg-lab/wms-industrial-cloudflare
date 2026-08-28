@@ -1,4 +1,4 @@
-/* WMS_V119_CAD_ZONE_GUARDS */
+/* WMS_V128_CAD_TOPOLOGY */
   // v114-v117 acumulativa: topología CAD, recintos inteligentes, distribución masiva y validación operativa.
   function v117GetSelectedWallIds(){ const ids=Array.isArray(appState.editor?.selectedWallIds)?appState.editor.selectedWallIds.filter(Boolean):[]; if(appState.selectedWallId&&!ids.includes(appState.selectedWallId))ids.unshift(appState.selectedWallId); return [...new Set(ids)]; }
   function v117SetSelectedWallIds(ids){ if(!appState.editor)appState.editor={}; const clean=[...new Set((ids||[]).filter(id=>findWallById(id)&&!findWallById(id).autoZoneEdge))]; appState.editor.selectedWallIds=clean; appState.selectedWallId=clean[0]||''; if(clean.length){appState.selectedOpeningId='';appState.selectedRoomId='';} }
@@ -282,11 +282,13 @@
   }
   function v117StructureToolsMarkup(){
     const invalid=(appState.layout.rooms||[]).filter(r=>r.obsolete||!v117RoomBoundaryValid(r)).length;
-    return `<section class="layout-prop-card v117-cad-tools"><div class="layout-prop-title">CAD + recintos inteligentes</div><div class="layout-template-grid"><button class="seg-btn" id="v117ResolveIntersections">Resolver T / X</button><button class="seg-btn" id="v117RefreshRooms">Detectar recintos</button><button class="btn primary" id="v117SyncZones">Sincronizar zonas</button></div><div class="tiny muted" style="margin-top:8px">Las intersecciones parten muros de verdad. ${invalid?`${invalid} recinto(s) requieren revisión.`:'Los recintos actuales están cerrados.'}</div></section>`;
+    const topo=typeof v128StructureTopologyMarkup==='function'?v128StructureTopologyMarkup():'';
+    return `<section class="layout-prop-card v117-cad-tools"><div class="layout-prop-title">CAD + topología inteligente</div><div class="layout-template-grid"><button class="seg-btn" id="v117ResolveIntersections">Resolver T / X</button><button class="seg-btn" id="v117RefreshRooms">Detectar recintos</button><button class="seg-btn" id="v128FuseContacts">Fusionar contactos</button><button class="btn primary" id="v117SyncZones">Sincronizar zonas</button></div><div class="tiny muted" style="margin-top:8px">Las paredes coincidentes se convierten en muros compartidos reversibles; al mover una zona fuera del contacto recupera su propio muro. ${invalid?`${invalid} recinto(s) requieren revisión.`:'Los recintos actuales están cerrados.'}</div>${topo}</section>`;
   }
   function v117BindTools(){
     document.getElementById('v117ResolveIntersections')?.addEventListener('click',()=>{const n=v117ResolveWallIntersections();v117RefreshRooms();persistActiveLayout();renderLayoutEditor();showToast(n?`${n} división(es) de muro creadas.`:'No había intersecciones pendientes.','success',2200);});
-    document.getElementById('v117RefreshRooms')?.addEventListener('click',()=>{v117RefreshRooms({notify:true});persistActiveLayout();renderLayoutEditor();});
+    document.getElementById('v117RefreshRooms')?.addEventListener('click',()=>{v117RefreshRooms({notify:true});if(typeof v128RebuildSharedWallRegistry==='function')v128RebuildSharedWallRegistry();persistActiveLayout();renderLayoutEditor();});
+    document.getElementById('v128FuseContacts')?.addEventListener('click',()=>{if(typeof v128FuseAllTouchingRooms==='function'){v128FuseAllTouchingRooms({notify:true});v117RefreshRooms();syncRoomLinkedZones();persistActiveLayout();renderLayoutEditor();}});
     document.getElementById('v117SyncZones')?.addEventListener('click',async()=>{const ok=await openAppModal({title:'Sincronizar zonas',message:['Se analizarán los recintos actuales.','Si una zona fue dividida por un muro, se crearán zonas hermanas. Si varias zonas convergen en un recinto, se fusionarán conservando sus racks.'],actions:[{label:'Cancelar',value:false,cls:'secondary'},{label:'Sincronizar',value:true,cls:'primary'}]});if(ok)v117SyncZonesWithRooms();});
     document.getElementById('v117Matrix')?.addEventListener('click',()=>v117RackMatrix({rows:document.getElementById('v117Rows')?.value,cols:document.getElementById('v117Cols')?.value,gapXcm:document.getElementById('v117GapX')?.value,gapYcm:document.getElementById('v117GapY')?.value}));
     document.querySelectorAll('[data-v117-align]').forEach(b=>b.addEventListener('click',()=>v117AlignRacks(b.dataset.v117Align)));

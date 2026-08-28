@@ -1,4 +1,4 @@
-console.info('*** WMS v119 OPENINGS + ZONE GUARDS ACTIVE ***');
+console.info('*** WMS v128 DYNAMIC TOPOLOGY ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

@@ -1,5 +1,5 @@
 {
-  "version": "119",
+  "version": "128",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -10,9 +10,10 @@
     "50-viewer-3d.js",
     "60-layout-editor.js",
     "65-layout-pro-v117.js",
+    "66-topology-v128.js",
     "70-rack-editor.js",
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v119: aberturas libres elevables, snap mejorado entre zonas/muros y bloqueo geométrico de solapes entre zonas."
+  "notes": "v128 acumulativa: paredes compartidas reversibles y parciales, snaps topológicos, colisiones sin solape, nodos multizona, ownership de openings y adyacencias automáticas."
 }
