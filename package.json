@@ -1,13 +1,17 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "private": true,
-  "description": "WMS Industrial v108 D1 products para Cloudflare Pages Functions + D1.",
+  "description": "WMS Industrial v109 rendimiento 3D para Cloudflare Pages Functions + D1.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
     "verify:frontend": "node scripts/verify-frontend.mjs",
     "audit:frontend": "node scripts/audit-frontend.mjs",
-    "check": "node scripts/verify-frontend.mjs && node scripts/audit-frontend.mjs && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js"
+    "check": "node scripts/verify-frontend.mjs && node scripts/audit-frontend.mjs && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
+    "build": "npm run build:frontend"
+  },
+  "dependencies": {
+    "three": "0.160.0"
   }
 }

@@ -1,4 +1,4 @@
-console.info('*** WMS v108 D1 PRODUCTS ACTIVE ***');
+console.info('*** WMS v109 3D PERFORMANCE ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

@@ -1,5 +1,5 @@
 {
-  "version": "108",
+  "version": "109",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -13,5 +13,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v108 D1 products: fragments are concatenated in lexical order. Do not load them individually in the browser."
+  "notes": "v109 3D performance: modular frontend, on-demand WebGL render, explicit GPU cleanup and local Three.js build copy."
 }

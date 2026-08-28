@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v108-products-d1';
+const BUILD_MARK = 'cloudflare-v109-3d-performance';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

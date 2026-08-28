@@ -1,4 +1,4 @@
-/* WMS_V108_D1_PRODUCTS */
+/* WMS_V109_3D_PERFORMANCE */
 /* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
@@ -6255,23 +6255,64 @@ function getSheetBranchOpenMap(){
 
   /* v98: función duplicada openNavigable3DModal removida para evitar overrides accidentales. */
 // V45: Three.js/WebGL paso 2: materiales, luces, sombras y ruta 3D con glow.
-  function loadThreeRuntime(){
-    if(window.THREE) return Promise.resolve(window.THREE);
+  async function loadThreeRuntime(){
+    if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
-    window.__threeRuntimePromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://unpkg.com/three@0.160.0/build/three.min.js';
-      script.async = true;
-      script.onload = () => window.THREE ? resolve(window.THREE) : reject(new Error('Three.js no quedó disponible'));
-      script.onerror = () => reject(new Error('No se pudo cargar Three.js'));
-      document.head.appendChild(script);
-    });
+    window.__threeRuntimePromise = (async () => {
+      const localUrl = './vendor/three.module.min.js?v=wms-v109-3d-performance';
+      try{
+        const THREE = await import(localUrl);
+        window.THREE = THREE;
+        return THREE;
+      }catch(localError){
+        console.warn('Three.js local no disponible; usando respaldo CDN.', localError);
+        try{
+          const THREE = await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js');
+          window.THREE = THREE;
+          return THREE;
+        }catch(remoteError){
+          window.__threeRuntimePromise = null;
+          throw new Error(`No se pudo cargar Three.js: ${remoteError?.message || remoteError}`);
+        }
+      }
+    })();
     return window.__threeRuntimePromise;
+  }
+
+  function disposeThreeScene(scene, renderer){
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+    const collectTexture = value => {
+      if(value && typeof value === 'object' && value.isTexture) textures.add(value);
+    };
+    const collectMaterial = material => {
+      if(!material || materials.has(material)) return;
+      materials.add(material);
+      Object.values(material).forEach(collectTexture);
+      if(material.uniforms && typeof material.uniforms === 'object'){
+        Object.values(material.uniforms).forEach(uniform => collectTexture(uniform?.value));
+      }
+    };
+    scene?.traverse?.(obj => {
+      if(obj?.geometry) geometries.add(obj.geometry);
+      if(Array.isArray(obj?.material)) obj.material.forEach(collectMaterial);
+      else collectMaterial(obj?.material);
+    });
+    textures.forEach(texture => { try{ texture.dispose?.(); }catch{} });
+    materials.forEach(material => { try{ material.dispose?.(); }catch{} });
+    geometries.forEach(geometry => { try{ geometry.dispose?.(); }catch{} });
+    try{ renderer?.renderLists?.dispose?.(); }catch{}
+    try{ renderer?.dispose?.(); }catch{}
+    try{ renderer?.forceContextLoss?.(); }catch{}
   }
 
   function openNavigable3DModal(prod = appState.selectedProduct){
     const existing = document.getElementById('navigable3DModal');
-    if(existing) existing.remove();
+    if(existing){
+      if(typeof existing.__wmsDispose3D === 'function') existing.__wmsDispose3D();
+      else existing.remove();
+    }
     const ctx = getViewerProductLocationContext(prod);
     ensureAppRuntimeState();
     const currentVisualMode = appState.ui?.nav3DVisualMode || 'operativo';
@@ -6463,9 +6504,21 @@ function getSheetBranchOpenMap(){
     };
 
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
+    let pulseTimer = 0, isClosed = false, visibilityHandler = null;
     const activePulseTargets = [];
     const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof };
-    const close = () => { cancelAnimationFrame(animation); resizeObserver?.disconnect(); renderer?.dispose?.(); modal.remove(); };
+    const close = () => {
+      if(isClosed) return;
+      isClosed = true;
+      cancelAnimationFrame(animation);
+      clearTimeout(pulseTimer);
+      resizeObserver?.disconnect();
+      if(visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
+      disposeThreeScene(scene, renderer);
+      scene = null; camera = null; renderer = null;
+      if(modal.isConnected) modal.remove();
+    };
+    modal.__wmsDispose3D = close;
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
     modal.addEventListener('click', e => { if(e.target === modal) close(); });
     modal.querySelectorAll('[data-rack-expand]').forEach(btn => btn.addEventListener('click', () => openRackZoom(btn.dataset.rackExpand)));
@@ -6585,7 +6638,7 @@ function getSheetBranchOpenMap(){
       scene.background = new THREE.Color(visual.bg);
       scene.fog = new THREE.FogExp2(visual.bg, visual.fog);
       renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
-      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+      renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       if('outputColorSpace' in renderer) renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -6594,7 +6647,7 @@ function getSheetBranchOpenMap(){
       camera = new THREE.PerspectiveCamera(42, 1, .1, 500);
       const ambient = new THREE.AmbientLight(0xc7e7ff, visual.ambient); scene.add(ambient);
       const hemi = new THREE.HemisphereLight(0xf2fbff, 0x153047, visual.hemi); scene.add(hemi);
-      const key = new THREE.DirectionalLight(0xffffff, visual.key); key.position.set(16,38,22); key.castShadow = true; key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
+      const key = new THREE.DirectionalLight(0xffffff, visual.key); key.position.set(16,38,22); key.castShadow = true; key.shadow.mapSize.set(1024,1024); key.shadow.camera.near=.5; key.shadow.camera.far=90; key.shadow.camera.left=-38; key.shadow.camera.right=38; key.shadow.camera.top=38; key.shadow.camera.bottom=-38; scene.add(key);
       const fill = new THREE.DirectionalLight(0x8fc5ff, visual.fill); fill.position.set(-26,18,24); scene.add(fill);
       const rim = new THREE.DirectionalLight(0x70ffb1, visual.rim); rim.position.set(-22,24,-18); scene.add(rim);
       const activeLight = new THREE.PointLight(0x57ff98, visual.active, 26, 1.7); activeLight.position.set(0, 5.2, 0); scene.add(activeLight);
@@ -7112,16 +7165,29 @@ function getSheetBranchOpenMap(){
       const selectedInitial = getTargetRackId() || ui.selectedRackId || appState.ui?.nav3DSelectedRackId || '';
       if(selectedInitial) { ui.selectedRackId = selectedInitial; appState.ui.nav3DSelectedRackId = selectedInitial; if(rackPopover) rackPopover.hidden = true; }
       const updateCamera = () => {
-        controls.yaw += (controls.targetYaw-controls.yaw)*.16;
-        controls.pitch += (controls.targetPitch-controls.pitch)*.16;
-        controls.distance += (controls.targetDistance-controls.distance)*.16;
-        controls.pan.lerp(controls.targetPan,.16);
+        const yawDelta = controls.targetYaw-controls.yaw;
+        const pitchDelta = controls.targetPitch-controls.pitch;
+        const distanceDelta = controls.targetDistance-controls.distance;
+        const panDelta = controls.pan.distanceTo(controls.targetPan);
+        const moving = Math.abs(yawDelta) > .00035 || Math.abs(pitchDelta) > .00035 || Math.abs(distanceDelta) > .0025 || panDelta > .0025;
+        if(moving){
+          controls.yaw += yawDelta*.16;
+          controls.pitch += pitchDelta*.16;
+          controls.distance += distanceDelta*.16;
+          controls.pan.lerp(controls.targetPan,.16);
+        }else{
+          controls.yaw = controls.targetYaw;
+          controls.pitch = controls.targetPitch;
+          controls.distance = controls.targetDistance;
+          controls.pan.copy(controls.targetPan);
+        }
         const x = Math.cos(controls.pitch)*Math.sin(controls.yaw)*controls.distance;
         const y = Math.sin(controls.pitch)*controls.distance;
         const z = Math.cos(controls.pitch)*Math.cos(controls.yaw)*controls.distance;
         camera.position.set(controls.pan.x+x, controls.pan.y+y, controls.pan.z+z);
         camera.lookAt(controls.pan);
         if(compass){ const deg = Math.round((((controls.yaw * 180/Math.PI) % 360) + 360) % 360); compass.textContent = `N · ${deg}°`; }
+        return moving;
       };
       const setPointerFromEvent = (e) => {
         const rect = canvas.getBoundingClientRect();
@@ -7141,6 +7207,7 @@ function getSheetBranchOpenMap(){
         const target = targetFocusForRack(rack, closeDistance ? 'slot' : 'rack');
         controls.targetPan.copy(target);
         controls.targetDistance = closeDistance ? Math.max(3.8, initialDistance * .30) : Math.max(4.8, initialDistance * .48);
+        requestRender();
       };
       const selectRackFromScene = (rackId, center = false) => {
         if(!rackId) return;
@@ -7154,7 +7221,45 @@ function getSheetBranchOpenMap(){
         else focusRackCamera(rackId, false);
         setTimeout(() => { renderSideRacks(); renderProductOperationalCard(); renderMiniMap(); syncToolbar(); }, 60);
       };
+      const updatePulse = now => {
+        if(!activePulseTargets.length) return;
+        const t = now * 0.0032;
+        activePulseTargets.forEach(item => {
+          const pulse = 0.72 + (Math.sin(t) + 1) * 0.34;
+          if(item.activeShell?.material){ item.activeShell.material.opacity = 0.48 + pulse * 0.24; item.activeShell.material.emissiveIntensity = 1.25 + pulse * 1.15; }
+          if(item.glowShell){ const s = 0.98 + pulse * 0.08; item.glowShell.scale.set(s,s,s); if(item.glowShell.material) item.glowShell.material.opacity = 0.07 + pulse * 0.11; }
+          if(item.slotLabel){ item.slotLabel.material.opacity = 0.74 + pulse * 0.22; item.slotLabel.position.y = item.labelY + pulse * 0.04; }
+        });
+      };
+      const schedulePulse = () => {
+        clearTimeout(pulseTimer);
+        if(isClosed || !activePulseTargets.length || document.visibilityState !== 'visible' || !modal.isConnected) return;
+        pulseTimer = setTimeout(() => requestRender(true), 50);
+      };
+      const requestRender = (pulseFrame = false) => {
+        if(isClosed || animation || document.visibilityState !== 'visible' || !modal.isConnected || !renderer || !scene || !camera) return;
+        animation = requestAnimationFrame(now => {
+          animation = 0;
+          if(isClosed || document.visibilityState !== 'visible' || !modal.isConnected) return;
+          const moving = updateCamera();
+          if(pulseFrame || moving || controls.dragging) updatePulse(now);
+          renderer.render(scene,camera);
+          if(renderer.shadowMap?.autoUpdate){
+            renderer.shadowMap.autoUpdate = false;
+            renderer.shadowMap.needsUpdate = false;
+          }
+          if(moving || controls.dragging) requestRender(false);
+          else schedulePulse();
+        });
+      };
+      visibilityHandler = () => {
+        if(document.visibilityState !== 'visible'){
+          cancelAnimationFrame(animation); animation = 0; clearTimeout(pulseTimer); pulseTimer = 0;
+        }else requestRender(true);
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
       const resize = () => {
+        if(isClosed || !renderer || !camera) return;
         const stage = modal.querySelector('.nav3d-stage');
         const rect = canvas.getBoundingClientRect();
         const stageRect = stage?.getBoundingClientRect?.() || rect;
@@ -7163,13 +7268,13 @@ function getSheetBranchOpenMap(){
         renderer.setSize(w, h, false);
         camera.aspect = w / Math.max(1, h);
         camera.updateProjectionMatrix();
+        requestRender(true);
       };
       resizeObserver = new ResizeObserver(resize); resizeObserver.observe(modal.querySelector('.nav3d-stage') || canvas); resize();
       requestAnimationFrame(resize);
-      setTimeout(resize, 120);
-      const animate = () => { animation = requestAnimationFrame(animate); updateCamera(); const t = performance.now() * 0.0032; activePulseTargets.forEach(item => { const pulse = 0.72 + (Math.sin(t) + 1) * 0.34; if(item.activeShell?.material){ item.activeShell.material.opacity = 0.48 + pulse * 0.24; item.activeShell.material.emissiveIntensity = 1.25 + pulse * 1.15; } if(item.glowShell){ const s = 0.98 + pulse * 0.08; item.glowShell.scale.set(s,s,s); if(item.glowShell.material) item.glowShell.material.opacity = 0.07 + pulse * 0.11; } if(item.slotLabel){ item.slotLabel.material.opacity = 0.74 + pulse * 0.22; item.slotLabel.position.y = item.labelY + pulse * 0.04; } }); renderer.render(scene,camera); };
-      animate();
-      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); });
+      setTimeout(() => { if(!isClosed) resize(); }, 120);
+      requestRender(true);
+      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); requestRender(); });
       canvas.addEventListener('pointermove', e => {
         if(!controls.dragging){
           const rid = pickRackId(e);
@@ -7192,9 +7297,10 @@ function getSheetBranchOpenMap(){
         if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 6) downMoved = true;
         if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
         else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.28, Math.min(1.16, controls.targetPitch + dy*.0022)); }
+        requestRender();
       });
       canvas.addEventListener('pointerup', e => {
-        controls.dragging=false;
+        controls.dragging=false; requestRender();
         try{canvas.releasePointerCapture(e.pointerId)}catch{};
         if(!downMoved && Date.now() - downTime < 420){
           const rid = pickRackId(e);
@@ -7202,13 +7308,12 @@ function getSheetBranchOpenMap(){
         }
       });
       canvas.addEventListener('dblclick', e => { const rid = pickRackId(e); if(rid) selectRackFromScene(rid, true); });
-      canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; });
-      canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); }, { passive:false });
+      canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; requestRender(); });
+      canvas.addEventListener('wheel', e => { e.preventDefault(); controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); requestRender(); }, { passive:false });
       modal.querySelectorAll('[data-nav3d-target]').forEach(btn => btn.addEventListener('click', () => {
         ui.target = btn.dataset.nav3dTarget || 'primary';
         appState.ui.nav3DTarget = ui.target;
         syncToolbar();
-        if(action === 'camera-top') return;
         close();
         openNavigable3DModal(prod);
       }));
@@ -7267,7 +7372,7 @@ function getSheetBranchOpenMap(){
       syncToolbar();
     }).catch(err => {
       console.error(err);
-      if(loading) loading.innerHTML = '<b>No se pudo cargar Three.js</b><span>Revisa conexión o bloqueos del navegador.</span>';
+      if(loading) loading.innerHTML = '<b>No se pudo cargar Three.js</b><span>Falta el módulo local y tampoco fue posible usar el respaldo.</span>';
       showToast('No se pudo cargar el motor 3D.', 'warning');
     });
   }
@@ -13885,7 +13990,7 @@ function getSheetBranchOpenMap(){
   btnStopScanner.addEventListener('click', stopScanner);
   scannerModal.addEventListener('click', (e) => { if (e.target === scannerModal) stopScanner(); });
 
-console.info('*** WMS v108 D1 PRODUCTS ACTIVE ***');
+console.info('*** WMS v109 3D PERFORMANCE ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

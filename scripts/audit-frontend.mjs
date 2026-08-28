@@ -28,8 +28,8 @@ if (duplicateDeclarations.length || duplicateOverrides.length) {
   process.exit(1);
 }
 
-if (!source.startsWith('/* WMS_V108_D1_PRODUCTS */')) {
-  console.error('Falta la marca de bundle v108.');
+if (!source.startsWith('/* WMS_V109_3D_PERFORMANCE */')) {
+  console.error('Falta la marca de bundle v109.');
   process.exit(1);
 }
 console.log(`Auditoría frontend OK: ${declarations.size} funciones declaradas, sin overrides protegidos duplicados.`);
