@@ -1,0 +1,10 @@
+{
+  "name": "wms-industrial-cloudflare",
+  "version": "1.0.6",
+  "private": true,
+  "description": "WMS Industrial para Cloudflare Pages Functions + D1.",
+  "type": "module",
+  "scripts": {
+    "check": "node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js"
+  }
+}
