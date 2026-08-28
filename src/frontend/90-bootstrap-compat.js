@@ -1,4 +1,4 @@
-console.info('*** WMS v130 UNIFIED WALLS + PROFESSIONAL 3D VIEWS ACTIVE ***');
+console.info('*** WMS v134 2D-3D SYNC + VISUAL WMS + PRODUCT LOCATOR + RACK PERFORMANCE ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();
@@ -298,7 +298,7 @@ console.info('*** WMS v130 UNIFIED WALLS + PROFESSIONAL 3D VIEWS ACTIVE ***');
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
           </div>
         </div>
-        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Localizar en 3D</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
     document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));

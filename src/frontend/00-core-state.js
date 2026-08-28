@@ -1,3 +1,4 @@
+/* WMS_V134_SYNC_VISUAL_WMS */
 /* WMS_V130_UNIFIED_WALLS_VIEWS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
@@ -138,7 +139,7 @@
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
-    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true },
+    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DWmsMode:'architecture', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
     productFilters: {
@@ -167,6 +168,36 @@
   function isRackDistributionScreen(){ return appState?.screen === 'distribution'; }
   function isStructureLayoutScreen(){ return appState?.screen === 'layout'; }
   function isLayoutWorkspaceScreen(){ return isStructureLayoutScreen() || isRackDistributionScreen(); }
+
+  function getUnifiedLayoutSelection(){
+    ensureAppRuntimeState();
+    if(appState.selectedOpeningId && (appState.layout?.openings||[]).some(o=>o.id===appState.selectedOpeningId)) return {type:'opening',id:appState.selectedOpeningId};
+    if(appState.selectedWallId && (appState.layout?.walls||[]).some(w=>w.id===appState.selectedWallId)) return {type:'wall',id:appState.selectedWallId};
+    if(appState.selectedRackLayoutId && (appState.layout?.racks||[]).some(r=>r.id===appState.selectedRackLayoutId)) return {type:'rack',id:appState.selectedRackLayoutId};
+    if(appState.selectedZoneId && (appState.layout?.zones||[]).some(z=>z.id===appState.selectedZoneId)) return {type:'zone',id:appState.selectedZoneId};
+    const type=String(appState.ui?.nav3DSelectionType||''); const id=String(appState.ui?.nav3DSelectionId||'');
+    return type&&id?{type,id}:{type:'',id:''};
+  }
+
+  function setUnifiedLayoutSelection(type,id,{render=false,source=''}={}){
+    ensureAppRuntimeState(); type=String(type||''); id=String(id||'');
+    if(type==='rack'){
+      const rack=findRackById(id); if(!rack)return false;
+      appState.selectedRackLayoutId=id; appState.selectedRack=id; appState.selectedRackLayoutIds=[id]; appState.selectedZoneId=rack.zoneId||appState.selectedZoneId; appState.selectedWallId=''; appState.selectedOpeningId=''; appState.selectedRoomId='';
+    }else if(type==='wall'){
+      if(!findWallById(id))return false; appState.selectedWallId=id; appState.selectedOpeningId=''; appState.selectedRackLayoutId=''; appState.selectedRackLayoutIds=[]; appState.selectedRoomId=''; if(typeof v117SetSelectedWallIds==='function')v117SetSelectedWallIds([id]);
+    }else if(type==='opening'){
+      const opening=(appState.layout?.openings||[]).find(o=>o.id===id); if(!opening)return false; appState.selectedOpeningId=id; appState.selectedWallId=opening.wallId||''; appState.selectedRackLayoutId=''; appState.selectedRackLayoutIds=[]; appState.selectedRoomId='';
+    }else if(type==='zone'){
+      if(!findZoneById(id))return false; appState.selectedZoneId=id; appState.selectedRackLayoutId=''; appState.selectedRackLayoutIds=[]; appState.selectedWallId=''; appState.selectedOpeningId=''; appState.selectedRoomId=findZoneById(id)?.linkedRoomId||'';
+    }else{
+      appState.selectedRackLayoutId=''; appState.selectedRackLayoutIds=[]; appState.selectedWallId=''; appState.selectedOpeningId=''; appState.selectedRoomId='';
+    }
+    appState.ui.nav3DSelectionType=type; appState.ui.nav3DSelectionId=id;
+    try{document.dispatchEvent(new CustomEvent('wms:layout-selection',{detail:{type,id,source}}));}catch{}
+    if(render&&isLayoutWorkspaceScreen()&&typeof renderLayoutEditor==='function')renderLayoutEditor();
+    return true;
+  }
 
   const storedRackModels = loadRackModels();
   if (storedRackModels) appState.models = storedRackModels.map(m => ({ ...m, leftHeight: Number(m.leftHeight || m.height || 240), rightHeight: Number(m.rightHeight || Math.max(40, (m.height || 240) * 0.35)), mirrored: isUnderStairsStyle(m?.style) ? (normalizeRackStyle(m?.style) === 'under_stairs_reflected' ? true : false) : !!m.mirrored }));
@@ -210,7 +241,7 @@
   function ensureAppRuntimeState(){
     ensureProductPagingState();
     if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:true, nav3DShowRoomSlabs:true, nav3DShowOpeningFrames:true, ...appState.ui };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:true, nav3DShowRoomSlabs:true, nav3DShowOpeningFrames:true, nav3DWmsMode:'architecture', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false, ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!['NE','NW','SE','SW'].includes(appState.ui.isoView)) appState.ui.isoView = 'NE';
@@ -218,6 +249,10 @@
     if(typeof appState.ui.isoGhost !== 'boolean') appState.ui.isoGhost = true;
     if(typeof appState.ui.nav3DShowRoomSlabs !== 'boolean') appState.ui.nav3DShowRoomSlabs = true;
     if(typeof appState.ui.nav3DShowOpeningFrames !== 'boolean') appState.ui.nav3DShowOpeningFrames = true;
+    if(!['architecture','zones','occupancy','stock','category','brand'].includes(appState.ui.nav3DWmsMode)) appState.ui.nav3DWmsMode = 'architecture';
+    if(typeof appState.ui.nav3DSelectionType !== 'string') appState.ui.nav3DSelectionType = '';
+    if(typeof appState.ui.nav3DSelectionId !== 'string') appState.ui.nav3DSelectionId = '';
+    if(typeof appState.ui.nav3DMoveMode !== 'boolean') appState.ui.nav3DMoveMode = false;
     if(appState.selectedRoomId === undefined) appState.selectedRoomId = '';
     if(!appState.admin || typeof appState.admin !== 'object') appState.admin = { branches:[], users:[], company:{} };
     if(!Array.isArray(appState.admin.branches)) appState.admin.branches = [];

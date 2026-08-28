@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v130-unified-walls-views';
+      const localUrl = './vendor/three.module.min.js?v=wms-v134-sync-visual-wms';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -68,7 +68,7 @@
           <div>
             <div class="search-card-kicker">Ubicación visual · WebGL</div>
             <h2>3D arquitectónico del layout</h2>
-            <p>Espacio, muros, vanos y racks representados con una lectura arquitectónica más limpia.</p>
+            <p>Modelo sincronizado 2D↔3D con selección, visualización WMS y localización de producto.</p>
           </div>
           <div class="nav3d-actions">
             <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
@@ -91,6 +91,10 @@
             <button class="iso-tool ${appState.ui?.nav3DShowOpeningFrames !== false ? 'active' : ''}" data-nav3d-action="opening-frames">Marcos</button>
             <button class="iso-tool ${appState.ui?.nav3DShowArchitecturalDetails !== false ? 'active' : ''}" data-nav3d-action="arch-details">Detalles</button>
             <button class="iso-tool" data-nav3d-action="camera-top">Planta 3D</button>
+            ${prod ? '<button class="iso-tool nav3d-locate-product" data-nav3d-action="locate-product">⌖ Producto</button>' : ''}
+            <label class="nav3d-wms-mode-wrap" title="Modo de visualización WMS"><span>Vista</span><select id="nav3dWmsMode">
+              <option value="architecture">Arquitectura</option><option value="zones">Zonas</option><option value="occupancy">Ocupación</option><option value="stock">Stock</option><option value="category">Categoría</option><option value="brand">Marca</option>
+            </select></label>
             <div class="nav3d-visual-switch">
               <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
               <button class="iso-tool visual-mode active" data-nav3d-action="visual-operativo">Operativo</button>
@@ -137,6 +141,8 @@
             <div class="nav3d-minimap" id="nav3dMiniMap"></div>
             <div class="nav3d-rack-popover" id="nav3dRackPopover" hidden></div>
             <div class="nav3d-hover-label" id="nav3dHoverLabel" hidden></div>
+            <div class="nav3d-selection-card" id="nav3dSelectionCard"></div>
+            <div class="nav3d-wms-legend" id="nav3dWmsLegend"></div>
           </div>
           <div class="nav3d-side">
             <div class="nav3d-rack-card is-primary">
@@ -182,6 +188,9 @@
     const sectionPanel = modal.querySelector('#nav3dSectionPanel');
     const viewsPanel = modal.querySelector('#nav3dViewsPanel');
     const savedViewsList = modal.querySelector('#nav3dSavedViews');
+    const selectionCard = modal.querySelector('#nav3dSelectionCard');
+    const wmsLegend = modal.querySelector('#nav3dWmsLegend');
+    const wmsModeSelect = modal.querySelector('#nav3dWmsMode');
     const rackPrimarySvg = modal.querySelector('#nav3dRackPrimary');
     const rackStoreSvg = modal.querySelector('#nav3dRackStore');
     const rackZoom = modal.querySelector('#nav3dRackZoom');
@@ -232,9 +241,9 @@
     const getFocusSets = () => {
       const liveCtx = getViewerProductLocationContext(prod);
       const targetRackId = getTargetRackId();
-      const focusRackIds = new Set([targetRackId, ui.selectedRackId, appState.ui?.nav3DSelectedRackId].filter(Boolean));
+      const focusRackIds = new Set([targetRackId, ui.selectedRackId, appState.ui?.nav3DSelectedRackId, appState.selectedRackLayoutId, ui.selection?.type==='rack'?ui.selection.id:''].filter(Boolean));
       if(ui.isolation === 'solo') [liveCtx.primaryRackId, liveCtx.storeRackId].filter(Boolean).forEach(id => focusRackIds.add(id));
-      const focusZoneIds = new Set([]);
+      const focusZoneIds = new Set([ui.selection?.type==='zone'?ui.selection.id:''].filter(Boolean));
       if((ui.target === 'store' || ui.target === 'both') && prod?.zonaStore) focusZoneIds.add(prod.zonaStore);
       if((ui.target !== 'store' || ui.target === 'both') && prod?.zona) focusZoneIds.add(prod.zona);
       focusRackIds.forEach(rid => { const r = findNav3DRackById(rid); if(r?.zoneId) focusZoneIds.add(r.zoneId); });
@@ -285,7 +294,9 @@
     let renderer = null, scene = null, camera = null, animation = 0, resizeObserver = null;
     let pulseTimer = 0, isClosed = false, visibilityHandler = null, nav3dKeyDownHandler = null, nav3dKeyUpHandler = null;
     const activePulseTargets = [];
-    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation };
+    const initialUnifiedSelection = typeof getUnifiedLayoutSelection === 'function' ? getUnifiedLayoutSelection() : {type:'',id:''};
+    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation, wmsMode:appState.ui?.nav3DWmsMode||'architecture', selection:{...initialUnifiedSelection}, move3D:!!appState.ui?.nav3DMoveMode };
+    if(wmsModeSelect) wmsModeSelect.value=ui.wmsMode;
     const close = () => {
       if(isClosed) return;
       isClosed = true;
@@ -298,6 +309,9 @@
       disposeThreeScene(scene, renderer);
       scene = null; camera = null; renderer = null;
       if(modal.isConnected) modal.remove();
+      if(typeof isLayoutWorkspaceScreen==='function' && isLayoutWorkspaceScreen() && typeof renderLayoutEditor==='function'){
+        try{ renderLayoutEditor(); }catch{}
+      }
     };
     modal.__wmsDispose3D = close;
     modal.querySelector('.location-modal-close')?.addEventListener('click', close);
@@ -322,6 +336,9 @@
       modal.querySelector('[data-nav3d-action="views-panel"]')?.classList.toggle('active', !viewsPanel?.hidden);
       modal.querySelector('[data-nav3d-action="first-person"]')?.classList.toggle('active', modal.classList.contains('nav3d-first-person'));
       modal.querySelectorAll('[data-nav3d-target]').forEach(b => b.classList.toggle('active', b.dataset.nav3dTarget === ui.target));
+      if(wmsModeSelect) wmsModeSelect.value=ui.wmsMode;
+      canvas?.classList.toggle('nav3d-move-enabled',!!ui.move3D);
+      modal.dataset.wms3dMode=ui.wmsMode;
     };
 
     const rackStatsForPopover = (rackId) => {
@@ -385,6 +402,38 @@
           <button type="button" data-nav3d-product-action="isolate">Aislar rack</button>
         </div>`;
     };
+    const productStockValue = p => {
+      const candidates=[p?.stock,p?.restock,p?.cantidad,p?.quantity,p?.qty];
+      for(const v of candidates){ const n=Number(v); if(Number.isFinite(n)) return Math.max(0,n); }
+      return 1;
+    };
+    const productsForRack = rackId => (appState.products||[]).filter(p=>p?.rack===rackId||p?.rackStore===rackId);
+    const dominantValue = (items,keys) => {
+      const counts=new Map(); items.forEach(p=>{ let value=''; for(const key of keys){value=String(p?.[key]||'').trim();if(value)break;} if(value)counts.set(value,(counts.get(value)||0)+1); });
+      return [...counts.entries()].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0])))[0]?.[0]||'Sin dato';
+    };
+    const rackOperationalMetric = rack => {
+      if(!rack)return {products:0,stock:0,capacity:1,occupied:0,ratio:0,category:'Sin dato',brand:'Sin dato'};
+      const items=productsForRack(rack.id); const model=rackModel(rack.modelId)||baseRackModel(); const levels=Math.max(1,Number(model.levels||1)||1),slots=Math.max(1,Number(model.slots||model.capacity||1)||1);
+      const occupiedKeys=new Set(); items.forEach(p=>{ const store=p?.rackStore===rack.id; const level=Math.max(1,Number(store?p?.nivelStore:p?.nivel)||1),slot=Math.max(1,Number(store?p?.slotStore:p?.slot)||1); occupiedKeys.add(`${level}:${slot}`); });
+      const capacity=Math.max(1,levels*slots); const occupied=Math.min(capacity,occupiedKeys.size);
+      return {products:items.length,stock:items.reduce((sum,p)=>sum+productStockValue(p),0),capacity,occupied,ratio:Math.max(0,Math.min(1,occupied/capacity)),category:dominantValue(items,['categoria','category']),brand:dominantValue(items,['marca','brand'])};
+    };
+    const zoneAreaM2 = zone => { try{return polygonAreaAbs(zone?.pts||[])*getScaleCmPerUnit()*getScaleCmPerUnit()/10000;}catch{return 0;} };
+    const renderSelectionCard = () => {
+      if(!selectionCard)return; const sel=ui.selection||{type:'',id:''};
+      if(!sel.type||!sel.id){ selectionCard.innerHTML='<div class="nav3d-selection-empty"><b>Selección 2D ↔ 3D</b><span>Haz clic en una zona, muro, abertura o rack.</span></div>'; return; }
+      if(sel.type==='rack'){ const r=findNav3DRackById(sel.id); if(!r){selectionCard.innerHTML='';return;} const m=rackOperationalMetric(r),model=rackModel(r.modelId)||baseRackModel(),editable=typeof isRackDistributionScreen==='function'&&isRackDistributionScreen(); selectionCard.innerHTML=`<div class="nav3d-selection-head"><span>Rack</span><b>${escapeHtml(r.id)}</b></div><div class="nav3d-selection-grid"><span>Zona</span><b>${escapeHtml(r.zoneId||'—')}</b><span>Modelo</span><b>${escapeHtml(model.name||model.id||'—')}</b><span>Ocupación</span><b>${Math.round(m.ratio*100)}% · ${m.occupied}/${m.capacity}</b><span>Stock cargado</span><b>${Math.round(m.stock)}</b></div>${editable?`<div class="nav3d-selection-edit three"><label>X<input data-selection-field="rack-x" type="number" step="1" value="${Math.round(Number(r.x||0))}"></label><label>Y<input data-selection-field="rack-y" type="number" step="1" value="${Math.round(Number(r.y||0))}"></label><label>Rotación<input data-selection-field="rack-rot" type="number" step="1" value="${Math.round(Number(r.rot||0))}"></label></div>`:'<div class="tiny muted">Rack bloqueado fuera de Distribución.</div>'}<div class="nav3d-selection-actions"><button data-selection-action="focus">Centrar</button><button data-selection-action="isolate">Aislar</button>${editable?`<button class="${ui.move3D?'active':''}" data-selection-action="move-toggle">${ui.move3D?'Mover 3D activo':'Mover en 3D'}</button>`:''}</div>`; return; }
+      if(sel.type==='wall'){ const w=findWallById(sel.id); if(!w){selectionCard.innerHTML='';return;} const editable=typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen(); selectionCard.innerHTML=`<div class="nav3d-selection-head"><span>Muro</span><b>${escapeHtml(w.id)}</b></div><div class="nav3d-selection-grid"><span>Longitud</span><b>${escapeHtml(typeof formatDistanceCm==='function'?formatDistanceCm(wallLength(w)):Math.round(wallLength(w))+' cm')}</b><span>Muros compartidos</span><b>${escapeHtml(String(w.sharedWith?.length||w.roomIds?.length||0))}</b></div>${editable?`<div class="nav3d-selection-edit two"><label>Espesor<input data-selection-field="wall-thickness" type="number" min="4" step="1" value="${Math.round(Number(w.thickness||14))}"></label><label>Altura<input data-selection-field="wall-height" type="number" min="80" step="1" value="${Math.round(Number(w.height||290))}"></label></div>`:'<div class="tiny muted">La estructura está protegida en este modo.</div>'}<div class="nav3d-selection-actions"><button data-selection-action="focus">Centrar</button><button data-selection-action="isolate-zone">Mostrar zona</button></div>`; return; }
+      if(sel.type==='opening'){ const o=(appState.layout.openings||[]).find(x=>x.id===sel.id),w=o?findWallById(o.wallId):null; if(!o||!w){selectionCard.innerHTML='';return;} const editable=typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen(); selectionCard.innerHTML=`<div class="nav3d-selection-head"><span>Abertura</span><b>${escapeHtml(o.id)}</b></div><div class="nav3d-selection-grid"><span>Tipo</span><b>${escapeHtml(normalizeOpeningType(o.type))}</b><span>Muro</span><b>${escapeHtml(o.wallId||'—')}</b></div>${editable?`<div class="nav3d-selection-edit four"><label>Ancho<input data-selection-field="opening-width" type="number" min="20" step="1" value="${Math.round(Number(o.width||90))}"></label><label>Alto<input data-selection-field="opening-height" type="number" min="20" step="1" value="${Math.round(Number(o.height||210))}"></label><label>Cota inferior<input data-selection-field="opening-sill" type="number" min="0" step="1" value="${Math.round(Number(o.sill||0))}"></label><label>Posición %<input data-selection-field="opening-t" type="number" min="1" max="99" step="1" value="${Math.round(Number(o.t||.5)*100)}"></label></div>`:'<div class="tiny muted">Abertura protegida fuera de Estructura.</div>'}<div class="nav3d-selection-actions"><button data-selection-action="focus">Centrar</button></div>`; return; }
+      if(sel.type==='zone'){ const z=findZoneById(sel.id); if(!z){selectionCard.innerHTML='';return;} const racks=(appState.layout.racks||[]).filter(r=>r.zoneId===z.id); selectionCard.innerHTML=`<div class="nav3d-selection-head"><span>Zona</span><b>${escapeHtml(z.name||z.id)}</b></div><div class="nav3d-selection-grid"><span>ID</span><b>${escapeHtml(z.id)}</b><span>Área</span><b>${zoneAreaM2(z).toFixed(2)} m²</b><span>Racks</span><b>${racks.length}</b><span>Adyacentes</span><b>${typeof v128ZoneRelations==='function'?(v128ZoneRelations(z.id)||[]).length:'—'}</b></div><div class="nav3d-selection-actions"><button data-selection-action="focus">Centrar</button><button data-selection-action="isolate">Aislar zona</button></div>`; return; }
+      selectionCard.innerHTML='';
+    };
+    const renderWmsLegend = () => {
+      if(!wmsLegend)return; const labels={architecture:'Arquitectura',zones:'Zonas',occupancy:'Ocupación',stock:'Stock',category:'Categoría',brand:'Marca'}; const racks=getNav3DRacks(); const metrics=racks.map(r=>rackOperationalMetric(r)); const occupied=metrics.filter(m=>m.occupied>0).length; const stock=Math.round(metrics.reduce((a,m)=>a+m.stock,0));
+      wmsLegend.innerHTML=`<div class="nav3d-wms-legend-head"><b>${labels[ui.wmsMode]||'Arquitectura'}</b><span>${racks.length} racks</span></div>${ui.wmsMode==='occupancy'?'<div class="nav3d-wms-gradient"><i></i><span>Vacío</span><span>Completo</span></div>':''}<div class="nav3d-wms-stats"><span>${occupied} con producto</span><span>${stock} stock cargado</span></div>`;
+    };
+
     const renderMiniMap = () => {
       if(!miniMap) return;
       const b = getBounds();
@@ -407,6 +456,8 @@
       miniMap.innerHTML = `<div class="nav3d-mini-head"><b>Mini mapa</b><span>${escapeHtml(getTargetRackId() || '—')}</span></div><div class="nav3d-mini-sub">${targetLabel}</div><svg viewBox="0 0 ${w} ${h}" aria-label="Mini mapa de layout">${zonePaths}${rackDots}</svg>`;
     };
 
+    renderSelectionCard();
+    renderWmsLegend();
     loadThreeRuntime().then(THREE => {
       loading?.remove();
       renderSideRacks();
@@ -421,7 +472,10 @@
       const raycaster = new THREE.Raycaster();
       const pointer = new THREE.Vector2();
       const pickables = [];
-      let hoveredRackId = '';
+      const rackObjectMap = new Map();
+      const instancedRackLookup = new Map();
+      let selectionHelper = null, selectionGizmo = null, rackDrag = null;
+      let hoveredRackId = '', hoveredEntityKey = '';
       let downX = 0, downY = 0, downTime = 0, downMoved = false;
       scene = new THREE.Scene();
       scene.background = new THREE.Color(visual.bg);
@@ -444,6 +498,21 @@
       const bounds = getBounds();
       const scale = 0.035;
       const hScale = 0.020;
+      const metricsByRack = new Map(getNav3DRacks().map(r=>[r.id,rackOperationalMetric(r)]));
+      const maxRackStock = Math.max(1,...[...metricsByRack.values()].map(m=>Number(m.stock||0)));
+      const stringColor = value => {
+        const text=String(value||'Sin dato'); let h=2166136261; for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
+        const hue=((h>>>0)%360)/360; const c=new THREE.Color(); c.setHSL(hue,.58,.55); return c;
+      };
+      const rackVisualColor = rack => {
+        const metric=metricsByRack.get(rack?.id)||rackOperationalMetric(rack), zone=findZoneById(rack?.zoneId);
+        if(ui.wmsMode==='zones') return new THREE.Color(zone?.color||'#6f93aa');
+        if(ui.wmsMode==='occupancy'){ const c=new THREE.Color(); c.setHSL(.34*(1-Math.max(0,Math.min(1,metric.ratio))),.78,.50); return c; }
+        if(ui.wmsMode==='stock'){ const ratio=Math.max(0,Math.min(1,Number(metric.stock||0)/maxRackStock)); const c=new THREE.Color(); c.setHSL(.60*(1-ratio),.76,.52); return c; }
+        if(ui.wmsMode==='category') return stringColor(metric.category);
+        if(ui.wmsMode==='brand') return stringColor(metric.brand);
+        return new THREE.Color(0x3e6f8f);
+      };
       const world = new THREE.Group(); scene.add(world);
       // V49: sistema único layout 2D → mundo 3D.
       // El editor usa X hacia la derecha e Y hacia abajo. En Three.js usamos X igual y Z como profundidad positiva,
@@ -645,7 +714,9 @@
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData.wallId = wallId || '';
+        mesh.userData.entityType = 'wall';
         group.add(mesh);
+        pickables.push(mesh);
         const edgeOpacity = presentationMode ? (isActive ? .34 : .10) : (isActive ? .70 : .36);
         const edges = new THREE.LineSegments(
           new THREE.EdgesGeometry(geo),
@@ -697,20 +768,24 @@
       };
 
       const addOpeningFrame3D = (group, seg, opening, rawLengthUnits, height, thicknessUnits, isActive) => {
-        if(appState.ui?.nav3DShowOpeningFrames === false || !opening) return;
+        if(!opening) return;
         const type=normalizeOpeningType(opening.type);
-        if(type==='free' && opening.frame !== true) return;
         const dx=Number(seg.b.x||0)-Number(seg.a.x||0), dy=Number(seg.b.y||0)-Number(seg.a.y||0);
         const len=Math.max(1,Math.hypot(dx,dy)); const ux=dx/len, uy=dy/len; const n=getSegmentNormal(seg);
         const centerT=Number(opening.t||.5); const center={x:Number(seg.a.x||0)+dx*centerT,y:Number(seg.a.y||0)+dy*centerT};
-        const widthU=Math.max(40,Number(opening.width||90)||90); const sillU=Math.max(0,Number(opening.sillUnits||0)||0); const openingHU=Math.max(40,Number(opening.heightUnits||210)||210);
+        const widthU=Math.max(20,Number(opening.width||90)||90); const sillU=Math.max(0,Number(opening.sillUnits??opening.sill??0)||0); const openingHU=Math.max(20,Number(opening.heightUnits??opening.height??210)||210);
         const frameU=Math.max(4,Math.min(9,widthU*.055)); const frameD=Math.max(5,thicknessUnits*.72);
         const maxVisibleU=Math.max(0,height/Math.max(.0001,hScale)-sillU); const visibleHU=Math.min(openingHU,maxVisibleU);
         if(visibleHU<=2) return;
-        const mat=new THREE.MeshStandardMaterial({color:presentationMode?(isActive?0x6e7b82:0x77848b):(isActive?0xf5fbff:0x8094a4),roughness:.45,metalness:.14});
         const yaw=-Math.atan2(dy,dx);
-        const addVertical=(cx,cy,wU,hU)=>{ const mid=toWorld(cx,cy,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.03,hU*hScale),Math.max(.05,frameD*scale)),mat); mesh.position.set(mid.x,(sillU+hU/2)*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh); return mesh; };
-        const addHorizontal=(cyU,wU,yU,depthFactor=1)=>{ const mid=toWorld(center.x,center.y,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.025,frameU*hScale),Math.max(.05,frameD*scale*depthFactor)),mat); mesh.position.set(mid.x,yU*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; group.add(mesh); return mesh; };
+        const pickMid=toWorld(center.x,center.y,0);
+        const pickMat=new THREE.MeshBasicMaterial({transparent:true,opacity:.001,depthWrite:false,side:THREE.DoubleSide});
+        const pickMesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.06,widthU*scale),Math.max(.06,visibleHU*hScale),Math.max(.025,thicknessUnits*scale*.35)),pickMat);
+        pickMesh.position.set(pickMid.x,(sillU+visibleHU*.5)*hScale,pickMid.z); pickMesh.rotation.y=yaw; pickMesh.userData.openingId=opening.id||''; pickMesh.userData.wallId=seg.id||''; pickMesh.userData.entityType='opening'; group.add(pickMesh); pickables.push(pickMesh);
+        if(appState.ui?.nav3DShowOpeningFrames === false || (type==='free' && opening.frame !== true)) return;
+        const mat=new THREE.MeshStandardMaterial({color:presentationMode?(isActive?0x6e7b82:0x77848b):(isActive?0xf5fbff:0x8094a4),roughness:.45,metalness:.14});
+        const addVertical=(cx,cy,wU,hU)=>{ const mid=toWorld(cx,cy,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.03,hU*hScale),Math.max(.05,frameD*scale)),mat); mesh.position.set(mid.x,(sillU+hU/2)*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; mesh.userData.openingId=opening.id||''; mesh.userData.wallId=seg.id||''; mesh.userData.entityType='opening'; group.add(mesh); pickables.push(mesh); return mesh; };
+        const addHorizontal=(cyU,wU,yU,depthFactor=1)=>{ const mid=toWorld(center.x,center.y,0); const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.03,wU*scale),Math.max(.025,frameU*hScale),Math.max(.05,frameD*scale*depthFactor)),mat); mesh.position.set(mid.x,yU*hScale,mid.z); mesh.rotation.y=yaw; mesh.castShadow=true; mesh.receiveShadow=true; mesh.userData.openingId=opening.id||''; mesh.userData.wallId=seg.id||''; mesh.userData.entityType='opening'; group.add(mesh); pickables.push(mesh); return mesh; };
         const half=widthU/2;
         addVertical(center.x-ux*half,center.y-uy*half,frameU,visibleHU);
         addVertical(center.x+ux*half,center.y+uy*half,frameU,visibleHU);
@@ -720,7 +795,7 @@
           if(widthU>=135) addVertical(center.x,center.y,Math.max(3.2,frameU*.65),visibleHU);
           const glassH=Math.max(4,visibleHU-frameU*1.4);
           const glass=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.05,(widthU-frameU*2)*scale),Math.max(.05,glassH*hScale)),new THREE.MeshPhysicalMaterial({color:presentationMode?0xbad9e4:0xa9e8ff,transparent:true,opacity:presentationMode ? .34 : .22,roughness:.08,metalness:.02,transmission:.58,depthWrite:false,side:THREE.DoubleSide}));
-          const wp=toWorld(center.x+n.x*(thicknessUnits*.5),center.y+n.y*(thicknessUnits*.5),0); glass.position.set(wp.x,(sillU+visibleHU*.5)*hScale,wp.z); glass.rotation.y=yaw; group.add(glass);
+          const wp=toWorld(center.x+n.x*(thicknessUnits*.5),center.y+n.y*(thicknessUnits*.5),0); glass.position.set(wp.x,(sillU+visibleHU*.5)*hScale,wp.z); glass.rotation.y=yaw; glass.userData.openingId=opening.id||''; glass.userData.wallId=seg.id||''; glass.userData.entityType='opening'; group.add(glass); pickables.push(glass);
         }
         if(appState.ui?.nav3DShowArchitecturalDetails === false || !['door','gate'].includes(type)) return;
         const swingSign=Number(opening.swing||1)>=0?1:-1;
@@ -731,7 +806,7 @@
         const lc={x:hinge.x+vx*leafW*.5,y:hinge.y+vy*leafW*.5}; const worldC=toWorld(lc.x,lc.y,0);
         const leafMat=new THREE.MeshStandardMaterial({color:type==='gate'?(presentationMode?0x7f8d93:0x657a86):(presentationMode?0xc6a878:0x8f6b45),roughness:type==='gate' ? .50 : .66,metalness:type==='gate' ? .18 : .04});
         const leaf=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.06,leafW*scale),Math.max(.08,leafH*hScale),Math.max(.035,3.8*scale)),leafMat);
-        leaf.position.set(worldC.x,(sillU+leafH*.5)*hScale,worldC.z); leaf.rotation.y=-Math.atan2(vy,vx); leaf.castShadow=true; leaf.receiveShadow=true; leaf.userData.openingId=opening.id||''; group.add(leaf);
+        leaf.position.set(worldC.x,(sillU+leafH*.5)*hScale,worldC.z); leaf.rotation.y=-Math.atan2(vy,vx); leaf.castShadow=true; leaf.receiveShadow=true; leaf.userData.openingId=opening.id||''; leaf.userData.wallId=seg.id||''; leaf.userData.entityType='opening'; group.add(leaf); pickables.push(leaf);
         if(type==='door'){
           const free={x:hinge.x+vx*leafW*.82,y:hinge.y+vy*leafW*.82}; const hp=toWorld(free.x,free.y,0);
           const handle=new THREE.Mesh(new THREE.SphereGeometry(.055,10,8),new THREE.MeshStandardMaterial({color:0xd6bd72,roughness:.28,metalness:.72})); handle.position.set(hp.x,Math.min((sillU+105)*hScale,(sillU+leafH*.58)*hScale),hp.z); group.add(handle);
@@ -749,7 +824,7 @@
           const active=item.zone&&activeZoneIds.has(item.id);
           const color=new THREE.Color(item.color||'#9fb6c7');
           const mat=new THREE.MeshStandardMaterial({color:presentationMode?color.clone().lerp(new THREE.Color(0xd8dcde),.58):color,roughness:presentationMode ? .90 : .78,metalness:.02,transparent:true,opacity:presentationMode ? (active ? .94 : .80):(active ? .72 : (appState.ui?.nav3DArchitectural ? .42 : .22)),side:THREE.DoubleSide});
-          const mesh=new THREE.Mesh(geo,mat); mesh.position.y=-.055; mesh.receiveShadow=true; mesh.userData.zoneId=item.zone?item.id:''; mesh.userData.roomId=item.zone?'':item.id; group.add(mesh);
+          const mesh=new THREE.Mesh(geo,mat); mesh.position.y=-.055; mesh.receiveShadow=true; mesh.userData.zoneId=item.zone?item.id:''; mesh.userData.roomId=item.zone?'':item.id; mesh.userData.entityType=item.zone?'zone':'room'; group.add(mesh); if(item.zone)pickables.push(mesh);
         });
         return group;
       };
@@ -762,7 +837,7 @@
           const rawLengthUnits = Math.hypot(dx, dy);
           const length = rawLengthUnits * scale;
           if(length <= .08) return;
-          const isActive = [...(seg.zoneIds || [])].some(id => activeZoneIds.has(id));
+          const isActive = appState.selectedWallId===seg.id || ui.selection?.type==='wall'&&ui.selection.id===seg.id || [...(seg.zoneIds || [])].some(id => activeZoneIds.has(id));
           const wallCut = !!appState.ui?.nav3DWallCut;
           const baseHeight = Math.max(2.8, (Number(seg.height || DEFAULT_WALL_HEIGHT) || DEFAULT_WALL_HEIGHT) * hScale);
           const height = wallCut ? Math.min(1.25, baseHeight) : baseHeight;
@@ -824,7 +899,9 @@
           wall.castShadow = true;
           wall.receiveShadow = true;
           wall.userData.wallId = seg.id || '';
+          wall.userData.entityType = 'wall';
           group.add(wall);
+          pickables.push(wall);
           const edges = new THREE.LineSegments(
             new THREE.EdgesGeometry(wall.geometry),
             new THREE.LineBasicMaterial({ color:presentationMode ? 0x697985 : (isActive ? 0xffffff : 0xd7e7f4), transparent:true, opacity:presentationMode ? (isActive ? .34 : .10) : (isActive ? .70 : .36) })
@@ -877,11 +954,12 @@
       layoutZones.forEach(z => {
         const pts = (z.pts || []).map(layoutToShapePoint);
         if(pts.length >= 3){
-          const isActiveZone = focusZoneIds.has(z.id);
+          const isActiveZone = focusZoneIds.has(z.id) || appState.selectedZoneId===z.id || (ui.selection?.type==='zone'&&ui.selection.id===z.id);
           const mats = makeZoneMaterials(isActiveZone);
+          if(ui.wmsMode==='zones'){ const zc=new THREE.Color(z.color||'#6f93aa');mats.floor.color.copy(zc);mats.floor.opacity=isActiveZone?.62:.34;mats.overlay.color.copy(zc.clone().lerp(new THREE.Color(0xffffff),.22));mats.overlay.opacity=isActiveZone?.16:.07;mats.line.color.copy(zc.clone().lerp(new THREE.Color(0xffffff),.35));mats.line.opacity=isActiveZone?.92:.58; }
           const shape = new THREE.Shape(pts);
           const geo = new THREE.ShapeGeometry(shape);
-          const floorMesh = new THREE.Mesh(geo, mats.floor); floorMesh.rotation.x = -Math.PI/2; floorMesh.position.y=isActiveZone ? .022 : .012; floorMesh.receiveShadow = isActiveZone; world.add(floorMesh);
+          const floorMesh = new THREE.Mesh(geo, mats.floor); floorMesh.rotation.x = -Math.PI/2; floorMesh.position.y=isActiveZone ? .022 : .012; floorMesh.receiveShadow = isActiveZone; floorMesh.userData.zoneId=z.id||''; floorMesh.userData.entityType='zone'; world.add(floorMesh); pickables.push(floorMesh);
           const overlay = new THREE.Mesh(geo.clone(), mats.overlay); overlay.rotation.x = -Math.PI/2; overlay.position.y=isActiveZone ? .044 : .031; world.add(overlay);
           const linePts = pts.concat([pts[0]]).map(v => new THREE.Vector3(v.x, isActiveZone ? .064 : .045, -v.y));
           const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(linePts), mats.line); world.add(line);
@@ -1020,6 +1098,11 @@
             }
           }
         }
+        if(ui.wmsMode!=='architecture'){
+          const modeColor=rackVisualColor(r);
+          const bandMat=new THREE.MeshStandardMaterial({color:modeColor,emissive:modeColor.clone().multiplyScalar(.18),emissiveIntensity:.55,roughness:.46,metalness:.12,transparent:true,opacity:.92});
+          addBox(group,Math.max(.2,w*.94),Math.max(.035,beamH*1.6),Math.max(.08,d*.90),0,Math.max(.08,rackH-.08),0,bandMat,false);
+        }
         if(active){
           const haloGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(w+.18, rackH+.18, d+.18));
           const halo = new THREE.LineSegments(haloGeo, new THREE.LineBasicMaterial({ color:0x7dffab, transparent:true, opacity:.98 }));
@@ -1043,6 +1126,24 @@
         edges.position.copy(mesh.position); group.add(edges);
         return group;
       };
+      const buildMediumRack = (r) => {
+        const group=new THREE.Group(), model=rackModel(r.modelId)||baseRackModel();
+        const w=Math.max(.8,(Number(r.w||model.width||120))*scale),d=Math.max(.45,(Number(r.h||model.depth||56))*scale),rackH=Math.max(1.1,(Number(r.rackHeight||model.height||240))*hScale);
+        const levels=Math.max(1,Math.min(8,Number(model.levels||4)||4)), p=toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2,Number(r.y||0)+Number(r.h||model.depth||56)/2,0);
+        group.position.set(p.x,0,p.z); group.rotation.y=rackYaw(r);
+        const c=rackVisualColor(r), frameC=ui.wmsMode==='architecture'?new THREE.Color(0x315c7a):c.clone().multiplyScalar(.72), beamC=ui.wmsMode==='architecture'?new THREE.Color(0xd58437):c;
+        const frameMat=new THREE.MeshStandardMaterial({color:frameC,roughness:.38,metalness:.56}), beamMat=new THREE.MeshStandardMaterial({color:beamC,roughness:.44,metalness:.32}), shelfMat=new THREE.MeshStandardMaterial({color:c.clone().lerp(new THREE.Color(0xdbe1e4),.55),roughness:.72,metalness:.08,transparent:true,opacity:.78});
+        const post=Math.max(.04,w*.035), beam=Math.max(.03,rackH*.012);
+        [[-w/2,-d/2],[w/2,-d/2],[-w/2,d/2],[w/2,d/2]].forEach(([x,z])=>addBox(group,post,rackH,post,x,rackH/2,z,frameMat,false));
+        for(let i=0;i<=levels;i++){const y=Math.min(rackH,(rackH/levels)*i);addBox(group,w+post,beam,post,0,y,-d/2,beamMat,false);addBox(group,w+post,beam,post,0,y,d/2,beamMat,false);if(i>0)addBox(group,w*.94,Math.max(.018,beam*.55),d*.82,0,Math.max(.03,y-beam*.7),0,shelfMat,false);}
+        return group;
+      };
+      const addInstancedRackProxies = racks => {
+        if(!racks.length)return null; const geo=new THREE.BoxGeometry(1,1,1),mat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.58,metalness:.18,transparent:true,opacity:ui.wmsMode==='architecture'?.18:.64,vertexColors:true});
+        const mesh=new THREE.InstancedMesh(geo,mat,racks.length); mesh.userData.entityType='rack'; mesh.userData.rackIds=racks.map(r=>r.id); mesh.userData.isRackInstanced=true; const dummy=new THREE.Object3D();
+        racks.forEach((r,i)=>{const model=rackModel(r.modelId)||baseRackModel(),w=Math.max(.8,(Number(r.w||model.width||120))*scale),d=Math.max(.45,(Number(r.h||model.depth||56))*scale),rh=Math.max(1.1,(Number(r.rackHeight||model.height||240))*hScale),p=toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2,Number(r.y||0)+Number(r.h||model.depth||56)/2,0);dummy.position.set(p.x,rh/2,p.z);dummy.rotation.set(0,rackYaw(r),0);dummy.scale.set(w,rh,d);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);mesh.setColorAt(i,rackVisualColor(r));instancedRackLookup.set(r.id,{mesh,index:i});});
+        mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;mesh.castShadow=false;mesh.receiveShadow=true;world.add(mesh);pickables.push(mesh);return mesh;
+      };
 
       let visibleRacks = getNav3DRacks().filter(r => {
         const rackActive = focusRackIds.has(r.id) || focusRackIds.has(nav3dRackKey(r.id));
@@ -1057,18 +1158,16 @@
         if(fallbackRack) visibleRacks = [fallbackRack];
         if(window.__wmsDiagPush) window.__wmsDiagPush('3d', 'Se aplicó fallback de rack visible en WebGL');
       }
-      visibleRacks.forEach(r => {
-        const active = focusRackIds.has(r.id);
-        const rackObject = active ? buildDetailedRack(r, true) : buildBasicRack(r, false, true);
-        rackObject.userData.rackId = r.id;
-        rackObject.traverse(obj => {
-          obj.userData.rackId = r.id;
-          obj.userData.isRackPickable = true;
-          if(obj.isMesh) pickables.push(obj);
-        });
-        world.add(rackObject);
+      const directSelectedRackId = ui.selection?.type==='rack'?ui.selection.id:appState.selectedRackLayoutId;
+      const detailedRackIds=new Set([...focusRackIds,directSelectedRackId].filter(Boolean));
+      const passiveRacks=[];
+      visibleRacks.forEach(r=>{
+        const active=detailedRackIds.has(r.id); if(!active){passiveRacks.push(r);return;}
+        const rackObject=buildDetailedRack(r,true); rackObject.userData.rackId=r.id; rackObject.userData.entityType='rack'; rackObject.traverse(obj=>{obj.userData.rackId=r.id;obj.userData.entityType='rack';obj.userData.isRackPickable=true;if(obj.isMesh)pickables.push(obj);}); rackObjectMap.set(r.id,rackObject); world.add(rackObject);
       });
-      if(ui.route && prod && !appState.ui?.nav3DArchitectural){
+      if(passiveRacks.length>=36){ addInstancedRackProxies(passiveRacks); }
+      else passiveRacks.forEach(r=>{ const rackObject=buildMediumRack(r); rackObject.userData.rackId=r.id;rackObject.userData.entityType='rack';rackObject.traverse(obj=>{obj.userData.rackId=r.id;obj.userData.entityType='rack';obj.userData.isRackPickable=true;if(obj.isMesh)pickables.push(obj);});rackObjectMap.set(r.id,rackObject);world.add(rackObject); });
+      if(ui.route && prod && !appState.ui?.nav3DPresentation){
         const activeRack = visibleRacks.find(r => r.id === getTargetRackId()) || visibleRacks.find(r => focusRackIds.has(r.id));
         if(activeRack){
           const routeGroup = new THREE.Group();
@@ -1198,13 +1297,21 @@
         pointer.x = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
         pointer.y = -((e.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
       };
-      const pickRackId = (e) => {
-        if(!pickables.length) return '';
+      const pickEntity = (e) => {
+        if(!pickables.length) return null;
         setPointerFromEvent(e);
         raycaster.setFromCamera(pointer, camera);
         const hit = raycaster.intersectObjects(pickables, false)[0];
-        return hit?.object?.userData?.rackId || '';
+        if(!hit?.object) return null;
+        const data=hit.object.userData||{};
+        if(data.isRackInstanced && Number.isInteger(hit.instanceId)){ const id=data.rackIds?.[hit.instanceId]||''; if(id)return {type:'rack',id,object:hit.object,instanceId:hit.instanceId,point:hit.point}; }
+        if(data.openingId) return {type:'opening',id:data.openingId,object:hit.object,point:hit.point};
+        if(data.rackId) return {type:'rack',id:data.rackId,object:hit.object,point:hit.point};
+        if(data.wallId) return {type:'wall',id:data.wallId,object:hit.object,point:hit.point};
+        if(data.zoneId) return {type:'zone',id:data.zoneId,object:hit.object,point:hit.point};
+        return null;
       };
+      const pickRackId = e => { const entity=pickEntity(e); return entity?.type==='rack'?entity.id:''; };
       const focusRackCamera = (rackId, closeDistance = false) => {
         const rack = findNav3DRackById(rackId);
         if(!rack) return;
@@ -1213,17 +1320,39 @@
         controls.targetDistance = closeDistance ? Math.max(3.8, initialDistance * .30) : Math.max(4.8, initialDistance * .48);
         requestRender();
       };
-      const selectRackFromScene = (rackId, center = false) => {
-        if(!rackId) return;
-        appState.ui.nav3DSelectedRackId = rackId;
-        ui.selectedRackId = rackId;
-        const liveCtxSel = getViewerProductLocationContext(prod);
-        if(rackId === liveCtxSel.primaryRackId) { ui.target = 'primary'; appState.ui.nav3DTarget = 'primary'; }
-        if(rackId === liveCtxSel.storeRackId) { ui.target = 'store'; appState.ui.nav3DTarget = 'store'; }
-        renderRackPopover(rackId);
-        if(center) focusRackCamera(rackId, true);
-        else focusRackCamera(rackId, false);
-        setTimeout(() => { renderSideRacks(); renderProductOperationalCard(); renderMiniMap(); syncToolbar(); }, 60);
+      const clearSelectionHelper = () => { if(selectionHelper){ try{scene.remove(selectionHelper);}catch{} selectionHelper=null; } if(selectionGizmo){try{scene.remove(selectionGizmo);}catch{}selectionGizmo=null;} };
+      const entityBox = entity => {
+        if(!entity?.type||!entity.id)return null;
+        if(entity.object && !entity.object.isInstancedMesh){ try{return new THREE.Box3().setFromObject(entity.object);}catch{} }
+        if(entity.type==='rack'){ const r=findNav3DRackById(entity.id); if(!r)return null; const model=rackModel(r.modelId)||baseRackModel(),w=Math.max(.8,(Number(r.w||model.width||120))*scale),d=Math.max(.45,(Number(r.h||model.depth||56))*scale),rh=Math.max(1.1,(Number(r.rackHeight||model.height||240))*hScale),p=toWorld(Number(r.x||0)+Number(r.w||model.width||120)/2,Number(r.y||0)+Number(r.h||model.depth||56)/2,0); return new THREE.Box3(new THREE.Vector3(p.x-w/2,0,p.z-d/2),new THREE.Vector3(p.x+w/2,rh,p.z+d/2)); }
+        const candidate=pickables.find(o=>(entity.type==='wall'&&o.userData?.wallId===entity.id)||(entity.type==='opening'&&o.userData?.openingId===entity.id)||(entity.type==='zone'&&o.userData?.zoneId===entity.id));
+        if(candidate){try{return new THREE.Box3().setFromObject(candidate);}catch{}} return null;
+      };
+      const showSelectionHelper = entity => { clearSelectionHelper(); const box=entityBox(entity); if(!box||box.isEmpty())return; selectionHelper=new THREE.Box3Helper(box,0x66ffd0); selectionHelper.material.transparent=true; selectionHelper.material.opacity=.92; scene.add(selectionHelper); if(entity?.type==='rack'&&typeof isRackDistributionScreen==='function'&&isRackDistributionScreen()){const c=box.getCenter(new THREE.Vector3());c.y=Math.max(.10,box.min.y+.10);selectionGizmo=new THREE.Group();selectionGizmo.add(new THREE.ArrowHelper(new THREE.Vector3(1,0,0),c,1.05,0xff675c,.24,.12));selectionGizmo.add(new THREE.ArrowHelper(new THREE.Vector3(0,0,1),c,1.05,0x4bb8ff,.24,.12));scene.add(selectionGizmo);} requestRender(true); };
+      const focusEntityCamera = (entity,closeDistance=false) => {
+        if(!entity?.type||!entity.id)return; if(entity.type==='rack'){focusRackCamera(entity.id,closeDistance);return;}
+        let target=null;
+        if(entity.type==='zone'){const z=findZoneById(entity.id);if(z){const c=centroid(z.pts||[]);target=toWorld(c.x,c.y,0);target.y=.7;}}
+        if(entity.type==='wall'){const w=findWallById(entity.id);if(w){target=toWorld((Number(w.x1||0)+Number(w.x2||0))/2,(Number(w.y1||0)+Number(w.y2||0))/2,0);target.y=Math.max(.6,Number(w.height||290)*hScale*.45);}}
+        if(entity.type==='opening'){const o=(appState.layout.openings||[]).find(x=>x.id===entity.id),w=o?findWallById(o.wallId):null,seg=o&&w?getOpeningSegment(o,w):null;if(seg){target=toWorld(seg.center.x,seg.center.y,0);target.y=Math.max(.55,(Number(o.sill||0)+Number(o.height||210)*.5)*hScale);}}
+        if(!target)return; controls.targetPan.copy(target); controls.targetDistance=closeDistance?Math.max(3.8,initialDistance*.30):Math.max(4.8,initialDistance*.48); requestRender();
+      };
+      const setEntitySelection = (entity,{center=false}={}) => {
+        if(!entity?.type||!entity.id)return; ui.selection={type:entity.type,id:entity.id}; appState.ui.nav3DSelectionType=entity.type;appState.ui.nav3DSelectionId=entity.id; if(typeof setUnifiedLayoutSelection==='function')setUnifiedLayoutSelection(entity.type,entity.id,{source:'3d'});
+        if(entity.type==='rack'){ appState.ui.nav3DSelectedRackId=entity.id;ui.selectedRackId=entity.id;renderRackPopover(entity.id); const liveCtxSel=getViewerProductLocationContext(prod);if(entity.id===liveCtxSel.primaryRackId){ui.target='primary';appState.ui.nav3DTarget='primary';}if(entity.id===liveCtxSel.storeRackId){ui.target='store';appState.ui.nav3DTarget='store';} } else if(rackPopover) rackPopover.hidden=true;
+        renderSelectionCard(); renderMiniMap(); showSelectionHelper(entity); if(center)focusEntityCamera(entity,true); syncToolbar();
+      };
+      const selectRackFromScene = (rackId, center = false) => { if(!rackId)return; setEntitySelection({type:'rack',id:rackId},{center}); if(!center)focusRackCamera(rackId,false); setTimeout(()=>{renderSideRacks();renderProductOperationalCard();renderMiniMap();syncToolbar();},60); };
+      const updateRackSceneTransform = rack => {
+        if(!rack)return; const model=rackModel(rack.modelId)||baseRackModel(),w=Math.max(.8,(Number(rack.w||model.width||120))*scale),d=Math.max(.45,(Number(rack.h||model.depth||56))*scale),rh=Math.max(1.1,(Number(rack.rackHeight||model.height||240))*hScale),p=toWorld(Number(rack.x||0)+Number(rack.w||model.width||120)/2,Number(rack.y||0)+Number(rack.h||model.depth||56)/2,0);
+        const obj=rackObjectMap.get(rack.id); if(obj){obj.position.set(p.x,0,p.z);obj.rotation.y=rackYaw(rack);}
+        const inst=instancedRackLookup.get(rack.id); if(inst){const dummy=new THREE.Object3D();dummy.position.set(p.x,rh/2,p.z);dummy.rotation.set(0,rackYaw(rack),0);dummy.scale.set(w,rh,d);dummy.updateMatrix();inst.mesh.setMatrixAt(inst.index,dummy.matrix);inst.mesh.instanceMatrix.needsUpdate=true;}
+        showSelectionHelper({type:'rack',id:rack.id});
+      };
+      const rackPlacementErrors = rackId => typeof v117OperationalIssues==='function' ? v117OperationalIssues().filter(i=>i.severity==='error'&&(i.rackIds||[]).includes(rackId)) : [];
+      const commitRackCandidate = (rack,candidate,lastValid) => {
+        const before={x:rack.x,y:rack.y,rot:rack.rot,zoneId:rack.zoneId}; Object.assign(rack,candidate); const center={x:Number(rack.x||0)+Number(rack.w||0)/2,y:Number(rack.y||0)+Number(rack.h||0)/2}; const host=(appState.layout.zones||[]).find(z=>rackFullyInsideZone(rack,z)&&pointInPoly(center,z.pts))||findZoneById(rack.zoneId); if(host)rack.zoneId=host.id;
+        const errors=rackPlacementErrors(rack.id); if(errors.length){Object.assign(rack,lastValid||before);return false;} return true;
       };
       const updatePulse = now => {
         if(!activePulseTargets.length) return;
@@ -1288,42 +1417,35 @@
       requestAnimationFrame(resize);
       setTimeout(() => { if(!isClosed) resize(); }, 120);
       requestRender(true);
-      canvas.addEventListener('pointerdown', e => { controls.dragging=true; controls.lastX=e.clientX; controls.lastY=e.clientY; downX=e.clientX; downY=e.clientY; downTime=Date.now(); downMoved=false; canvas.setPointerCapture(e.pointerId); requestRender(); });
-      canvas.addEventListener('pointermove', e => {
-        if(!controls.dragging){
-          const rid = pickRackId(e);
-          if(rid !== hoveredRackId){
-            hoveredRackId = rid;
-            canvas.style.cursor = rid ? 'pointer' : 'grab';
-            if(hoverLabel){
-              hoverLabel.hidden = !rid;
-              hoverLabel.textContent = rid || '';
-            }
-          }
-          if(rid && hoverLabel){
-            const rect = canvas.getBoundingClientRect();
-            hoverLabel.style.left = `${e.clientX - rect.left + 14}px`;
-            hoverLabel.style.top = `${e.clientY - rect.top + 14}px`;
-          }
-          return;
+      if(ui.selection?.type&&ui.selection?.id){ showSelectionHelper(ui.selection); renderSelectionCard(); }
+      renderWmsLegend();
+      const floorDragPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+      const floorPointFromEvent=e=>{setPointerFromEvent(e);raycaster.setFromCamera(pointer,camera);const hit=new THREE.Vector3();return raycaster.ray.intersectPlane(floorDragPlane,hit)?hit:null;};
+      canvas.addEventListener('pointerdown', e => {
+        const entity=pickEntity(e); downX=e.clientX;downY=e.clientY;downTime=Date.now();downMoved=false;controls.lastX=e.clientX;controls.lastY=e.clientY;
+        if(ui.move3D && typeof isRackDistributionScreen==='function' && isRackDistributionScreen() && entity?.type==='rack' && ui.selection?.type==='rack' && entity.id===ui.selection.id){
+          const rack=findNav3DRackById(entity.id); if(rack&&!rack._virtual){ if(typeof recordHistorySnapshot==='function')recordHistorySnapshot('distribution'); rackDrag={rackId:rack.id,lastValid:{x:rack.x,y:rack.y,rot:rack.rot,zoneId:rack.zoneId},original:{x:rack.x,y:rack.y,rot:rack.rot,zoneId:rack.zoneId}}; canvas.classList.add('nav3d-moving-rack'); canvas.setPointerCapture(e.pointerId); return; }
         }
-        const dx=e.clientX-controls.lastX, dy=e.clientY-controls.lastY; controls.lastX=e.clientX; controls.lastY=e.clientY;
-        if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY) > 6) downMoved = true;
-        if(fp.active){ fp.yaw -= dx*.0032; fp.pitch = Math.max(-1.15, Math.min(1.15, fp.pitch - dy*.0022)); }
-        else if(e.shiftKey){ const side = new THREE.Vector3().subVectors(camera.position, controls.pan).cross(new THREE.Vector3(0,1,0)).normalize(); const up = new THREE.Vector3(0,1,0); controls.targetPan.addScaledVector(side, -dx*.012).addScaledVector(up, dy*.012); }
-        else { controls.targetYaw -= dx*.0032; controls.targetPitch = Math.max(.08, Math.min(1.535, controls.targetPitch + dy*.0022)); }
-        requestRender();
+        controls.dragging=true; canvas.setPointerCapture(e.pointerId); requestRender();
+      });
+      canvas.addEventListener('pointermove', e => {
+        if(rackDrag){ const rack=findNav3DRackById(rackDrag.rackId),wp=floorPointFromEvent(e); if(rack&&wp){ const cx=wp.x/scale+bounds.cx,cy=wp.z/scale+bounds.cy; const candidate={x:typeof snapGrid==='function'?snapGrid(cx-Number(rack.w||0)/2):cx-Number(rack.w||0)/2,y:typeof snapGrid==='function'?snapGrid(cy-Number(rack.h||0)/2):cy-Number(rack.h||0)/2}; if(commitRackCandidate(rack,candidate,rackDrag.lastValid)){rackDrag.lastValid={x:rack.x,y:rack.y,rot:rack.rot,zoneId:rack.zoneId};} updateRackSceneTransform(rack);renderSelectionCard();requestRender(true);} return; }
+        if(!controls.dragging){
+          const entity=pickEntity(e), key=entity?`${entity.type}:${entity.id}`:'';
+          if(key!==hoveredEntityKey){ hoveredEntityKey=key; hoveredRackId=entity?.type==='rack'?entity.id:''; canvas.style.cursor=entity?'pointer':'grab'; if(hoverLabel){hoverLabel.hidden=!entity;hoverLabel.textContent=entity?`${entity.type==='wall'?'Muro':entity.type==='opening'?'Abertura':entity.type==='zone'?'Zona':'Rack'} · ${entity.id}`:'';} }
+          if(entity&&hoverLabel){const rect=canvas.getBoundingClientRect();hoverLabel.style.left=`${e.clientX-rect.left+14}px`;hoverLabel.style.top=`${e.clientY-rect.top+14}px`;} return;
+        }
+        const dx=e.clientX-controls.lastX, dy=e.clientY-controls.lastY; controls.lastX=e.clientX; controls.lastY=e.clientY; if(Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY)>6)downMoved=true;
+        if(fp.active){ fp.yaw-=dx*.0032;fp.pitch=Math.max(-1.15,Math.min(1.15,fp.pitch-dy*.0022)); }
+        else if(e.shiftKey){ const side=new THREE.Vector3().subVectors(camera.position,controls.pan).cross(new THREE.Vector3(0,1,0)).normalize();const up=new THREE.Vector3(0,1,0);controls.targetPan.addScaledVector(side,-dx*.012).addScaledVector(up,dy*.012); }
+        else{controls.targetYaw-=dx*.0032;controls.targetPitch=Math.max(.08,Math.min(1.535,controls.targetPitch+dy*.0022));} requestRender();
       });
       canvas.addEventListener('pointerup', e => {
-        controls.dragging=false; requestRender();
-        try{canvas.releasePointerCapture(e.pointerId)}catch{};
-        if(!downMoved && Date.now() - downTime < 420){
-          const rid = pickRackId(e);
-          if(rid) selectRackFromScene(rid, false);
-        }
+        if(rackDrag){ const rack=findNav3DRackById(rackDrag.rackId);rackDrag=null;canvas.classList.remove('nav3d-moving-rack');try{canvas.releasePointerCapture(e.pointerId)}catch{};if(rack){persistActiveLayout();if(typeof v117RunValidation==='function')v117RunValidation({quiet:true});renderSelectionCard();renderWmsLegend();showToast('Posición 3D del rack actualizada.','success',1200);}requestRender(true);return;}
+        controls.dragging=false;requestRender();try{canvas.releasePointerCapture(e.pointerId)}catch{}; if(!downMoved&&Date.now()-downTime<420){const entity=pickEntity(e);if(entity)setEntitySelection(entity,{center:false});}
       });
-      canvas.addEventListener('dblclick', e => { const rid = pickRackId(e); if(rid) selectRackFromScene(rid, true); });
-      canvas.addEventListener('pointerleave', () => { controls.dragging=false; hoveredRackId=''; canvas.style.cursor='grab'; if(hoverLabel) hoverLabel.hidden = true; requestRender(); });
+      canvas.addEventListener('dblclick', e => { const entity=pickEntity(e); if(entity)setEntitySelection(entity,{center:true}); });
+      canvas.addEventListener('pointerleave', () => { if(rackDrag)return; controls.dragging=false;hoveredRackId='';hoveredEntityKey='';canvas.style.cursor='grab';if(hoverLabel)hoverLabel.hidden=true;requestRender(); });
       canvas.addEventListener('wheel', e => { e.preventDefault(); if(fp.active){ const dir=new THREE.Vector3(Math.sin(fp.yaw),0,Math.cos(fp.yaw)); fp.position.addScaledVector(dir,e.deltaY>0?-.35:.35); } else controls.targetDistance = Math.max(4.5, Math.min(120, controls.targetDistance * (e.deltaY > 0 ? 1.07 : .93))); requestRender(); }, { passive:false });
       modal.querySelectorAll('[data-nav3d-target]').forEach(btn => btn.addEventListener('click', () => {
         ui.target = btn.dataset.nav3dTarget || 'primary';
@@ -1339,6 +1461,27 @@
         if(action === 'center') focusRackCamera(getTargetRackId(), true);
         if(action === 'isolate') { ui.isolation = 'rack'; syncToolbar(); close(); openNavigable3DModal(prod); }
       });
+      const wallZonesFor = wall => {
+        const ids=[]; if(!wall)return ids; (appState.layout.rooms||[]).forEach(room=>{const nodes=room.nodeIds||[];for(let i=0;i<nodes.length;i++){const a=nodes[i],b=nodes[(i+1)%nodes.length];if((a===wall.startNodeId&&b===wall.endNodeId)||(a===wall.endNodeId&&b===wall.startNodeId)){const z=getRoomLinkedZone(room);if(z)ids.push(z.id);break;}}}); return [...new Set(ids)];
+      };
+      const openingPlacementConflict = opening => {
+        const wall=findWallById(opening?.wallId); if(!wall)return true; const len=Math.max(1,wallLength(wall)),half=Math.max(10,Number(opening.width||90)/2)/len,t=Math.max(half,Math.min(1-half,Number(opening.t||.5))); const a=t-half,b=t+half;
+        return (appState.layout.openings||[]).some(o=>o.id!==opening.id&&o.wallId===opening.wallId&&(()=>{const oh=Math.max(10,Number(o.width||90)/2)/len,ot=Math.max(oh,Math.min(1-oh,Number(o.t||.5))),oa=ot-oh,ob=ot+oh;return Math.min(b,ob)-Math.max(a,oa)>.01;})());
+      };
+      selectionCard?.addEventListener('click',e=>{
+        const action=e.target?.dataset?.selectionAction;if(!action)return;const sel=ui.selection||{};
+        if(action==='focus'){focusEntityCamera(sel,true);return;}
+        if(action==='move-toggle'&&sel.type==='rack'&&typeof isRackDistributionScreen==='function'&&isRackDistributionScreen()){ui.move3D=!ui.move3D;appState.ui.nav3DMoveMode=ui.move3D;renderSelectionCard();canvas.classList.toggle('nav3d-move-enabled',ui.move3D);return;}
+        if(action==='isolate'){if(sel.type==='rack')ui.isolation='rack';else if(sel.type==='zone')ui.isolation='zone';syncToolbar();close();openNavigable3DModal(prod);return;}
+        if(action==='isolate-zone'&&sel.type==='wall'){const zid=wallZonesFor(findWallById(sel.id))[0];if(zid)appState.selectedZoneId=zid;ui.isolation='zone';close();openNavigable3DModal(prod);}
+      });
+      selectionCard?.addEventListener('change',e=>{
+        const field=e.target?.dataset?.selectionField;if(!field)return;const sel=ui.selection||{};
+        if(field.startsWith('rack-')&&sel.type==='rack'&&typeof isRackDistributionScreen==='function'&&isRackDistributionScreen()){const rack=findNav3DRackById(sel.id);if(!rack||rack._virtual)return;const prev={x:rack.x,y:rack.y,rot:rack.rot,zoneId:rack.zoneId};let candidate={};if(field==='rack-x')candidate.x=Number(e.target.value||0);if(field==='rack-y')candidate.y=Number(e.target.value||0);if(field==='rack-rot')candidate.rot=normalizeAngle(Number(e.target.value||0));if(!commitRackCandidate(rack,candidate,prev)){showToast('Movimiento bloqueado por colisión o límite de zona.','warning',1800);}persistActiveLayout();if(typeof v117RunValidation==='function')v117RunValidation({quiet:true});updateRackSceneTransform(rack);renderSelectionCard();renderWmsLegend();requestRender(true);return;}
+        if(field.startsWith('wall-')&&sel.type==='wall'&&typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()){const wall=findWallById(sel.id);if(!wall)return;if(typeof recordHistorySnapshot==='function')recordHistorySnapshot('structure');if(field==='wall-thickness')wall.thickness=Math.max(4,Number(e.target.value||14));if(field==='wall-height')wall.height=Math.max(80,Number(e.target.value||290));persistActiveLayout();close();openNavigable3DModal(prod);return;}
+        if(field.startsWith('opening-')&&sel.type==='opening'&&typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()){const opening=(appState.layout.openings||[]).find(o=>o.id===sel.id),wall=opening?findWallById(opening.wallId):null;if(!opening||!wall)return;const prev={width:opening.width,height:opening.height,sill:opening.sill,t:opening.t,offset:opening.offset};if(typeof recordHistorySnapshot==='function')recordHistorySnapshot('structure');if(field==='opening-width')opening.width=Math.max(20,Math.min(wallLength(wall)*.86,Number(e.target.value||90)));if(field==='opening-height')opening.height=Math.max(20,Number(e.target.value||210));if(field==='opening-sill')opening.sill=Math.max(0,Number(e.target.value||0));if(field==='opening-t')opening.t=Math.max(.01,Math.min(.99,Number(e.target.value||50)/100));const maxH=Math.max(20,Number(wall.height||290)-Number(opening.sill||0));opening.height=Math.min(Number(opening.height||210),maxH);opening.offset=Number(opening.t||.5)*Math.max(1,wallLength(wall));if(openingPlacementConflict(opening)){Object.assign(opening,prev);showToast('Cambio bloqueado: la abertura se superpondría con otra.','warning',2000);renderSelectionCard();return;}persistActiveLayout();close();openNavigable3DModal(prod);}
+      });
+      wmsModeSelect?.addEventListener('change',()=>{const mode=String(wmsModeSelect.value||'architecture');appState.ui.nav3DWmsMode=mode;ui.wmsMode=mode;renderWmsLegend();close();openNavigable3DModal(prod);});
       const updateSectionNow = () => { applySectionClipping(); renderSectionPanel(); syncToolbar(); requestRender(true); };
       sectionPanel?.addEventListener('click', e => {
         const axis=e.target?.dataset?.sectionAxis, dirAxis=e.target?.dataset?.sectionDir;
@@ -1365,6 +1508,7 @@
         if(action==='first-person'){ toggleFirstPerson(); return; }
         if(action==='save-view'){ saveCurrentView(); return; }
         if(action==='camera-top'){ applyCameraPreset('top'); return; }
+        if(action==='locate-product'){ const rid=getTargetRackId(); if(rid){ui.isolation='rack';ui.route=true;setEntitySelection({type:'rack',id:rid},{center:true});focusRackCamera(rid,true);showToast('Producto localizado en rack, nivel y slot.','success',1500);} return; }
         if(action === 'focus' || action === 'slot'){
           controls.targetYaw = -Math.PI/4;
           controls.targetPitch = .68;
@@ -1619,7 +1763,7 @@
             <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
           </div>
         </div>
-        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
+        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Localizar en 3D</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
       </div>`;
     document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
     document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));

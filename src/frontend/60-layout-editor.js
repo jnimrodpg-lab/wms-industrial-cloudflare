@@ -1888,7 +1888,7 @@
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v130-unified-walls-views';
+    document.body.dataset.wmsLayoutVersion = 'v134-sync-visual-wms';
     document.body.dataset.wmsLayoutWorkspace = isRackDistributionScreen() ? 'racks' : 'structure';
     const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
@@ -1927,11 +1927,12 @@
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
+            <button class="seg-btn v134-open-3d" id="btnOpenLayout3D" type="button" title="Abrir el mismo modelo en 3D">◈ 3D sincronizado</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">${rackMode ? 'Guardar distribución' : 'Guardar estructura'}</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
             <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Estructura bloqueada' : 'Racks bloqueados'}</span>
-            <span class="v90-version-badge">v117</span>
+            <span class="v90-version-badge">v134</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -3167,6 +3168,7 @@
     if($('#btnSaveLayoutTop')) $('#btnSaveLayoutTop').onclick = runSaveLayout;
     if($('#btnSaveLayoutVisible')) $('#btnSaveLayoutVisible').onclick = runSaveLayout;
     if($('#btnSaveLayoutFloat')) $('#btnSaveLayoutFloat').onclick = runSaveLayout;
+    if($('#btnOpenLayout3D')) $('#btnOpenLayout3D').onclick = () => { persistActiveLayout(); openNavigable3DModal(appState.selectedProduct || null); };
     if($('#btnZoomIn')) $('#btnZoomIn').onclick = () => { markLayoutManualInteraction(); zoomLayout(0.86); };
     if($('#btnZoomOut')) $('#btnZoomOut').onclick = () => { markLayoutManualInteraction(); zoomLayout(1.16); };
     if($('#btnZoomFit')) $('#btnZoomFit').onclick = () => { 

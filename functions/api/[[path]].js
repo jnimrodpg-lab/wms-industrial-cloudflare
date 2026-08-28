@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v130-unified-walls-views';
+const BUILD_MARK = 'cloudflare-v134-sync-visual-wms';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

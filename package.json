@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.3.0",
+  "version": "1.3.4",
   "private": true,
-  "description": "WMS Industrial v130: muros CAD unificados, topología dinámica y visor 3D profesional con cortes, vistas y primera persona.",
+  "description": "WMS Industrial v134: sincronización 2D/3D, edición protegida, visualización WMS, localizador de productos y rendimiento 3D de racks.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
