@@ -1,6 +1,6 @@
-# WMS Industrial — v106 Stabilization
+# WMS Industrial — v107 Modular Source
 
-Versión de limpieza y estabilización para Cloudflare Pages + D1. Esta entrega no agrega funciones visuales nuevas; conserva el editor 2D/3D y corrige deuda técnica que podía provocar rutas inconsistentes, tiempos de arranque innecesarios o exposición de datos entre sesiones.
+v107 conserva la estabilización de v106 y agrega una capa de arquitectura mantenible para el frontend. El comportamiento publicado sigue usando un único bundle, pero su fuente ahora está dividida por subsistemas y se genera de forma reproducible.
 
 ## Estructura activa
 
@@ -43,6 +43,10 @@ npm run check
 
 Esto valida sintaxis del backend y del bundle principal del frontend.
 
+## Desarrollo frontend desde v107
+
+Edita `src/frontend/`, ejecuta `npm run build:frontend` y finalmente `npm run check`. El bundle bajo `public/assets/` es generado y no debe editarse manualmente.
+
 ## Siguiente etapa recomendada
 
-La v106 estabiliza la base. La siguiente refactorización debería dividir `public/assets/app-main.runtimefix.js` en módulos internos sin alterar el comportamiento visible.
+La v108 puede normalizar productos en D1 y aplicar paginación/búsqueda SQL sin mezclar ese cambio de datos con la refactorización del frontend.

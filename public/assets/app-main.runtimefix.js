@@ -1,3 +1,4 @@
+/* WMS_V107_MODULAR_SOURCE */
 /* WMS_V105_3D_NAVEGABLE_FIX */
 /* WMS_V97_BUTTON_NO_BOUNCE_FIX */
 /* WMS_V96_ZOOM_NO_BOUNCE_FIX */
@@ -13838,7 +13839,7 @@ function getSheetBranchOpenMap(){
   btnStopScanner.addEventListener('click', stopScanner);
   scannerModal.addEventListener('click', (e) => { if (e.target === scannerModal) stopScanner(); });
 
-console.info('*** WMS v106 STABILIZATION ACTIVE ***');
+console.info('*** WMS v107 MODULAR SOURCE ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();
@@ -14005,106 +14006,10 @@ console.info('*** WMS v106 STABILIZATION ACTIVE ***');
     document.querySelectorAll('.picking-launch-btn,.restock-launch-btn,.picking-menu-item,.restock-menu-item').forEach(el => el.remove());
   }
 
-  renderViewerProductInfoPanel = function(){
-    clearViewerImageRotationTimer();
-    removeOperationalStockUi();
-    const ctx = getViewerProductLocationContext(appState.selectedProduct);
-    const prod = appState.selectedProduct || null;
-    detailTitle.textContent = 'Ubicación del producto';
-    detailSubtitle.textContent = prod ? 'Visualización principal de zona, rack, nivel y slot.' : '';
-    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
-    detailChip.textContent = prod ? (prod.ubicacion || prod.almacen || '—') : '—';
-    if(!prod){
-      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Busca por SKU, código de barras, nombre, talla o color para ver su ubicación visual.</div></div></div>`;
-      return;
-    }
-    const images = getProductImageUrls(prod).filter(Boolean);
-    const img = images[0] || '';
-    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
-    const family = getViewerProductFamilySummary(prod);
-    const primary = getLocationPartsForVisual(prod, 'primary');
-    const store = getLocationPartsForVisual(prod, 'store');
-    const sizesHtml = family.sizes.length ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('') : '<span class="muted tiny">Sin tallas detectadas</span>';
-    const colorsHtml = family.colors.length ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('') : '<span class="muted tiny">Sin colores detectados</span>';
-    detailWrap.innerHTML = `
-      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel visual-location-panel">
-        <div class="visual-location-hero">
-          <div class="viewer-media-col visual-media-col">
-            <div class="viewer-product-media ${img ? '' : 'empty'}">
-              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
-              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
-            </div>
-            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
-          </div>
-          <div class="visual-location-main-panel">
-            <div class="viewer-product-copy tight">
-              <div class="search-card-kicker">Producto seleccionado</div>
-              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
-              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
-            </div>
-            <div class="visual-location-cards">
-              ${renderVisualLocationCard(primary, true)}
-              ${renderVisualLocationCard(store, false)}
-            </div>
-          </div>
-        </div>
-        <div class="visual-location-quick-actions">
-          <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver en plano 2D</button>
-          <button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Ver en 3D</button>
-          <button class="btn secondary viewer-location-btn" type="button" id="btnCopyLocation"><span>⧉</span> Copiar ubicación</button>
-          <button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button>
-        </div>
-        <div class="visual-location-support-grid">
-          <div class="viewer-variant-panel visual-location-variants-card">
-            <div class="viewer-variant-head"><span class="viewer-info-icon">▦</span><div><b>Variantes y ubicación</b><small>Selecciona una variante para cambiar el foco visual.</small></div></div>
-            <div class="variant-location-list">${renderVariantLocationRows(prod)}</div>
-          </div>
-          <div class="viewer-variant-panel visual-location-summary-card">
-            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas y colores del modelo</b><small>${family.sizes.length || 0} tallas · ${family.colors.length || 0} colores</small></div></div>
-            <div class="viewer-variant-chip-wrap compact"><b class="visual-mini-label">Tallas</b>${sizesHtml}</div>
-            <div class="viewer-variant-chip-wrap compact"><b class="visual-mini-label">Colores</b>${colorsHtml}</div>
-          </div>
-        </div>
-      </div>`;
-    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
-    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
-    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
-    document.getElementById('btnCopyLocation')?.addEventListener('click', () => copySelectedProductLocation(prod));
-    detailWrap.querySelectorAll('[data-v56-variant-index]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.dataset.v56VariantIndex || 0);
-        const item = getProductFamilyVariants(prod)[idx];
-        if(item){ selectProduct(item); showToast('Variante enfocada en el visor.', 'success'); }
-      });
-    });
-    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
-  };
+  /* v107: override anterior de renderViewerProductInfoPanel eliminado; se conserva únicamente la implementación final. */
 
   const __v56OriginalOpenProductLocationModal = openProductLocationModal;
-  openProductLocationModal = function(product = appState.selectedProduct){
-    const previousIso = appState.ui.isoIsolation;
-    appState.ui.isoIsolation = 'rack';
-    __v56OriginalOpenProductLocationModal(product);
-    const modal = document.getElementById('productLocationModal');
-    if(modal){
-      modal.classList.add('v56-visual-location-modal');
-      const title = modal.querySelector('.location-modal-head b');
-      if(title) title.textContent = 'Plano de ubicación del producto';
-      const desc = modal.querySelector('.modal-iso-head .muted');
-      if(desc) desc.textContent = 'Vista enfocada en zona, rack, nivel y slot del producto seleccionado.';
-      const head = modal.querySelector('.location-modal-head-actions');
-      if(head && !modal.querySelector('#btnV56CopyLocationModal')){
-        const btn = document.createElement('button');
-        btn.className = 'btn secondary';
-        btn.id = 'btnV56CopyLocationModal';
-        btn.type = 'button';
-        btn.textContent = 'Copiar ubicación';
-        btn.addEventListener('click', () => copySelectedProductLocation(product));
-        head.insertBefore(btn, head.querySelector('.location-modal-close'));
-      }
-    }
-    setTimeout(() => { appState.ui.isoIsolation = previousIso || appState.ui.isoIsolation; }, 0);
-  };
+  /* v107: override anterior de openProductLocationModal eliminado; se conserva únicamente la implementación final. */
 
   function applyV56VisualLocationFocus(){
     removeOperationalStockUi();
@@ -14140,67 +14045,7 @@ console.info('*** WMS v106 STABILIZATION ACTIVE ***');
     }).join('') + (items.length > 10 ? `<div class="muted tiny visual-more-note">+ ${items.length - 10} variantes adicionales.</div>` : '');
   }
 
-  renderViewerProductInfoPanel = function(){
-    clearViewerImageRotationTimer();
-    removeOperationalStockUi();
-    const prod = appState.selectedProduct || null;
-    detailTitle.textContent = 'Ubicación del producto';
-    detailSubtitle.textContent = '';
-    detailStatus.textContent = prod ? '' : 'Sin selección';
-    detailChip.textContent = '';
-    if(!prod){
-      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Busca un producto para ver su zona, rack, nivel y slot.</div></div></div>`;
-      return;
-    }
-    const images = getProductImageUrls(prod).filter(Boolean);
-    const img = images[0] || '';
-    const thumbs = images.slice(0, 5).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
-    const primary = getLocationPartsForVisual(prod, 'primary');
-    const store = getLocationPartsForVisual(prod, 'store');
-    const showStore = String(store.full || '').trim() && String(store.full || '').trim() !== String(primary.full || '').trim();
-    detailWrap.innerHTML = `
-      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel visual-location-panel v57-clean-location-panel">
-        <div class="visual-location-hero v57-location-hero">
-          <div class="viewer-media-col visual-media-col">
-            <div class="viewer-product-media ${img ? '' : 'empty'}">
-              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
-              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
-            </div>
-            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
-          </div>
-          <div class="visual-location-main-panel">
-            <div class="viewer-product-copy tight v57-product-title-block">
-              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
-              ${prod.sku ? `<div class="viewer-sku-pill">${escapeHtml(prod.sku)}</div>` : ''}
-            </div>
-            <div class="visual-location-cards v57-location-cards">
-              ${renderVisualLocationCard(primary, true)}
-              ${showStore ? renderVisualLocationCard(store, false) : ''}
-            </div>
-          </div>
-        </div>
-        <div class="visual-location-quick-actions v57-location-actions">
-          <button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver en plano 2D</button>
-          <button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> Ver en 3D</button>
-          <button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button>
-        </div>
-        <div class="viewer-variant-panel visual-location-variants-card v57-variants-card">
-          <div class="viewer-variant-head"><span class="viewer-info-icon">▦</span><div><b>Variantes con ubicación</b><small>Solo muestra variantes relacionadas y su ubicación.</small></div></div>
-          <div class="variant-location-list">${renderCompactVariantLocationRowsV57(prod)}</div>
-        </div>
-      </div>`;
-    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
-    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
-    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
-    detailWrap.querySelectorAll('[data-v57-variant-index]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = Number(btn.dataset.v57VariantIndex || 0);
-        const item = getProductFamilyVariants(prod)[idx];
-        if(item){ selectProduct(item); showToast('Variante enfocada en el visor.', 'success'); }
-      });
-    });
-    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
-  };
+  /* v107: override anterior de renderViewerProductInfoPanel eliminado; se conserva únicamente la implementación final. */
 
   openProductLocationModal = function(product = appState.selectedProduct){
     const previousIso = appState.ui.isoIsolation;
@@ -14234,68 +14079,7 @@ console.info('*** WMS v106 STABILIZATION ACTIVE ***');
 
 
   // V58 - Restaura el cuadro de propiedades del producto al diseño v54, manteniendo el resto del flujo actual.
-  renderViewerProductInfoPanel = function(){
-    clearViewerImageRotationTimer();
-    if(typeof removeOperationalStockUi === 'function') removeOperationalStockUi();
-    const ctx = getViewerProductLocationContext(appState.selectedProduct);
-    const prod = appState.selectedProduct || null;
-    detailTitle.textContent = 'Información del producto';
-    detailSubtitle.textContent = '';
-    detailStatus.textContent = prod ? `Producto activo: ${prod.sku || '—'}` : 'Sin selección';
-    detailChip.textContent = prod ? (prod.ubicacion || '—') : '—';
-    if(!prod){
-      detailWrap.innerHTML = `<div class="viewer-product-info-card empty"><div class="empty compact"><b>Sin producto seleccionado</b><div class="muted tiny">Usa la búsqueda central para seleccionar un producto y ver sus variantes.</div></div></div>`;
-      return;
-    }
-    const images = getProductImageUrls(prod).filter(Boolean);
-    const img = images[0] || '';
-    const thumbs = images.slice(0, 6).map((url, idx) => `<button class="viewer-product-thumb ${idx === 0 ? 'active' : ''}" type="button"><img src="${escapeHtml(url)}" alt="Vista ${idx + 1}"></button>`).join('');
-    const family = getViewerProductFamilySummary(prod);
-    const sizesHtml = family.sizes.length
-      ? family.sizes.map(size => `<span class="viewer-variant-chip size">${escapeHtml(size)}</span>`).join('')
-      : '<span class="muted tiny">Sin tallas detectadas</span>';
-    const colorsHtml = family.colors.length
-      ? family.colors.map(color => `<span class="viewer-variant-chip color" style="${getViewerColorChipStyle(color)}">${escapeHtml(color)}</span>`).join('')
-      : '<span class="muted tiny">Sin colores detectados</span>';
-    detailWrap.innerHTML = `
-      <div class="viewer-product-info-card viewer-product-premium-card compact-fit product-only-panel v58-restored-product-panel">
-        <div class="viewer-product-top-layout">
-          <div class="viewer-media-col">
-            <div class="viewer-product-media ${img ? '' : 'empty'}">
-              ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(prod.nombre || 'Producto')}">` : '<span>Sin imagen</span>'}
-              ${img ? '<button class="viewer-media-expand" type="button" title="Ampliar imagen">⛶</button>' : ''}
-            </div>
-            ${thumbs ? `<div class="viewer-product-thumbs">${thumbs}</div>` : ''}
-          </div>
-          <div class="viewer-side-col">
-            <div class="viewer-product-copy tight">
-              <div class="search-card-kicker">Producto</div>
-              <h2>${escapeHtml(prod.nombre || 'Sin nombre')}</h2>
-              <div class="viewer-sku-pill">${escapeHtml(prod.sku || 'SKU —')}</div>
-            </div>
-            <div class="viewer-info-grid viewer-info-icon-grid top-right-grid location-only-grid">
-              <div class="search-meta-block emphasis"><span class="viewer-info-icon">⌖</span><span class="search-meta-label">Ubicación</span><span class="search-meta-value">${escapeHtml(ctx.primaryLoc)}</span></div>
-              <div class="search-meta-block emphasis"><span class="viewer-info-icon">◫</span><span class="search-meta-label">Ubicación en almacén</span><span class="search-meta-value store">${escapeHtml(ctx.storeLoc)}</span></div>
-            </div>
-          </div>
-        </div>
-        <div class="viewer-bottom-info product-variants-only">
-          <div class="viewer-variant-panel">
-            <div class="viewer-variant-head"><span class="viewer-info-icon">T</span><div><b>Tallas del modelo</b><small>${family.sizes.length || 0} registradas</small></div></div>
-            <div class="viewer-variant-chip-wrap">${sizesHtml}</div>
-          </div>
-          <div class="viewer-variant-panel">
-            <div class="viewer-variant-head"><span class="viewer-info-icon color-dot"></span><div><b>Colores del modelo</b><small>${family.colors.length || 0} registrados</small></div></div>
-            <div class="viewer-variant-chip-wrap">${colorsHtml}</div>
-          </div>
-        </div>
-        <div class="viewer-location-actions viewer-location-actions-extended"><button class="btn primary viewer-location-btn" type="button" id="btnOpenLocationModal"><span>⌖</span> Ver ubicación</button><button class="btn secondary viewer-location-btn nav3d-inline-btn" type="button" id="btnOpenNavigable3D"><span>◈</span> 3D navegable</button><button class="btn secondary viewer-location-btn" type="button" id="btnOpenVariants"><span>▦</span> Variantes</button></div>
-      </div>`;
-    document.getElementById('btnOpenLocationModal')?.addEventListener('click', () => openProductLocationModal(prod));
-    document.getElementById('btnOpenNavigable3D')?.addEventListener('click', () => openNavigable3DModal(prod));
-    document.getElementById('btnOpenVariants')?.addEventListener('click', () => openProductVariantsModal(prod));
-    bindViewerProductImageCarousel(detailWrap, images, prod.nombre || prod.sku || 'Producto');
-  };
+  /* v107: override anterior de renderViewerProductInfoPanel eliminado; se conserva únicamente la implementación final. */
 
 
 
