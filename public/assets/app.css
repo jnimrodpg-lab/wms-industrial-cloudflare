@@ -5880,3 +5880,14 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 body.theme-light .rack-construction-card{background:#f8fbfd;border-color:#dce7ec}.theme-light .construction-field input,.theme-light .construction-field select{background:#fff;color:#17313d;border-color:#d7e3e9}.theme-light .rack-construction-viewport{background:#edf4f7;border-color:#d8e4ea}.theme-light .rack-construction-viewport-head{background:#f8fbfc}.theme-light .rack-construction-viewport-head b,.theme-light .rack-construction-card-head b,.theme-light .construction-insert-box>b{color:#17313d}
 @media(max-width:1180px){.rack-construction-page{grid-template-columns:1fr;height:auto}.rack-construction-controls{overflow:visible}.rack-construction-viewport{min-height:650px}.rack-construction-3d-stage{min-height:570px}}
 @media(max-width:680px){.construction-grid-2{grid-template-columns:1fr}.rack-construction-page{min-height:0}.rack-construction-3d-stage,.rack-construction-empty-3d{min-height:460px}}
+
+/* WMS v146 — responsive furniture volume + distribution builders */
+.construction-pick{display:flex;align-items:center;gap:8px;align-self:end;min-height:38px;padding:8px 10px;border:1px solid rgba(108,226,184,.18);border-radius:10px;background:rgba(41,155,113,.07);font-size:10px;font-weight:800;color:#bfead9;cursor:pointer}
+.construction-pick input{width:auto;accent-color:#42d99a}
+.construction-space-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:8px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(255,255,255,.018)}
+.construction-manual-piece{border:1px solid rgba(255,255,255,.07);border-radius:10px;overflow:hidden;background:rgba(255,255,255,.012)}
+.construction-manual-piece>summary{cursor:pointer;padding:9px 10px;font-size:10px;font-weight:800;color:#9fb9c8;user-select:none}
+.construction-manual-piece[open]>summary{border-bottom:1px solid rgba(255,255,255,.06)}
+.construction-manual-piece .construction-insert-box{margin:8px}
+.rack-construction-card>#rackApplyHorizontal,.rack-construction-card>#rackApplyVertical{width:100%;justify-content:center}
+@media(max-width:680px){.construction-space-inputs{grid-template-columns:1fr}}

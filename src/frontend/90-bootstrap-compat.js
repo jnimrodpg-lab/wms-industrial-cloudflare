@@ -1,4 +1,4 @@
-console.info('*** WMS v145 SPLIT RACK MODELS + 3D CONSTRUCTION WORKSPACE ACTIVE ***');
+console.info('*** WMS v146 RACK DISTRIBUTION + VOLUME REFLOW ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

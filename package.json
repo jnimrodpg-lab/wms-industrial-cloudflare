@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "private": true,
-  "description": "WMS Industrial v145: separa Modelos de rack de Construir rack/estante, con editor 3D independiente y controles laterales.",
+  "description": "WMS Industrial v146: reflow volumétrico de piezas y generadores horizontal/vertical por cantidad con distribución equitativa o personalizada.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

@@ -925,7 +925,7 @@
       }
       p.x=Math.max(0,Math.min(W-Math.min(W,p.w),Number(p.x||0))); p.y=Math.max(0,Math.min(D-Math.min(D,p.d),Number(p.y||0))); p.z=Math.max(0,Math.min(H-Math.min(H,p.h),Number(p.z||0)));
       p.w=Math.max(.1,Math.min(W-p.x,Number(p.w||1)));p.d=Math.max(.1,Math.min(D-p.y,Number(p.d||1)));p.h=Math.max(.1,Math.min(H-p.z,Number(p.h||1)));
-      if(p.type==='shelf'&&f.roofMode==='slope')p.z=Math.min(p.z,furnitureShelfMaxZ(model,p));
+      if(isRackConstructionScreen()&&p.type==='shelf'){p.h=t;constrainConstructionShelf(model,p);}else if(p.type==='shelf'&&f.roofMode==='slope')p.z=Math.min(p.z,furnitureShelfMaxZ(model,p));
       if(isRackConstructionScreen()&&p.type==='divider')constrainConstructionDivider(model,p);
     });
   }
@@ -1020,7 +1020,68 @@
   function constrainConstructionDivider(model,piece){
     if(!isRackConstructionScreen()||piece?.type!=='divider')return piece;
     const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8)),W=Number(model.width||120),D=Number(model.depth||40);const span=constructionDividerSpan(model,piece.z,Number(piece.z||0)+Number(piece.h||0));
-    piece.z=span.z0;piece.h=Math.max(.1,span.height);piece.y=0;piece.d=D;piece.w=Math.max(.1,Number(piece.w||t));piece.x=Math.max(t,Math.min(W-t-piece.w,Number(piece.x||0)));return piece;
+    piece.z=span.z0;piece.h=Math.max(.1,span.height);piece.y=0;piece.d=D;piece.w=t;piece.x=Math.max(t,Math.min(W-t-piece.w,Number(piece.x||0)));return piece;
+  }
+
+  function constrainConstructionShelf(model,piece){
+    if(!isRackConstructionScreen()||piece?.type!=='shelf')return piece;
+    const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8));
+    const roof=f.roofMode==='slope'?Math.min(Number(f.leftHeight||model.height||200),Number(f.rightHeight||model.height||200)):Number(model.height||200);
+    const others=f.pieces.filter(p=>p.id!==piece.id&&['base','shelf','top'].includes(p.type)).map(p=>({z:Number(p.z||0),top:Number(p.z||0)+Number(p.h||t),type:p.type})).sort((a,b)=>a.z-b.z);
+    const gaps=[];let cursor=t;
+    for(const q of others){if(q.type==='base'){cursor=Math.max(cursor,q.top);continue;}if(q.type==='top')break;if(q.z>cursor+.01){gaps.push({z0:cursor,z1:q.z});cursor=Math.max(cursor,q.top);}else cursor=Math.max(cursor,q.top);}
+    const topInside=Math.max(cursor,roof-t);if(topInside>cursor+.01)gaps.push({z0:cursor,z1:topInside});
+    if(!gaps.length){piece.z=Math.max(t,Math.min(roof-t-piece.h,Number(piece.z||t)));return piece;}
+    const center=Number(piece.z||0)+Number(piece.h||t)/2;let best=gaps[0],dist=Infinity;for(const g of gaps){const c=(g.z0+g.z1)/2,d=center>=g.z0&&center<=g.z1?0:Math.abs(center-c);if(d<dist){dist=d;best=g;}}
+    piece.h=t;piece.z=Math.max(best.z0,Math.min(best.z1-piece.h,Number(piece.z||best.z0)));return piece;
+  }
+
+  function resolveConstructionShelfCollisions(model){
+    if(!isRackConstructionScreen())return;
+    const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8));const roof=f.roofMode==='slope'?Math.min(Number(f.leftHeight||model.height||200),Number(f.rightHeight||model.height||200)):Number(model.height||200);const low=t,high=Math.max(low,roof-t);
+    const shelves=f.pieces.filter(p=>p.type==='shelf').sort((a,b)=>Number(a.z||0)-Number(b.z||0));let cursor=low;
+    shelves.forEach(s=>{s.h=t;s.z=Math.max(cursor,Math.min(high-t,Number(s.z||cursor)));cursor=s.z+t;});
+    let end=high;for(let i=shelves.length-1;i>=0;i--){const s=shelves[i];s.z=Math.min(s.z,end-t);end=s.z;}
+    shelves.forEach(s=>{s.z=Math.max(low,s.z);});
+  }
+
+  function resizeFurnitureIntoVolume(model,field,newValue){
+    ensureRackFurnitureModel(model);const f=model.furniture;const old={width:Math.max(1,Number(model.width||120)),depth:Math.max(1,Number(model.depth||40)),height:Math.max(1,Number(model.height||200))};
+    const min=field==='height'?60:field==='depth'?20:30;const next=Math.max(min,Number(newValue||old[field]));if(Math.abs(next-old[field])<.0001)return;
+    const ratio=next/old[field];const custom=f.pieces.filter(p=>!p.carcass);
+    custom.forEach(piece=>{
+      if(field==='width'){
+        if(piece.type==='divider'){piece.x*=ratio;piece.w=f.thickness;}else if(piece.type==='shelf'){if(piece.autoFit!=='shelf'){piece.x*=ratio;piece.w*=ratio;}}else if(piece.type==='brace'){piece.x*=ratio;if(Number.isFinite(Number(piece.x2)))piece.x2*=ratio;piece.w*=ratio;}else if(piece.autoFit!=='full-back'){piece.x*=ratio;piece.w*=ratio;}
+      }else if(field==='depth'){
+        piece.y*=ratio;if(piece.type==='shelf'||piece.type==='divider'||piece.type==='back')piece.d=next;else piece.d*=ratio;
+      }else if(field==='height'){
+        if(piece.type==='shelf'){piece.z*=ratio;piece.h=f.thickness;}else if(piece.type==='divider'){piece.z*=ratio;piece.h*=ratio;}else if(piece.type==='brace'){piece.z*=ratio;if(Number.isFinite(Number(piece.z2)))piece.z2*=ratio;piece.h*=ratio;}else if(piece.autoFit!=='full-back'){piece.z*=ratio;piece.h*=ratio;}
+      }
+    });
+    model[field]=next;
+    if(field==='height'){
+      if(f.roofMode==='flat'){f.leftHeight=f.rightHeight=next;}else{f.leftHeight=Math.max(20,Number(f.leftHeight||old.height)*ratio);f.rightHeight=Math.max(20,Number(f.rightHeight||old.height)*ratio);const mx=Math.max(f.leftHeight,f.rightHeight);if(mx>next){const k=next/mx;f.leftHeight*=k;f.rightHeight*=k;}model.height=next;}
+    }
+    furnitureCreateCarcass(model,{keepCustom:true});resolveConstructionShelfCollisions(model);furnitureRefitModel(model);f.pieces.filter(p=>p.type==='divider').forEach(p=>constrainConstructionDivider(model,p));syncFurnitureModelToLegacy(model);
+  }
+
+  function normalizeConstructionSizes(values,total,count){
+    const n=Math.max(1,count);let vals=Array.from({length:n},(_,i)=>Math.max(.1,Number(values?.[i]||0)||0));if(!vals.some(v=>v>0))vals=Array(n).fill(1);const sum=vals.reduce((a,b)=>a+b,0)||n;return vals.map(v=>total*v/sum);
+  }
+
+  function applyConstructionHorizontalSpaces(model,count,equal,values){
+    ensureRackFurnitureModel(model);const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8));const n=Math.max(1,Math.min(12,Number(count||1)));const roof=f.roofMode==='slope'?Math.min(Number(f.leftHeight||model.height||200),Number(f.rightHeight||model.height||200)):Number(model.height||200);const free=Math.max(n,roof-2*t-(n-1)*t);
+    const gaps=equal?Array(n).fill(free/n):normalizeConstructionSizes(values,free,n);f.pieces=f.pieces.filter(p=>p.type!=='shelf');let cursor=t;
+    for(let i=0;i<n-1;i++){cursor+=gaps[i];const shelf=furnitureMakePiece('shelf',{name:`Repisa ${i+1}`,x:t,y:0,z:cursor,w:Math.max(1,Number(model.width||120)-2*t),d:Number(model.depth||40),h:t,join:f.material==='metal'?'bolted':'between',autoFit:'shelf'});f.pieces.push(shelf);cursor+=t;}
+    f.logicalSlots={};furnitureRefitModel(model);resolveConstructionShelfCollisions(model);f.pieces.filter(p=>p.type==='divider').forEach(p=>constrainConstructionDivider(model,p));syncFurnitureModelToLegacy(model);return gaps;
+  }
+
+  function applyConstructionVerticalSpaces(model,target,count,equal,values){
+    ensureRackFurnitureModel(model);furnitureRefitModel(model);const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8)),W=Number(model.width||120),D=Number(model.depth||40);const levels=deriveFurnitureLevels(model);const n=Math.max(1,Math.min(12,Number(count||1)));const targets=String(target)==='all'?levels:levels.filter(l=>l.index===Number(target));if(!targets.length)return [];
+    const free=Math.max(n,W-2*t-(n-1)*t);const gaps=equal?Array(n).fill(free/n):normalizeConstructionSizes(values,free,n);
+    const isTargetLevel=p=>targets.some(l=>Number(p.z||0)<=l.z0+1.5&&Number(p.z||0)+Number(p.h||0)>=l.z1-1.5);f.pieces=f.pieces.filter(p=>p.type!=='divider'||!isTargetLevel(p));
+    targets.forEach(level=>{let cursor=t;for(let i=0;i<n-1;i++){cursor+=gaps[i];const d=furnitureMakePiece('divider',{name:`División N${level.index}.${i+1}`,x:cursor,y:0,z:level.z0,w:t,d:D,h:level.height,join:f.material==='metal'?'slot':'between'});f.pieces.push(d);cursor+=t;}f.logicalSlots[level.index]=n;});
+    furnitureRefitModel(model);syncFurnitureModelToLegacy(model);return gaps;
   }
 
   function renderRackConstructionWorkspace(){
@@ -1032,11 +1093,15 @@
     setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'constructor 3D','repisas','divisiones','materiales']);
     if(!Array.isArray(appState.models))appState.models=[];
     if(!appState.models.length){createNewFurnitureModelForConstruction();return;}
-    if(!appState.ui)appState.ui={};if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={shelfZ:80,dividerX:60,dividerFrom:0,dividerTo:120,snap:1};
+    if(!appState.ui)appState.ui={};if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={shelfZ:80,dividerX:60,dividerFrom:0,dividerTo:120,snap:1};const rb=appState.ui.rackBuilder;rb.horizontalSpaces=Math.max(1,Math.min(12,Number(rb.horizontalSpaces||2)));rb.horizontalEqual=rb.horizontalEqual!==false;rb.horizontalSizes=Array.isArray(rb.horizontalSizes)?rb.horizontalSizes:[];rb.verticalSpaces=Math.max(1,Math.min(12,Number(rb.verticalSpaces||2)));rb.verticalEqual=rb.verticalEqual!==false;rb.verticalSizes=Array.isArray(rb.verticalSizes)?rb.verticalSizes:[];rb.verticalLevel=String(rb.verticalLevel||'1');
     if(!appState.selectedModelId||!appState.models.some(m=>m.id===appState.selectedModelId))appState.selectedModelId=appState.models[0].id;
     const model=rackModel(appState.selectedModelId);ensureRackFurnitureModel(model);const f=model.furniture;
     const modelOptions=appState.models.map(m=>`<option value="${escapeHtml(m.id)}" ${m.id===model.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
-    const enabled=!!f.enabled;
+    const enabled=!!f.enabled;const constructionLevels=enabled?deriveFurnitureLevels(model):[];if(rb.verticalLevel!=='all'&&!constructionLevels.some(l=>String(l.index)===rb.verticalLevel))rb.verticalLevel=String(constructionLevels[0]?.index||1);
+    const horizontalDefaults=constructionLevels.length===rb.horizontalSpaces?constructionLevels.map(l=>round1(l.height)):Array(rb.horizontalSpaces).fill(round1(Math.max(1,(Math.min(Number(f.leftHeight||model.height),Number(f.rightHeight||model.height))-2*f.thickness-(rb.horizontalSpaces-1)*f.thickness)/rb.horizontalSpaces)));
+    const horizontalSizes=Array.from({length:rb.horizontalSpaces},(_,i)=>round1(Number(rb.horizontalSizes[i]||horizontalDefaults[i]||1)));
+    const selectedLevel=constructionLevels.find(l=>String(l.index)===rb.verticalLevel)||constructionLevels[0];const verticalDefaults=selectedLevel&&selectedLevel.slots.length===rb.verticalSpaces?selectedLevel.slots.map(s=>round1(s.width)):Array(rb.verticalSpaces).fill(round1(Math.max(1,(Number(model.width||120)-2*f.thickness-(rb.verticalSpaces-1)*f.thickness)/rb.verticalSpaces)));
+    const verticalSizes=Array.from({length:rb.verticalSpaces},(_,i)=>round1(Number(rb.verticalSizes[i]||verticalDefaults[i]||1)));
     contentWrap.innerHTML=`<div class="rack-construction-page">
       <aside class="rack-construction-controls">
         <section class="rack-construction-card">
@@ -1053,10 +1118,24 @@
           <div class="construction-grid-2"><label class="construction-field">Altura izquierda<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label><label class="construction-field">Altura derecha<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label></div>
         </section>
         <section class="rack-construction-card">
-          <div class="rack-construction-card-head"><div><b>Agregar piezas</b><span>Los inputs colocan las piezas con precisión.</span></div></div>
-          <div class="construction-insert-box"><b>Repisa horizontal</b><label class="construction-field">Distancia desde base Z (cm)<input id="rackBuilderShelfZ" type="number" step=".1" value="${round1(appState.ui.rackBuilder.shelfZ||80)}"></label><button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">+ Agregar repisa</button></div>
-          <div class="construction-insert-box"><b>División vertical</b><div class="construction-grid-2"><label class="construction-field">Posición X<input id="rackBuilderDividerX" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerX||60)}"></label><label class="construction-field">Desde Z<input id="rackBuilderDividerFrom" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerFrom||0)}"></label><label class="construction-field">Hasta Z<input id="rackBuilderDividerTo" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerTo||120)}"></label><label class="construction-field">Snap (cm)<input type="number" min=".1" step=".1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label></div><button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ Agregar división</button><div class="construction-note">En este constructor las divisiones quedan contenidas entre las caras interiores de las repisas.</div></div>
-          <div class="construction-actions"><button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button><button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar pieza</button><button class="mini-btn" data-furniture-action="distribute-shelves" data-mid="${model.id}">Distribuir repisas</button><button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Rehacer estructura</button></div>
+          <div class="rack-construction-card-head"><div><b>Distribución horizontal</b><span>Crea varios niveles de una vez, equitativos o con medidas individuales.</span></div></div>
+          <div class="construction-grid-2"><label class="construction-field">Cantidad de espacios / niveles<input id="rackHorizontalSpaces" type="number" min="1" max="12" step="1" value="${rb.horizontalSpaces}"></label><label class="construction-pick"><input id="rackHorizontalEqual" type="checkbox" ${rb.horizontalEqual?'checked':''}><span>División equitativa</span></label></div>
+          <div class="construction-space-inputs">${horizontalSizes.map((v,i)=>`<label class="construction-field">Espacio ${i+1} (cm)<input data-horizontal-size="${i}" type="number" min=".1" step=".1" value="${v}" ${rb.horizontalEqual?'disabled':''}></label>`).join('')}</div>
+          <div class="construction-note">${rb.horizontalEqual?`El alto útil se reparte automáticamente en ${rb.horizontalSpaces} espacios iguales; los valores se muestran como referencia.`:`Edita cada espacio. Al aplicar, el conjunto se adapta proporcionalmente al alto útil para no generar cruces.`}</div>
+          <button class="mini-btn rack-builder-primary" id="rackApplyHorizontal">Aplicar distribución horizontal</button>
+        </section>
+        <section class="rack-construction-card">
+          <div class="rack-construction-card-head"><div><b>División vertical por espacio</b><span>Define cuántos espacios tendrá cada nivel y cómo se repartirán.</span></div></div>
+          <label class="construction-field">Aplicar en<select id="rackVerticalLevel"><option value="all" ${rb.verticalLevel==='all'?'selected':''}>Todos los niveles</option>${constructionLevels.map(l=>`<option value="${l.index}" ${String(l.index)===rb.verticalLevel?'selected':''}>Nivel ${l.index} · ${round1(l.height)} cm</option>`).join('')}</select></label>
+          <div class="construction-grid-2"><label class="construction-field">Cantidad de espacios<input id="rackVerticalSpaces" type="number" min="1" max="12" step="1" value="${rb.verticalSpaces}"></label><label class="construction-pick"><input id="rackVerticalEqual" type="checkbox" ${rb.verticalEqual?'checked':''}><span>División equitativa</span></label></div>
+          <div class="construction-space-inputs">${verticalSizes.map((v,i)=>`<label class="construction-field">Espacio ${i+1} (cm)<input data-vertical-size="${i}" type="number" min=".1" step=".1" value="${v}" ${rb.verticalEqual?'disabled':''}></label>`).join('')}</div>
+          <div class="construction-note">${rb.verticalEqual?`El ancho interior se reparte automáticamente en ${rb.verticalSpaces} espacios iguales y crea ${Math.max(0,rb.verticalSpaces-1)} divisores físicos.`:`Cada input representa el ancho deseado. El conjunto se ajusta al ancho interior sin superponerse.`}</div>
+          <button class="mini-btn" id="rackApplyVertical">Aplicar división vertical</button>
+          <div class="construction-note">Cada divisor queda contenido entre las caras interiores de las repisas del nivel seleccionado; nunca las atraviesa.</div>
+        </section>
+        <section class="rack-construction-card">
+          <details class="construction-manual-piece"><summary>Agregar una pieza individual</summary><div class="construction-insert-box"><b>Repisa horizontal</b><label class="construction-field">Distancia desde base Z (cm)<input id="rackBuilderShelfZ" type="number" step=".1" value="${round1(appState.ui.rackBuilder.shelfZ||80)}"></label><button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">+ Agregar repisa</button></div><div class="construction-insert-box"><b>División vertical</b><div class="construction-grid-2"><label class="construction-field">Posición X<input id="rackBuilderDividerX" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerX||60)}"></label><label class="construction-field">Desde Z<input id="rackBuilderDividerFrom" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerFrom||0)}"></label><label class="construction-field">Hasta Z<input id="rackBuilderDividerTo" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerTo||120)}"></label><label class="construction-field">Snap (cm)<input type="number" min=".1" step=".1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label></div><button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ Agregar división</button></div></details>
+          <div class="construction-actions"><button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button><button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar pieza</button><button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Rehacer estructura</button></div>
         </section>
         <section class="rack-construction-card rack-construction-inspector"><div class="rack-construction-card-head"><div><b>Propiedades de selección</b><span>Clic en una pieza del 3D para editarla.</span></div></div><div id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></div></section>
         <section class="rack-construction-card"><div id="rackBuilderLevels" class="rack-builder-levels"></div></section>
@@ -1072,6 +1151,15 @@
     document.getElementById('rackConstructionNew')?.addEventListener('click',createNewFurnitureModelForConstruction);
     document.getElementById('rackConstructionDuplicate')?.addEventListener('click',duplicateFurnitureModelForConstruction);
     document.getElementById('rackConstructionSave')?.addEventListener('click',saveFurnitureConstructionModel);
+    const hCount=document.getElementById('rackHorizontalSpaces');if(hCount)hCount.onchange=()=>{rb.horizontalSpaces=Math.max(1,Math.min(12,Number(hCount.value||1)));rb.horizontalSizes=[];renderRackConstructionWorkspace();};
+    const hEq=document.getElementById('rackHorizontalEqual');if(hEq)hEq.onchange=()=>{rb.horizontalEqual=!!hEq.checked;renderRackConstructionWorkspace();};
+    $$('[data-horizontal-size]').forEach(el=>el.oninput=()=>{rb.horizontalSizes[Number(el.getAttribute('data-horizontal-size'))]=Math.max(.1,Number(el.value||.1));});
+    document.getElementById('rackApplyHorizontal')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const actual=applyConstructionHorizontalSpaces(model,rb.horizontalSpaces,rb.horizontalEqual,rb.horizontalSizes.length?rb.horizontalSizes:horizontalSizes);rb.horizontalSizes=actual.map(round1);saveRackModels();renderRackConstructionWorkspace();});
+    const vLevel=document.getElementById('rackVerticalLevel');if(vLevel)vLevel.onchange=()=>{rb.verticalLevel=vLevel.value;rb.verticalSizes=[];renderRackConstructionWorkspace();};
+    const vCount=document.getElementById('rackVerticalSpaces');if(vCount)vCount.onchange=()=>{rb.verticalSpaces=Math.max(1,Math.min(12,Number(vCount.value||1)));rb.verticalSizes=[];renderRackConstructionWorkspace();};
+    const vEq=document.getElementById('rackVerticalEqual');if(vEq)vEq.onchange=()=>{rb.verticalEqual=!!vEq.checked;renderRackConstructionWorkspace();};
+    $$('[data-vertical-size]').forEach(el=>el.oninput=()=>{rb.verticalSizes[Number(el.getAttribute('data-vertical-size'))]=Math.max(.1,Number(el.value||.1));});
+    document.getElementById('rackApplyVertical')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const actual=applyConstructionVerticalSpaces(model,rb.verticalLevel,rb.verticalSpaces,rb.verticalEqual,rb.verticalSizes.length?rb.verticalSizes:verticalSizes);rb.verticalSizes=actual.map(round1);saveRackModels();renderRackConstructionWorkspace();});
     bindRackFurnitureBuilder(model.id);
     if(enabled){renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);}
     updateUndoRedoUi();contentStatus.textContent='Modo activo: CONSTRUIR RACK / ESTANTE • editor 3D independiente.';contentFootRight.textContent=`${appState.models.length} modelos`;
@@ -1140,7 +1228,7 @@
       else if(a==='clear'){m.furniture.pieces=[];m.furniture.selectedPieceId='';m.furniture.selectedPieceIds=[];m.furniture.logicalSlots={};}
       syncFurnitureModelToLegacy(m);saveRackModels();if(isRackConstructionScreen())renderRackConstructionWorkspace();else rerenderRackEditorPreservingState({focusId:id});};});
     $$('[data-furniture-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;ensureRackFurnitureModel(m);const field=el.getAttribute('data-furniture-field');if(field==='material'){m.furniture.material=el.value;m.style=furnitureMaterialStyle(el.value);if(el.value==='metal'&&Number(m.furniture.thickness)<2)m.furniture.thickness=4;}else if(field==='roofMode'){m.furniture.roofMode=el.value==='slope'?'slope':'flat';if(m.furniture.roofMode==='flat')m.furniture.rightHeight=m.furniture.leftHeight;}else if(field==='leftHeight'||field==='rightHeight'){m.furniture[field]=Math.max(20,Number(el.value||m.height||200));if(m.furniture.roofMode==='flat')m.furniture.leftHeight=m.furniture.rightHeight=m.furniture[field];m.height=Math.max(60,m.furniture.leftHeight,m.furniture.rightHeight);}else m.furniture[field]=Math.max(field==='snap'?.1:.2,Number(el.value||1));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackFurniture3D(m.id);renderRackModelPreview();};el.oninput=apply;el.onchange=apply;});
-    $$('[data-furniture-model-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;const f=el.getAttribute('data-furniture-model-field');m[f]=Math.max(f==='height'?60:f==='depth'?20:30,Number(el.value||m[f]||100));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackFurniture3D(m.id);renderRackModelPreview();};el.oninput=apply;});
+    $$('[data-furniture-model-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;const field=el.getAttribute('data-furniture-model-field'),value=Math.max(field==='height'?60:field==='depth'?20:30,Number(el.value||m[field]||100));if(isRackConstructionScreen())resizeFurnitureIntoVolume(m,field,value);else{m[field]=value;furnitureRefitModel(m);syncFurnitureModelToLegacy(m);}renderRackFurnitureBuilder(m.id);renderRackFurniture3D(m.id);renderRackModelPreview();};if(isRackConstructionScreen())el.onchange=apply;else el.oninput=apply;});
     [['rackBuilderShelfZ','shelfZ'],['rackBuilderDividerX','dividerX'],['rackBuilderDividerFrom','dividerFrom'],['rackBuilderDividerTo','dividerTo']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.oninput=()=>{appState.ui.rackBuilder[key]=Number(el.value||0);};});
   }
 

@@ -1,5 +1,5 @@
 {
-  "version": "145",
+  "version": "146",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v145: Modelos de rack conserva su flujo con preview y se agrega Construir rack / estante como workspace 3D independiente con controles a la izquierda."
+  "notes": "v146: constructor 3D con reflow volumétrico al redimensionar y distribución horizontal/vertical por cantidad, equitativa o personalizada."
 }
