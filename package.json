@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": true,
-  "description": "WMS Industrial v144 3D Clarity + Collisions: editor 3D más claro, sin preview lateral, con inserción guiada de repisas/divisiones y colisión vertical de divisores entre repisas.",
+  "description": "WMS Industrial v145: separa Modelos de rack de Construir rack/estante, con editor 3D independiente y controles laterales.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

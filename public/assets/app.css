@@ -5864,21 +5864,19 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 @media(max-width:1400px){.rack-3d-compact-bar{grid-template-columns:repeat(3,minmax(0,1fr))}.rack-3d-workspace{grid-template-columns:1fr}.rack-furniture-3d-stage{height:500px}}
 @media(max-width:760px){.rack-3d-compact-bar{grid-template-columns:1fr 1fr}.rack-furniture-3d-stage{height:420px}.rack-builder-piece-metrics{grid-template-columns:1fr}}
 
-
-/* WMS v144 — brighter furniture editor */
-.rack-models-page-unified{grid-template-columns:1fr!important}
-.rack-models-main-full{min-width:0}
-.rack-quick-place-bar{display:grid;grid-template-columns:1fr 1.5fr .6fr;gap:10px;margin:10px 0 12px}
-.rack-quick-place-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px;border:1px solid rgba(130,214,255,.14);border-radius:12px;background:rgba(9,28,39,.62);align-items:end}
-.rack-quick-place-group.compact{grid-template-columns:1fr}
-.rack-quick-place-group>b{grid-column:1/-1;font-size:10px;color:#d7eefc;letter-spacing:.02em}
-.rack-quick-place-group label{display:grid;gap:4px;font-size:9px;font-weight:800;text-transform:uppercase;color:#93b9cf}
-.rack-quick-place-group input{width:100%;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:#0b2030;color:#eef8fb}
-.rack-quick-place-group button{align-self:end}
-.rack-3d-workspace-editor-first{grid-template-columns:minmax(0,1.75fr) minmax(270px,.75fr)}
-.rack-3d-stage-wrap-bright,.rack-3d-inspector{background:linear-gradient(180deg,rgba(8,26,38,.92),rgba(9,19,30,.86))}
-.rack-furniture-3d-stage-bright{background:radial-gradient(circle at 50% 26%,rgba(115,191,235,.22),transparent 42%),radial-gradient(circle at 50% 100%,rgba(78,146,188,.15),transparent 38%),linear-gradient(180deg,#10293b 0%,#0a1723 100%)}
-.rack-builder-view-head{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02)}
-.rack-builder-view-head span{font-size:10px;color:#9db7c8}
-@media(max-width:1400px){.rack-quick-place-bar{grid-template-columns:1fr}.rack-quick-place-group{grid-template-columns:repeat(2,minmax(0,1fr))}.rack-3d-workspace-editor-first{grid-template-columns:1fr}}
-@media(max-width:760px){.rack-quick-place-group{grid-template-columns:1fr}.rack-builder-view-head{display:grid}}
+/* WMS v145 — Separate Rack Construction Workspace */
+.rack-construction-page{display:grid;grid-template-columns:minmax(340px,430px) minmax(0,1fr);gap:14px;height:calc(100vh - 210px);min-height:680px}
+.rack-construction-controls{display:grid;gap:10px;align-content:start;overflow:auto;padding-right:4px;min-width:0}
+.rack-construction-card{border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(6,20,30,.64);padding:12px;display:grid;gap:10px}
+.rack-construction-card-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.rack-construction-card-head>div{display:grid;gap:3px}.rack-construction-card-head b{font-size:13px;color:#eef8fb}.rack-construction-card-head span{font-size:10px;color:#8ca8b9;line-height:1.35}
+.construction-field{display:grid;gap:5px;font-size:9px;font-weight:800;text-transform:uppercase;color:#91adbd}.construction-field input,.construction-field select{width:100%;padding:9px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.11);background:#0a1c29;color:#eff9fc;outline:none}.construction-field input:focus,.construction-field select:focus{border-color:rgba(87,229,170,.55);box-shadow:0 0 0 2px rgba(87,229,170,.08)}
+.construction-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.construction-actions{display:flex;flex-wrap:wrap;gap:7px}.construction-insert-box{display:grid;gap:8px;padding:10px;border-radius:11px;border:1px solid rgba(105,215,255,.11);background:rgba(10,34,48,.45)}.construction-insert-box>b{font-size:11px;color:#dff2fb}.construction-note{font-size:9px;line-height:1.4;color:#84a6b8;padding-top:2px}
+.rack-construction-inspector{min-height:180px}.rack-construction-inspector .rack-builder-inspector{border:0;background:transparent;padding:0;min-height:0}
+.rack-construction-convert{align-content:start}.rack-construction-convert>b{font-size:13px;color:#eef8fb}.rack-construction-convert>span{font-size:10px;color:#91aabb;line-height:1.45}
+.rack-construction-viewport{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-width:0;min-height:0;border:1px solid rgba(255,255,255,.09);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,rgba(11,32,45,.92),rgba(6,17,26,.96))}
+.rack-construction-viewport-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.018)}.rack-construction-viewport-head>div{display:grid;gap:3px}.rack-construction-viewport-head b{font-size:14px;color:#f1f9fc}.rack-construction-viewport-head span{font-size:10px;color:#91adbd}
+.rack-construction-3d-stage{height:100%;min-height:610px;background:radial-gradient(circle at 50% 24%,rgba(116,196,239,.22),transparent 38%),linear-gradient(180deg,#102a3b,#091722)!important}.rack-construction-3d-stage canvas{display:block;width:100%;height:100%}
+.rack-construction-hint{padding:9px 13px;border-top:1px solid rgba(255,255,255,.06);font-size:10px;color:#89a8b9;background:rgba(5,16,25,.76)}.rack-construction-empty-3d{display:grid;place-items:center;min-height:610px;text-align:center;color:#8ba9ba;padding:30px}
+body.theme-light .rack-construction-card{background:#f8fbfd;border-color:#dce7ec}.theme-light .construction-field input,.theme-light .construction-field select{background:#fff;color:#17313d;border-color:#d7e3e9}.theme-light .rack-construction-viewport{background:#edf4f7;border-color:#d8e4ea}.theme-light .rack-construction-viewport-head{background:#f8fbfc}.theme-light .rack-construction-viewport-head b,.theme-light .rack-construction-card-head b,.theme-light .construction-insert-box>b{color:#17313d}
+@media(max-width:1180px){.rack-construction-page{grid-template-columns:1fr;height:auto}.rack-construction-controls{overflow:visible}.rack-construction-viewport{min-height:650px}.rack-construction-3d-stage{min-height:570px}}
+@media(max-width:680px){.construction-grid-2{grid-template-columns:1fr}.rack-construction-page{min-height:0}.rack-construction-3d-stage,.rack-construction-empty-3d{min-height:460px}}

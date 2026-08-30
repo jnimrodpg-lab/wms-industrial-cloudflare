@@ -28,8 +28,8 @@ if (duplicateDeclarations.length || duplicateOverrides.length) {
   process.exit(1);
 }
 
-if (!source.startsWith('/* WMS_V143_3D_FURNITURE_ENGINE */')) {
-  console.error('Falta la marca de bundle v143.');
+if (!source.startsWith('/* WMS_V145_SPLIT_RACK_CONSTRUCTION */')) {
+  console.error('Falta la marca de bundle v145.');
   process.exit(1);
 }
 console.log(`Auditoría frontend OK: ${declarations.size} funciones declaradas, sin overrides protegidos duplicados.`);

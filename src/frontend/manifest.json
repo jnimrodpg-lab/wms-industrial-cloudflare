@@ -1,5 +1,5 @@
 {
-  "version": "143",
+  "version": "145",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v143 acumulativa: motor gráfico 3D paramétrico para construir racks/muebles, seleccionar piezas, editar alturas, pendientes, repisas, materiales y distribución uniforme."
+  "notes": "v145: Modelos de rack conserva su flujo con preview y se agrega Construir rack / estante como workspace 3D independiente con controles a la izquierda."
 }

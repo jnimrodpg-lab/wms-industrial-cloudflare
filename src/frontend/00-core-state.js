@@ -1,4 +1,4 @@
-/* WMS_V143_3D_FURNITURE_ENGINE */
+/* WMS_V145_SPLIT_RACK_CONSTRUCTION */
 /* WMS_V134_SYNC_VISUAL_WMS */
 /* WMS_V130_UNIFIED_WALLS_VIEWS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
@@ -967,7 +967,7 @@
       if(!appState.models.length){ updateUndoRedoUi(); return; }
       if(!appState.models.some(m => m.id === appState.selectedModelId)) appState.selectedModelId = appState.models[0].id;
       saveRackModels();
-      if(appState.screen === 'racks') renderRackModels(); else renderRackModelPreview();
+      if(appState.screen === 'racks') renderRackModels(); else if(appState.screen === 'rack-builder') renderRackConstructionWorkspace(); else renderRackModelPreview();
     }
     updateUndoRedoUi();
   }

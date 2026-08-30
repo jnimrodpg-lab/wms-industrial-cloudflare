@@ -536,20 +536,20 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
 
   function normalizeAppScreenName(screen){
     const value = String(screen || '').trim();
-    const allowed = ['admin','sheet','layout','distribution','racks','viewer'];
+    const allowed = ['admin','sheet','layout','distribution','racks','rack-builder','viewer'];
     if(value === 'card' || value === 'products') return 'sheet';
     return allowed.includes(value) ? value : 'viewer';
   }
   function getLastAppScreen(){
     try{
       const saved = normalizeAppScreenName(localStorage.getItem('wms_last_screen_v95') || '');
-      return ['admin','sheet','layout','distribution','racks','viewer'].includes(saved) ? saved : 'admin';
+      return ['admin','sheet','layout','distribution','racks','rack-builder','viewer'].includes(saved) ? saved : 'admin';
     }catch(_err){ return 'admin'; }
   }
   function persistLastAppScreen(screen){
     try{
       const normalized = normalizeAppScreenName(screen);
-      if(['admin','sheet','layout','distribution','racks','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
+      if(['admin','sheet','layout','distribution','racks','rack-builder','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
     }catch(_err){}
   }
 
@@ -609,7 +609,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       appRoot.classList.remove('viewer-product-layout');
       if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
-      const isRackModels = screen === 'racks';
+      const isRackModels = screen === 'racks' || screen === 'rack-builder';
       const isLayoutScreen = screen === 'layout' || screen === 'distribution';
       const isCardDesigner = false;
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
@@ -636,6 +636,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
       else if(screen === 'layout' || screen === 'distribution') renderLayoutEditor();
       else if(screen === 'racks') renderRackModels();
+      else if(screen === 'rack-builder') renderRackConstructionWorkspace();
       else renderMapView();
     }catch(err){
       console.error('Error al cambiar de pantalla:', err);

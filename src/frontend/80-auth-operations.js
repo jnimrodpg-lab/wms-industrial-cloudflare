@@ -383,6 +383,7 @@
     if(appState.screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
     else if(isLayoutWorkspaceScreen()) renderLayoutEditor();
     else if(appState.screen === 'racks') renderRackModels();
+    else if(appState.screen === 'rack-builder') renderRackConstructionWorkspace();
   }
 
   function applyUiTheme(theme){

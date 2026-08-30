@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v143-3d-furniture-engine';
+const BUILD_MARK = 'cloudflare-v145-split-rack-construction';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

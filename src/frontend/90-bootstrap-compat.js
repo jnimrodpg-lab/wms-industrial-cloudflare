@@ -1,4 +1,4 @@
-console.info('*** WMS v143 3D FURNITURE ENGINE + PARAMETRIC RACK EDITOR ACTIVE ***');
+console.info('*** WMS v145 SPLIT RACK MODELS + 3D CONSTRUCTION WORKSPACE ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();
