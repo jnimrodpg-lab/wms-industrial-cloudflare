@@ -823,7 +823,7 @@
 
 
 
-  /* WMS v142 — Unified Rack Editor: modelo + construcción física en un solo flujo */
+  /* WMS v143 — 3D Furniture Engine: edición paramétrica directa en el mismo 3D */
   function furnitureId(prefix='p'){ return `${prefix}_${Math.random().toString(36).slice(2,8)}`; }
 
   function ensureRackFurnitureModel(model){
@@ -839,6 +839,12 @@
     f.pieces = Array.isArray(f.pieces) ? f.pieces : [];
     f.logicalSlots = (f.logicalSlots && typeof f.logicalSlots==='object') ? f.logicalSlots : {};
     f.selectedPieceId = String(f.selectedPieceId||'');
+    f.selectedPieceIds = Array.isArray(f.selectedPieceIds) ? f.selectedPieceIds.map(String) : (f.selectedPieceId ? [String(f.selectedPieceId)] : []);
+    f.roofMode = f.roofMode === 'slope' ? 'slope' : 'flat';
+    f.leftHeight = Math.max(20, Number(f.leftHeight || model.height || 200));
+    f.rightHeight = Math.max(20, Number(f.rightHeight || model.height || 200));
+    if(f.roofMode === 'flat') f.leftHeight = f.rightHeight = Math.max(f.leftHeight,f.rightHeight,Number(model.height||200));
+    model.height = Math.max(60, f.leftHeight, f.rightHeight, Number(model.height||200));
     f.showSlots = f.showSlots !== false;
     f.showDims = f.showDims !== false;
     f.pieces.forEach(p=>{
@@ -880,24 +886,38 @@
         pieces.push(furnitureMakePiece('beam',{name:zi?'Viga superior posterior':'Viga base posterior',x:0,y:0,z,w:W,d:beam,h:beam,carcass:true,join:'bolted'}));
       });
     }else{
-      pieces.push(furnitureMakePiece('side',{name:'Lateral izquierdo',x:0,y:0,z:0,w:t,d:D,h:H,carcass:true,join:'flush',autoFit:'left-side'}));
-      pieces.push(furnitureMakePiece('side',{name:'Lateral derecho',x:W-t,y:0,z:0,w:t,d:D,h:H,carcass:true,join:'flush',autoFit:'right-side'}));
+      pieces.push(furnitureMakePiece('side',{name:'Lateral izquierdo',x:0,y:0,z:0,w:t,d:D,h:Number(f.leftHeight||H),carcass:true,join:'flush',autoFit:'left-side'}));
+      pieces.push(furnitureMakePiece('side',{name:'Lateral derecho',x:W-t,y:0,z:0,w:t,d:D,h:Number(f.rightHeight||H),carcass:true,join:'flush',autoFit:'right-side'}));
       pieces.push(furnitureMakePiece('base',{name:'Base inferior',x:t,y:0,z:0,w:Math.max(1,W-2*t),d:D,h:t,carcass:true,join:'between',autoFit:'between-sides'}));
-      pieces.push(furnitureMakePiece('top',{name:'Tapa superior',x:t,y:0,z:H-t,w:Math.max(1,W-2*t),d:D,h:t,carcass:true,join:'between',autoFit:'between-sides-top'}));
+      pieces.push(furnitureMakePiece('top',{name:'Tapa superior',x:t,y:0,z:H-t,w:Math.max(1,W-2*t),d:D,h:t,carcass:true,join:'between',autoFit:'between-sides-top',slopeTop:f.roofMode==='slope'}));
     }
     f.pieces=[...pieces,...custom]; furnitureRefitModel(model); syncFurnitureModelToLegacy(model); return model;
+  }
+
+  function furnitureRoofHeightAtX(model,x){
+    ensureRackFurnitureModel(model);const f=model.furniture,W=Math.max(1,Number(model.width||120));
+    if(f.roofMode!=='slope')return Math.max(20,Number(f.leftHeight||model.height||200));
+    const t=Math.max(0,Math.min(1,Number(x||0)/W));return Number(f.leftHeight||model.height||200)+(Number(f.rightHeight||model.height||200)-Number(f.leftHeight||model.height||200))*t;
+  }
+
+  function furnitureShelfMaxZ(model,piece){
+    const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8)),x0=Math.max(0,Number(piece?.x||0)),x1=Math.min(Number(model.width||120),x0+Math.max(.1,Number(piece?.w||1)));
+    return Math.max(0,Math.min(furnitureRoofHeightAtX(model,x0),furnitureRoofHeightAtX(model,x1))-Math.max(t,Number(piece?.h||t)));
   }
 
   function furnitureRefitModel(model){
     ensureRackFurnitureModel(model); const f=model.furniture; if(!f.enabled)return;
     const W=Math.max(30,Number(model.width||120)),D=Math.max(20,Number(model.depth||40)),H=Math.max(60,Number(model.height||200)),t=Math.max(.3,Number(f.thickness||1.8));
     f.pieces.forEach(p=>{
-      if(p.autoFit==='left-side'){p.x=0;p.y=0;p.z=0;p.w=t;p.d=D;p.h=H;}
-      else if(p.autoFit==='right-side'){p.x=W-t;p.y=0;p.z=0;p.w=t;p.d=D;p.h=H;}
+      if(p.autoFit==='left-side'){p.x=0;p.y=0;p.z=0;p.w=t;p.d=D;p.h=Math.max(t,Number(f.leftHeight||H));}
+      else if(p.autoFit==='right-side'){p.x=W-t;p.y=0;p.z=0;p.w=t;p.d=D;p.h=Math.max(t,Number(f.rightHeight||H));}
       else if(p.autoFit==='between-sides'||p.autoFit==='between-sides-top'){
         const join=p.join||'between'; const inset=join==='inset'?t*.5:join==='overlap'?0:t;
         p.x=inset; p.w=Math.max(1,W-inset*2); p.y=0;p.d=D;p.h=t;
-        if(p.autoFit==='between-sides-top')p.z=H-t;
+        if(p.autoFit==='between-sides-top'){
+          const lh=Math.max(t,Number(f.leftHeight||H)),rh=Math.max(t,Number(f.rightHeight||H));
+          p.slopeTop=f.roofMode==='slope'; p.leftZ=lh-t; p.rightZ=rh-t; p.z=Math.min(lh,rh)-t;
+        }
       } else if(p.autoFit==='full-back'){p.x=0;p.y=0;p.z=0;p.w=W;p.d=Math.max(.2,f.backThickness);p.h=H;}
       else if(p.autoFit==='shelf'){
         const join=p.join||'between'; const inset=join==='overlap'?0:join==='inset'?t*.5:t;
@@ -905,6 +925,7 @@
       }
       p.x=Math.max(0,Math.min(W-Math.min(W,p.w),Number(p.x||0))); p.y=Math.max(0,Math.min(D-Math.min(D,p.d),Number(p.y||0))); p.z=Math.max(0,Math.min(H-Math.min(H,p.h),Number(p.z||0)));
       p.w=Math.max(.1,Math.min(W-p.x,Number(p.w||1)));p.d=Math.max(.1,Math.min(D-p.y,Number(p.d||1)));p.h=Math.max(.1,Math.min(H-p.z,Number(p.h||1)));
+      if(p.type==='shelf'&&f.roofMode==='slope')p.z=Math.min(p.z,furnitureShelfMaxZ(model,p));
     });
   }
 
@@ -963,43 +984,41 @@
 
   function createNewFurnitureModelDraft(){
     recordHistorySnapshot('racks');
-    const model={id:'rb_'+Math.random().toString(16).slice(2,8),name:'Estantería desde cero',levels:1,width:120,depth:40,height:200,clearance:0,slots:1,beam:2,style:'melamine',levelHeights:[196],levelSlots:[1],furniture:{enabled:true,version:1,material:'melamine',thickness:1.8,backThickness:.3,snap:1,pieces:[],logicalSlots:{},selectedPieceId:'',showSlots:true,showDims:true}};
+    const model={id:'rb_'+Math.random().toString(16).slice(2,8),name:'Estantería desde cero',levels:1,width:120,depth:40,height:200,clearance:0,slots:1,beam:2,style:'melamine',levelHeights:[196],levelSlots:[1],furniture:{enabled:true,version:1,material:'melamine',thickness:1.8,backThickness:.3,snap:1,pieces:[],logicalSlots:{},selectedPieceId:'',selectedPieceIds:[],roofMode:'flat',leftHeight:200,rightHeight:200,showSlots:true,showDims:true}};
     appState.models.unshift(model);appState.selectedModelId=model.id;appState.ui.rackLibraryOpenIds=[model.id];appState.ui.rackLibraryLevelsOpenIds=[];resetRackPreviewCamera();saveRackModels();renderRackModels();
   }
 
   function renderRackFurnitureBuilderMarkup(model){
     ensureRackFurnitureModel(model); const f=model.furniture||{};
-    if(!f.enabled){return `<section class="rack-block rack-builder-pro"><div class="rack-block-head"><div><h3>Constructor de mueble</h3><div class="rack-block-sub">Convierte este modelo en una estructura editable pieza por pieza, o crea uno nuevo desde cero.</div></div><span class="tag">Rack Builder Pro</span></div><div class="rack-builder-empty"><b>Este modelo usa el generador clásico.</b><span>Al convertirlo se crean carcasa, repisas y slots equivalentes sin perder sus dimensiones.</span><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Convertir a constructor</button></div></section>`;}
+    if(!f.enabled){return `<section class="rack-block rack-builder-pro"><div class="rack-block-head"><div><h3>Motor 3D de mueble</h3><div class="rack-block-sub">Convierte este modelo para editarlo directamente en 3D.</div></div><span class="tag">3D Furniture Engine</span></div><div class="rack-builder-empty"><b>Este modelo aún usa el generador clásico.</b><span>La conversión mantiene dimensiones, niveles y slots.</span><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Abrir en motor 3D</button></div></section>`;}
     const material=furnitureMaterialLabel(f.material),pieceCount=(f.pieces||[]).length,levels=deriveFurnitureLevels(model);
-    return `<section class="rack-block rack-builder-pro" data-furniture-model="${model.id}">
-      <div class="rack-block-head"><div><h3>Constructor de mueble / estantería</h3><div class="rack-block-sub">Construye desde cero con piezas reales. Las uniones, repisas y divisiones generan automáticamente niveles y slots WMS.</div></div><div class="tag-row"><span class="tag">${material}</span><span class="tag">${pieceCount} piezas</span><span class="tag">${levels.length} niveles</span></div></div>
-      <div class="rack-builder-toolbar">
-        <button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Crear / rehacer carcasa</button>
-        <button class="mini-btn rack-builder-primary" data-furniture-action="build-from-levels" data-mid="${model.id}">Generar desde niveles</button>
-        <button class="mini-btn" data-furniture-action="shelf" data-mid="${model.id}">+ Repisa</button>
+    return `<section class="rack-block rack-builder-pro rack-3d-engine" data-furniture-model="${model.id}">
+      <div class="rack-block-head"><div><h3>Editor 3D del mueble</h3><div class="rack-block-sub">Selecciona una pieza en el 3D y edítala desde el inspector. Repisas y divisiones también se pueden arrastrar directamente.</div></div><div class="tag-row"><span class="tag">${material}</span><span class="tag">${pieceCount} piezas</span><span class="tag">${levels.length} niveles</span></div></div>
+      <div class="rack-3d-compact-bar">
+        <label>Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
+        <label>Grosor / perfil (cm)<input type="number" min="0.3" step="0.1" data-furniture-field="thickness" data-mid="${model.id}" value="${Number(f.thickness||1.8)}"></label>
+        <label>Forma superior<select data-furniture-field="roofMode" data-mid="${model.id}"><option value="flat" ${f.roofMode==='flat'?'selected':''}>Una sola altura</option><option value="slope" ${f.roofMode==='slope'?'selected':''}>Con pendiente</option></select></label>
+        <label>Altura izq. (cm)<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label>
+        <label>Altura der. (cm)<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label>
+      </div>
+      <div class="rack-builder-toolbar rack-3d-toolbar">
+        <button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Rehacer estructura</button>
+        <button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">+ Repisa</button>
         <button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ División</button>
         <button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button>
-        <button class="mini-btn" data-furniture-action="brace" data-mid="${model.id}">+ Refuerzo</button>
-        <button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar pieza</button>
+        <button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar selección</button>
         <button class="mini-btn" data-furniture-action="distribute-shelves" data-mid="${model.id}">Distribuir repisas</button>
-        <button class="mini-btn" data-furniture-action="sync-instances" data-mid="${model.id}">Actualizar instancias</button>
-        <button class="mini-btn danger" data-furniture-action="clear" data-mid="${model.id}">Vaciar</button>
+        <button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar cámara</button>
       </div>
-      <div class="rack-builder-settings">
-        <label>Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
-        <label>Espesor / perfil (cm)<input type="number" min="0.3" step="0.1" data-furniture-field="thickness" data-mid="${model.id}" value="${Number(f.thickness||1.8)}"></label>
-        <label>Ancho (cm)<input type="number" min="30" step="1" data-furniture-model-field="width" data-mid="${model.id}" value="${Number(model.width||120)}"></label>
-        <label>Profundidad (cm)<input type="number" min="20" step="1" data-furniture-model-field="depth" data-mid="${model.id}" value="${Number(model.depth||40)}"></label>
-        <label>Alto (cm)<input type="number" min="60" step="1" data-furniture-model-field="height" data-mid="${model.id}" value="${Number(model.height||200)}"></label>
-        <label>Snap (cm)<input type="number" min="0.1" step="0.5" data-furniture-field="snap" data-mid="${model.id}" value="${Number(f.snap||1)}"></label>
+      <div class="rack-3d-workspace">
+        <div class="rack-3d-stage-wrap">
+          <div class="rack-builder-view-head"><b>Construcción 3D</b><span>Clic selecciona · arrastra repisa/división · arrastra fondo para orbitar · rueda para zoom</span></div>
+          <div id="rackFurniture3D" class="rack-furniture-3d-stage" data-model-id="${model.id}"></div>
+          <div class="rack-3d-stage-hint">Ctrl/Cmd + clic selecciona varias repisas para distribuirlas uniformemente.</div>
+        </div>
+        <aside id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></aside>
       </div>
-      <div class="rack-builder-quick">
-        <label>Cota repisa Z<input id="rackBuilderShelfZ" type="number" step="1" value="${Number(appState.ui?.rackBuilder?.shelfZ||80)}"></label>
-        <label>Divisor X<input id="rackBuilderDividerX" type="number" step="1" value="${Number(appState.ui?.rackBuilder?.dividerX||60)}"></label>
-        <label>Desde Z<input id="rackBuilderDividerFrom" type="number" step="1" value="${Number(appState.ui?.rackBuilder?.dividerFrom||0)}"></label>
-        <label>Hasta Z<input id="rackBuilderDividerTo" type="number" step="1" value="${Number(appState.ui?.rackBuilder?.dividerTo||120)}"></label>
-      </div>
-      <div class="rack-builder-workspace"><div class="rack-builder-front-wrap"><div class="rack-builder-view-head"><b>Vista frontal constructiva</b><span>Arrastra repisas o divisiones · snap entre piezas</span></div><svg id="rackBuilderFront" viewBox="0 0 820 590" preserveAspectRatio="xMidYMid meet"></svg></div><aside id="rackBuilderInspector" class="rack-builder-inspector"></aside></div>
+      <details class="rack-technical-view"><summary>Vista frontal técnica y cotas</summary><div class="rack-builder-front-wrap"><svg id="rackBuilderFront" viewBox="0 0 820 590" preserveAspectRatio="xMidYMid meet"></svg></div></details>
       <div id="rackBuilderLevels" class="rack-builder-levels"></div>
     </section>`;
   }
@@ -1028,9 +1047,10 @@
       else if(a==='duplicate-piece')furnitureDuplicateSelectedPiece(m);
       else if(a==='distribute-shelves')furnitureDistributeShelves(m);
       else if(a==='sync-instances')furnitureSyncInstances(m);
-      else if(a==='clear'){m.furniture.pieces=[];m.furniture.selectedPieceId='';m.furniture.logicalSlots={};}
+      else if(a==='reset-3d-camera'){resetRackFurniture3DCamera(m.id);return;}
+      else if(a==='clear'){m.furniture.pieces=[];m.furniture.selectedPieceId='';m.furniture.selectedPieceIds=[];m.furniture.logicalSlots={};}
       syncFurnitureModelToLegacy(m);saveRackModels();rerenderRackEditorPreservingState({focusId:id});};});
-    $$('[data-furniture-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;ensureRackFurnitureModel(m);const field=el.getAttribute('data-furniture-field');if(field==='material'){m.furniture.material=el.value;m.style=furnitureMaterialStyle(el.value);if(el.value==='metal'&&Number(m.furniture.thickness)<2)m.furniture.thickness=4;}else m.furniture[field]=Math.max(field==='snap'?.1:.2,Number(el.value||1));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackModelPreview();};el.oninput=apply;el.onchange=apply;});
+    $$('[data-furniture-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;ensureRackFurnitureModel(m);const field=el.getAttribute('data-furniture-field');if(field==='material'){m.furniture.material=el.value;m.style=furnitureMaterialStyle(el.value);if(el.value==='metal'&&Number(m.furniture.thickness)<2)m.furniture.thickness=4;}else if(field==='roofMode'){m.furniture.roofMode=el.value==='slope'?'slope':'flat';if(m.furniture.roofMode==='flat')m.furniture.rightHeight=m.furniture.leftHeight;}else if(field==='leftHeight'||field==='rightHeight'){m.furniture[field]=Math.max(20,Number(el.value||m.height||200));if(m.furniture.roofMode==='flat')m.furniture.leftHeight=m.furniture.rightHeight=m.furniture[field];m.height=Math.max(60,m.furniture.leftHeight,m.furniture.rightHeight);}else m.furniture[field]=Math.max(field==='snap'?.1:.2,Number(el.value||1));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackFurniture3D(m.id);renderRackModelPreview();};el.oninput=apply;el.onchange=apply;});
     $$('[data-furniture-model-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;const f=el.getAttribute('data-furniture-model-field');m[f]=Math.max(f==='height'?60:f==='depth'?20:30,Number(el.value||m[f]||100));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackModelPreview();};el.oninput=apply;});
     [['rackBuilderShelfZ','shelfZ'],['rackBuilderDividerX','dividerX'],['rackBuilderDividerFrom','dividerFrom'],['rackBuilderDividerTo','dividerTo']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.oninput=()=>{appState.ui.rackBuilder[key]=Number(el.value||0);};});
   }
@@ -1068,7 +1088,7 @@
   function furnitureAddBack(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const old=f.pieces.find(p=>p.type==='back');if(old){f.selectedPieceId=old.id;return;}const p=furnitureMakePiece('back',{name:'Fondo',x:0,y:0,z:0,w:Number(model.width||120),d:f.backThickness,h:Number(model.height||200),join:'inset',autoFit:'full-back'});f.pieces.unshift(p);f.selectedPieceId=p.id;}
   function furnitureAddBrace(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const p=furnitureMakePiece('brace',{name:`Refuerzo ${(f.pieces.filter(x=>x.type==='brace').length+1)}`,x:Number(model.width||120)*.15,y:0,z:Number(model.height||200)*.15,w:Number(model.width||120)*.7,d:Math.max(1,f.thickness),h:Math.max(1,f.thickness),join:'bolted',x2:Number(model.width||120)*.85,z2:Number(model.height||200)*.85});f.pieces.push(p);f.selectedPieceId=p.id;}
   function furnitureDuplicateSelectedPiece(model){ensureRackFurnitureModel(model);const f=model.furniture,p=f.pieces.find(x=>x.id===f.selectedPieceId);if(!p)return;const cp={...clone(p),id:furnitureId(p.type),name:`${p.name} copia`,x:Number(p.x||0)+Math.max(2,f.snap*2),z:Number(p.z||0)+Math.max(2,f.snap*2),carcass:false,autoFit:p.type==='shelf'?'shelf':''};f.pieces.push(cp);f.selectedPieceId=cp.id;furnitureRefitModel(model);}
-  function furnitureDistributeShelves(model){ensureRackFurnitureModel(model);const f=model.furniture,shelves=f.pieces.filter(p=>p.type==='shelf').sort((a,b)=>a.z-b.z),t=f.thickness,H=Number(model.height||200);if(!shelves.length)return;const each=(H-2*t)/(shelves.length+1);shelves.forEach((p,i)=>{p.z=Math.round((t+each*(i+1))*10)/10;p.autoFit='shelf';});}
+  function furnitureDistributeShelves(model){ensureRackFurnitureModel(model);const f=model.furniture,shelves=f.pieces.filter(p=>p.type==='shelf').sort((a,b)=>a.z-b.z),t=f.thickness,H=f.roofMode==='slope'?Math.min(Number(f.leftHeight||model.height||200),Number(f.rightHeight||model.height||200)):Number(model.height||200);if(!shelves.length)return;const each=Math.max(1,(H-2*t)/(shelves.length+1));shelves.forEach((p,i)=>{p.z=Math.min(furnitureShelfMaxZ(model,p),Math.round((t+each*(i+1))*10)/10);p.autoFit='shelf';});}
 
   function furnitureSnapValue(value,candidates,snap){let best=value,bestD=Math.max(.1,snap*1.75);for(const c of candidates){const d=Math.abs(value-c);if(d<bestD){best=c;bestD=d;}}return Math.round(best/snap)*snap;}
   function furnitureSnapPiece(model,piece,next){const f=model.furniture,snap=Math.max(.1,Number(f.snap||1)),xs=[0,Number(model.width||120)/2,Number(model.width||120)],zs=[0,Number(model.height||200)/2,Number(model.height||200)];f.pieces.forEach(p=>{if(p.id===piece.id)return;xs.push(Number(p.x||0),Number(p.x||0)+Number(p.w||0),Number(p.x||0)+Number(p.w||0)/2);zs.push(Number(p.z||0),Number(p.z||0)+Number(p.h||0),Number(p.z||0)+Number(p.h||0)/2);});return {x:furnitureSnapValue(next.x,xs,snap),z:furnitureSnapValue(next.z,zs,snap)};}
@@ -1082,8 +1102,8 @@
     pieces.forEach(p=>{const selected=p.id===f.selectedPieceId;if(p.type==='brace'){const x1=ox+Number(p.x||0)*scale,y1=oy+(H-Number(p.z||0))*scale,x2=ox+Number(p.x2||p.x+p.w||0)*scale,y2=oy+(H-Number(p.z2||p.z+p.h||0))*scale;const line=svgEl('line',{x1,y1,x2,y2,class:`rack-builder-piece brace ${selected?'selected':''}`,'data-furniture-piece':p.id,'stroke-width':Math.max(3,Number(p.d||2)*scale)});svg.appendChild(line);return;}const x=ox+Number(p.x||0)*scale,y=oy+(H-(Number(p.z||0)+Number(p.h||0)))*scale,w=Math.max(2,Number(p.w||1)*scale),h=Math.max(2,Number(p.h||1)*scale);const rect=svgEl('rect',{x,y,width:w,height:h,rx:Math.min(3,h/4),class:`rack-builder-piece type-${p.type} material-${f.material} ${selected?'selected':''}`,'data-furniture-piece':p.id});svg.appendChild(rect);});
     const levelDefs=deriveFurnitureLevels(model); if(f.showSlots){levelDefs.forEach(l=>{l.slots.forEach(slot=>{const x=ox+slot.x0*scale,y=oy+(H-l.z1)*scale,w=(slot.x1-slot.x0)*scale,h=(l.z1-l.z0)*scale;const r=svgEl('rect',{x,y,width:w,height:h,class:'rack-builder-slot','pointer-events':'none'});svg.appendChild(r);const tx=svgEl('text',{x:x+w/2,y:y+h/2,class:'rack-builder-slot-label','text-anchor':'middle','dominant-baseline':'middle','pointer-events':'none'});tx.textContent=`N${l.index}-${slot.code}`;svg.appendChild(tx);});});}
     if(f.showDims){const wt=svgEl('text',{x:ox+W*scale/2,y:oy+H*scale+34,class:'rack-builder-dim','text-anchor':'middle'});wt.textContent=`${Math.round(W*10)/10} cm`;svg.appendChild(wt);const ht=svgEl('text',{x:ox-32,y:oy+H*scale/2,class:'rack-builder-dim',transform:`rotate(-90 ${ox-32} ${oy+H*scale/2})`,'text-anchor':'middle'});ht.textContent=`${Math.round(H*10)/10} cm`;svg.appendChild(ht);renderFurnitureSelectedGuides(svg,model,scale,ox,oy,H);}
-    $$('[data-furniture-piece]',svg).forEach(el=>{el.addEventListener('pointerdown',evt=>furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H));el.addEventListener('click',evt=>{evt.stopPropagation();f.selectedPieceId=el.getAttribute('data-furniture-piece');renderRackFurnitureBuilder(model.id);});});svg.onclick=()=>{f.selectedPieceId='';renderRackFurnitureBuilder(model.id);};
-    renderFurnitureInspector(model,inspector);renderFurnitureLevels(model,levelsMount);syncFurnitureModelToLegacy(model);
+    $$('[data-furniture-piece]',svg).forEach(el=>{el.addEventListener('pointerdown',evt=>furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H));el.addEventListener('click',evt=>{evt.stopPropagation();f.selectedPieceId=el.getAttribute('data-furniture-piece');f.selectedPieceIds=[f.selectedPieceId];renderRackFurnitureBuilder(model.id);});});svg.onclick=()=>{f.selectedPieceId='';f.selectedPieceIds=[];renderRackFurnitureBuilder(model.id);};
+    renderFurnitureInspector(model,inspector);renderFurnitureLevels(model,levelsMount);syncFurnitureModelToLegacy(model);renderRackFurniture3D(model.id);
   }
 
   function furnitureDimensionLine(svg,{x1,y1,x2,y2,label,labelX,labelY,rotate=0,accent=false}){
@@ -1141,15 +1161,145 @@
     }
   }
 
-  function furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H){evt.preventDefault();evt.stopPropagation();const f=model.furniture,p=f.pieces.find(x=>x.id===el.getAttribute('data-furniture-piece'));if(!p||p.carcass||p.type==='back'||p.type==='brace')return;recordHistorySnapshot('racks');f.selectedPieceId=p.id;const start={clientX:evt.clientX,clientY:evt.clientY,x:Number(p.x||0),z:Number(p.z||0)};el.setPointerCapture?.(evt.pointerId);const move=e=>{const dx=(e.clientX-start.clientX)/scale,dz=-(e.clientY-start.clientY)/scale;let next={x:start.x+dx,z:start.z+dz};next=furnitureSnapPiece(model,p,next);if(p.type==='shelf'){p.z=Math.max(0,Math.min(Number(model.height||200)-p.h,next.z));}else if(p.type==='divider'){p.x=Math.max(0,Math.min(Number(model.width||120)-p.w,next.x));}furnitureRefitModel(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);syncFurnitureModelToLegacy(model);saveRackModels();};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});}
+  function furnitureBeginPieceDrag(evt,model,el,scale,ox,oy,H){evt.preventDefault();evt.stopPropagation();const f=model.furniture,p=f.pieces.find(x=>x.id===el.getAttribute('data-furniture-piece'));if(!p||p.carcass||p.type==='back'||p.type==='brace')return;recordHistorySnapshot('racks');f.selectedPieceId=p.id;if(!f.selectedPieceIds.includes(p.id))f.selectedPieceIds=[p.id];const start={clientX:evt.clientX,clientY:evt.clientY,x:Number(p.x||0),z:Number(p.z||0)};el.setPointerCapture?.(evt.pointerId);const move=e=>{const dx=(e.clientX-start.clientX)/scale,dz=-(e.clientY-start.clientY)/scale;let next={x:start.x+dx,z:start.z+dz};next=furnitureSnapPiece(model,p,next);if(p.type==='shelf'){p.z=Math.max(0,Math.min(furnitureShelfMaxZ(model,p),next.z));}else if(p.type==='divider'){p.x=Math.max(0,Math.min(Number(model.width||120)-p.w,next.x));}furnitureRefitModel(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);syncFurnitureModelToLegacy(model);saveRackModels();};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});}
 
-  function renderFurnitureInspector(model,mount){const f=model.furniture,p=f.pieces.find(x=>x.id===f.selectedPieceId);if(!p){const levels=deriveFurnitureLevels(model);mount.innerHTML=`<div class="rack-builder-inspector-empty"><b>Edición directa en la vista frontal</b><span>Haz clic o arrastra una repisa o división para editarla directamente. La vista ahora muestra distancias entre niveles.</span><div class="tiny muted">Si seleccionas una repisa verás la distancia hacia la base y hacia la repisa superior. Si seleccionas una división verás sus distancias laterales.</div>${levels.length?`<div class="rack-builder-distance-list">${[...levels].map((l,idx)=>`<div><b>${idx===0?'Base → Repisa 1':`Repisa ${idx} → Repisa ${idx+1}`}</b><span>${round1(l.height)} cm libres</span></div>`).join('')}</div>`:''}</div>`;return;}const joinOptions=f.material==='metal'?[['bolted','Atornillada'],['slot','Encastrada'],['welded','Soldada'],['flush','A ras']]:[['between','Entre laterales'],['overlap','Sobrepuesta'],['inset','Embutida'],['flush','A ras']];let metrics='';if(p.type==='shelf'){const nb=furnitureNeighborBounds(model,p);if(nb)metrics=`<div class="rack-builder-piece-metrics"><div><b>Separación inferior</b><span>${round1((Number(p.z||0)-(Number(nb.lower.top)||0)))} cm</span></div><div><b>Separación superior</b><span>${round1((Number(nb.upper.z||Number(model.height||200))-(Number(p.z||0)+Number(p.h||0))))} cm</span></div></div>`;}else if(p.type==='divider'){const nb=furnitureNeighborBounds(model,p);if(nb)metrics=`<div class="rack-builder-piece-metrics"><div><b>Lado izquierdo</b><span>${round1(Number(p.x||0)-(Number(nb.left.x)||0))} cm</span></div><div><b>Lado derecho</b><span>${round1((Number(nb.right.x||Number(model.width||120))-(Number(p.x||0)+Number(p.w||0))))} cm</span></div></div>`;}mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Pieza seleccionada</span><b>${escapeHtml(p.name||furniturePieceLabel(p))}</b></div><span class="tag">${furniturePieceLabel(p)}</span></div>${metrics}<div class="rack-builder-piece-grid"><label>X<input data-piece-field="x" type="number" step="0.1" value="${round1(p.x)}" ${p.carcass?'disabled':''}></label><label>Z<input data-piece-field="z" type="number" step="0.1" value="${round1(p.z)}" ${p.carcass?'disabled':''}></label><label>Ancho<input data-piece-field="w" type="number" step="0.1" value="${round1(p.w)}" ${p.autoFit?'disabled':''}></label><label>Alto<input data-piece-field="h" type="number" step="0.1" value="${round1(p.h)}" ${p.autoFit?'disabled':''}></label><label>Prof.<input data-piece-field="d" type="number" step="0.1" value="${round1(p.d)}"></label><label>Unión<select data-piece-field="join">${joinOptions.map(([v,l])=>`<option value="${v}" ${p.join===v?'selected':''}>${l}</option>`).join('')}</select></label></div><label class="rack-builder-piece-name">Nombre<input data-piece-field="name" value="${escapeHtml(p.name||'')}"></label><div class="rack-builder-inspector-actions"><button class="mini-btn" data-piece-action="duplicate">Duplicar</button><button class="mini-btn danger" data-piece-action="delete" ${p.carcass?'disabled':''}>Eliminar</button></div>`;$$('[data-piece-field]',mount).forEach(el=>{const apply=()=>{const field=el.getAttribute('data-piece-field');if(field==='name'||field==='join')p[field]=el.value;else p[field]=Math.max(['d','h','w'].includes(field)?.1:0,Number(el.value||0));if(field==='join'&&p.type==='shelf')p.autoFit='shelf';furnitureRefitModel(model);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};el.onchange=apply;if(el.tagName==='INPUT')el.oninput=apply;});const dup=mount.querySelector('[data-piece-action="duplicate"]');if(dup)dup.onclick=()=>{recordHistorySnapshot('racks');furnitureDuplicateSelectedPiece(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const del=mount.querySelector('[data-piece-action="delete"]');if(del)del.onclick=()=>{if(p.carcass)return;recordHistorySnapshot('racks');f.pieces=f.pieces.filter(x=>x.id!==p.id);f.selectedPieceId='';syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};}
+  function renderFurnitureInspector(model,mount){
+    const f=model.furniture;
+    const ids=(f.selectedPieceIds||[]).filter(id=>f.pieces.some(p=>p.id===id));
+    const selected=ids.map(id=>f.pieces.find(p=>p.id===id)).filter(Boolean);
+    const p=f.pieces.find(x=>x.id===f.selectedPieceId)||selected[0];
+    const shelfSelection=selected.filter(x=>x.type==='shelf');
+    if(selected.length>1 && shelfSelection.length===selected.length){
+      mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Selección múltiple</span><b>${selected.length} repisas</b></div><span class="tag">REPISAS</span></div><div class="rack-builder-piece-metrics"><div><b>Primera cota</b><span>${round1(Math.min(...selected.map(x=>Number(x.z||0))))} cm</span></div><div><b>Última cota</b><span>${round1(Math.max(...selected.map(x=>Number(x.z||0))))} cm</span></div></div><div class="rack-3d-inspector-actions"><button class="btn" data-multi-piece-action="distribute">Distribuir uniformemente</button><button class="mini-btn" data-multi-piece-action="same-width">Igualar ancho</button><button class="mini-btn" data-multi-piece-action="clear-selection">Limpiar selección</button></div><div class="tiny muted">La distribución conserva la primera y última repisa seleccionadas y reparte las intermedias a la misma distancia.</div>`;
+      const dis=mount.querySelector('[data-multi-piece-action="distribute"]');if(dis)dis.onclick=()=>{recordHistorySnapshot('racks');furnitureDistributeSelectedShelves(model,selected);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);renderRackModelPreview();};
+      const same=mount.querySelector('[data-multi-piece-action="same-width"]');if(same)same.onclick=()=>{recordHistorySnapshot('racks');const ref=selected[0];selected.forEach(x=>{x.x=ref.x;x.w=ref.w;x.autoFit='';});furnitureRefitModel(model);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);};
+      const clear=mount.querySelector('[data-multi-piece-action="clear-selection"]');if(clear)clear.onclick=()=>{f.selectedPieceIds=[];f.selectedPieceId='';renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);};
+      return;
+    }
+    if(!p){mount.innerHTML=`<div class="rack-builder-inspector-empty"><b>Selecciona una pieza en el 3D</b><span>Lateral: altura. Repisa: ancho y distancia desde la base. División: posición y altura. Puedes usar Ctrl/Cmd para seleccionar varias repisas.</span><div class="rack-builder-piece-metrics"><div><b>Material</b><span>${furnitureMaterialLabel(f.material)}</span></div><div><b>Grosor</b><span>${round1(f.thickness)} cm</span></div><div><b>Forma</b><span>${f.roofMode==='slope'?'Pendiente':'Una altura'}</span></div><div><b>Alturas</b><span>${round1(f.leftHeight)} / ${round1(f.rightHeight)} cm</span></div></div></div>`;return;}
+    const joinOptions=f.material==='metal'?[['bolted','Atornillada'],['slot','Encastrada'],['welded','Soldada'],['flush','A ras']]:[['between','Entre laterales'],['overlap','Sobrepuesta'],['inset','Embutida'],['flush','A ras']];
+    let specific='';
+    if(p.type==='side'){
+      const isLeft=p.autoFit==='left-side';const height=isLeft?f.leftHeight:f.rightHeight;
+      specific=`<div class="rack-3d-param-section"><b>Lateral ${isLeft?'izquierdo':'derecho'}</b><label>Altura (cm)<input data-parametric-side-height="${isLeft?'leftHeight':'rightHeight'}" type="number" min="20" step="1" value="${round1(height)}"></label><div class="tiny muted">En modo pendiente cada lateral puede tener una altura diferente.</div></div>`;
+    }else if(p.type==='shelf'){
+      const nb=furnitureNeighborBounds(model,p);specific=`<div class="rack-3d-param-section"><b>Repisa</b><div class="rack-builder-piece-metrics"><div><b>Desde la base</b><span>${round1(p.z)} cm</span></div><div><b>Libre abajo</b><span>${round1((Number(p.z||0)-(Number(nb?.lower?.top)||0)))} cm</span></div><div><b>Libre arriba</b><span>${round1((Number(nb?.upper?.z||model.height)-(Number(p.z||0)+Number(p.h||0))))} cm</span></div></div><label>Distancia desde base (cm)<input data-parametric-shelf="z" type="number" step="0.1" value="${round1(p.z)}"></label><div class="rack-builder-piece-grid"><label>Inicio X<input data-parametric-shelf="x" type="number" step="0.1" value="${round1(p.x)}"></label><label>Ancho<input data-parametric-shelf="w" type="number" min="1" step="0.1" value="${round1(p.w)}"></label></div><label class="rack-3d-check"><input type="checkbox" data-parametric-shelf-full ${p.autoFit==='shelf'?'checked':''}> Ocupar todo el ancho útil</label></div>`;
+    }else if(p.type==='divider'){
+      specific=`<div class="rack-3d-param-section"><b>División</b><div class="rack-builder-piece-grid"><label>Posición X<input data-parametric-divider="x" type="number" step="0.1" value="${round1(p.x)}"></label><label>Desde base<input data-parametric-divider="z" type="number" step="0.1" value="${round1(p.z)}"></label><label>Altura<input data-parametric-divider="h" type="number" step="0.1" value="${round1(p.h)}"></label><label>Profundidad<input data-parametric-divider="d" type="number" step="0.1" value="${round1(p.d)}"></label></div></div>`;
+    }
+    mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Pieza seleccionada</span><b>${escapeHtml(p.name||furniturePieceLabel(p))}</b></div><span class="tag">${furniturePieceLabel(p)}</span></div>${specific}<details class="rack-advanced-piece"><summary>Propiedades avanzadas</summary><div class="rack-builder-piece-grid"><label>X<input data-piece-field="x" type="number" step="0.1" value="${round1(p.x)}" ${p.carcass?'disabled':''}></label><label>Z<input data-piece-field="z" type="number" step="0.1" value="${round1(p.z)}" ${p.carcass?'disabled':''}></label><label>Ancho<input data-piece-field="w" type="number" step="0.1" value="${round1(p.w)}" ${p.autoFit?'disabled':''}></label><label>Alto<input data-piece-field="h" type="number" step="0.1" value="${round1(p.h)}" ${p.autoFit?'disabled':''}></label><label>Prof.<input data-piece-field="d" type="number" step="0.1" value="${round1(p.d)}"></label><label>Unión<select data-piece-field="join">${joinOptions.map(([v,l])=>`<option value="${v}" ${p.join===v?'selected':''}>${l}</option>`).join('')}</select></label></div></details><div class="rack-builder-inspector-actions"><button class="mini-btn" data-piece-action="duplicate">Duplicar</button><button class="mini-btn danger" data-piece-action="delete" ${p.carcass?'disabled':''}>Eliminar</button></div>`;
+    const applyAll=()=>{furnitureRefitModel(model);syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);renderRackModelPreview();};
+    $$('[data-parametric-side-height]',mount).forEach(el=>el.onchange=()=>{const key=el.getAttribute('data-parametric-side-height');f[key]=Math.max(20,Number(el.value||model.height||200));if(f.roofMode==='flat')f.leftHeight=f.rightHeight=f[key];model.height=Math.max(60,f.leftHeight,f.rightHeight);applyAll();});
+    $$('[data-parametric-shelf]',mount).forEach(el=>{el.onchange=()=>{const field=el.getAttribute('data-parametric-shelf');p.autoFit='';p[field]=Math.max(field==='w'?1:0,Number(el.value||0));applyAll();};});
+    const full=mount.querySelector('[data-parametric-shelf-full]');if(full)full.onchange=()=>{p.autoFit=full.checked?'shelf':'';applyAll();};
+    $$('[data-parametric-divider]',mount).forEach(el=>el.onchange=()=>{const field=el.getAttribute('data-parametric-divider');p[field]=Math.max((field==='h'||field==='d') ? .1 : 0, Number(el.value||0));applyAll();});
+    $$('[data-piece-field]',mount).forEach(el=>{const apply=()=>{const field=el.getAttribute('data-piece-field');if(field==='name'||field==='join')p[field]=el.value;else p[field]=Math.max(['d','h','w'].includes(field)?.1:0,Number(el.value||0));if(field==='join'&&p.type==='shelf')p.autoFit='shelf';applyAll();};el.onchange=apply;if(el.tagName==='INPUT')el.oninput=apply;});
+    const dup=mount.querySelector('[data-piece-action="duplicate"]');if(dup)dup.onclick=()=>{recordHistorySnapshot('racks');furnitureDuplicateSelectedPiece(model);renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);renderRackModelPreview();};
+    const del=mount.querySelector('[data-piece-action="delete"]');if(del)del.onclick=()=>{if(p.carcass)return;recordHistorySnapshot('racks');f.pieces=f.pieces.filter(x=>x.id!==p.id);f.selectedPieceId='';f.selectedPieceIds=[];syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);renderRackModelPreview();};
+  }
+
+  function furnitureDistributeSelectedShelves(model,shelves){
+    const arr=[...shelves].sort((a,b)=>Number(a.z||0)-Number(b.z||0)); if(arr.length<2)return;
+    const min=Number(arr[0].z||0),max=Number(arr[arr.length-1].z||0);const step=(max-min)/(arr.length-1||1);
+    arr.forEach((p,i)=>{p.z=round1(min+step*i);});furnitureRefitModel(model);
+  }
 
   function renderFurnitureLevels(model,mount){const f=model.furniture,levels=deriveFurnitureLevels(model);if(!levels.length){mount.innerHTML='<div class="tiny muted">Agrega una base y una tapa/repisas para formar compartimentos.</div>';return;}mount.innerHTML=`<div class="rack-builder-levels-head"><div><b>Niveles y slots derivados</b><span>Los slots pueden ser físicos (divisor) o lógicos para WMS.</span></div><span class="tag">Capacidad ${levels.reduce((s,l)=>s+l.slots.length,0)}</span></div><div class="rack-builder-level-grid">${[...levels].reverse().map(l=>`<div class="rack-builder-level-card"><div><b>Nivel ${l.index}</b><span>${round1(l.height)} cm libres · ${l.physicalDividerCount} divisores físicos</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><div class="rack-builder-slot-chips">${l.slots.map(s=>`<span>${s.code} · ${round1(s.width)} cm</span>`).join('')}</div><div class="rack-builder-level-actions"><button class="mini-btn" data-furniture-materialize="${l.index}">Crear divisores físicos</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Quitar divisores</button></div></div>`).join('')}</div>`;$$('[data-furniture-level-slots]',mount).forEach(inp=>{inp.onchange=()=>{const idx=Number(inp.getAttribute('data-furniture-level-slots'));f.logicalSlots[idx]=Math.max(1,Math.min(12,Number(inp.value||1)||1));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};});$$('[data-furniture-materialize]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureMaterializeLevelDividers(model,Number(btn.getAttribute('data-furniture-materialize')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});$$('[data-furniture-clear-dividers]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureClearLevelDividers(model,Number(btn.getAttribute('data-furniture-clear-dividers')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});}
 
   function furnitureLevelByIndex(model,index){return deriveFurnitureLevels(model).find(l=>l.index===Number(index))||null;}
   function furnitureClearLevelDividers(model,index){ensureRackFurnitureModel(model);const level=furnitureLevelByIndex(model,index);if(!level)return;model.furniture.pieces=model.furniture.pieces.filter(p=>!(p.type==='divider'&&Number(p.z||0)<=level.z0+1.5&&Number(p.z||0)+Number(p.h||0)>=level.z1-1.5));}
   function furnitureMaterializeLevelDividers(model,index){ensureRackFurnitureModel(model);const f=model.furniture,level=furnitureLevelByIndex(model,index);if(!level)return;const desired=Math.max(1,Number(f.logicalSlots?.[index]||level.slots.length||1));furnitureClearLevelDividers(model,index);if(desired<=1)return;const W=Number(model.width||120),D=Number(model.depth||40),t=Math.max(.3,Number(f.thickness||1.8)),inner=Math.max(1,W-2*t),divT=f.material==='metal'?Math.max(.8,Math.min(2,t*.45)):t;for(let i=1;i<desired;i++){const cx=t+inner*i/desired;f.pieces.push(furnitureMakePiece('divider',{name:`Divisor N${index}.${i}`,x:cx-divT/2,y:0,z:level.z0,w:divT,d:D,h:level.height,join:f.material==='metal'?'slot':'between'}));}}
+
+  let rackFurniture3DEngine = null;
+
+  function disposeRackFurniture3DEngine(){
+    const e=rackFurniture3DEngine;if(!e)return;
+    try{cancelAnimationFrame(e.raf||0);}catch{}
+    try{e.resizeObserver?.disconnect();}catch{}
+    try{e.scene?.traverse(o=>{o.geometry?.dispose?.();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>m.dispose?.());}});}catch{}
+    try{e.renderer?.dispose?.();e.renderer?.forceContextLoss?.();}catch{}
+    try{e.renderer?.domElement?.remove();}catch{}
+    rackFurniture3DEngine=null;
+  }
+
+  function resetRackFurniture3DCamera(modelId){
+    const e=rackFurniture3DEngine;if(!e||e.modelId!==modelId)return;
+    const model=rackModel(modelId);if(!model)return;const W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200);
+    e.target.set(W/2,H*.45,D/2);e.yaw=-0.75;e.pitch=.42;e.distance=Math.max(W,D,H)*1.55;updateRackFurniture3DCamera(e);requestRackFurniture3DRender(e);
+  }
+
+  function updateRackFurniture3DCamera(e){
+    const cp=Math.cos(e.pitch),sp=Math.sin(e.pitch),cy=Math.cos(e.yaw),sy=Math.sin(e.yaw),d=e.distance;
+    e.camera.position.set(e.target.x+d*cp*cy,e.target.y+d*sp,e.target.z+d*cp*sy);e.camera.lookAt(e.target);
+  }
+
+  function requestRackFurniture3DRender(e){if(!e||e.raf)return;e.raf=requestAnimationFrame(()=>{e.raf=0;if(e.renderer&&e.scene&&e.camera)e.renderer.render(e.scene,e.camera);});}
+
+  async function renderRackFurniture3D(modelId){
+    const host=document.getElementById('rackFurniture3D'),model=rackModel(modelId);if(!host||!model?.furniture?.enabled)return;
+    let THREE;try{THREE=await loadThreeRuntime();}catch(err){host.innerHTML=`<div class="rack-3d-error">No se pudo cargar el motor 3D.<br><small>${escapeHtml(err?.message||String(err))}</small></div>`;return;}
+    if(!host.isConnected)return;
+    let e=rackFurniture3DEngine;
+    if(!e||e.host!==host||e.modelId!==modelId){disposeRackFurniture3DEngine();e=createRackFurniture3DEngine(THREE,host,model);rackFurniture3DEngine=e;}
+    rebuildRackFurniture3DScene(e,model);requestRackFurniture3DRender(e);
+  }
+
+  function createRackFurniture3DEngine(THREE,host,model){
+    host.innerHTML='';const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setPixelRatio(Math.min(1.5,window.devicePixelRatio||1));renderer.setClearColor(0x07131d,1);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.localClippingEnabled=true;host.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x07131d);const camera=new THREE.PerspectiveCamera(34,1,.1,10000);const target=new THREE.Vector3();
+    scene.add(new THREE.HemisphereLight(0xd9efff,0x24313b,1.45));const key=new THREE.DirectionalLight(0xffffff,1.55);key.position.set(250,360,220);key.castShadow=true;key.shadow.mapSize.set(1024,1024);scene.add(key);const fill=new THREE.DirectionalLight(0x89b8d8,.65);fill.position.set(-220,160,-180);scene.add(fill);
+    const root=new THREE.Group();root.name='furnitureRoot';scene.add(root);const grid=new THREE.GridHelper(700,35,0x355064,0x1c3444);grid.position.y=-.03;scene.add(grid);
+    const e={THREE,host,renderer,scene,camera,target,root,raycaster:new THREE.Raycaster(),pointer:new THREE.Vector2(),modelId:model.id,yaw:-.75,pitch:.42,distance:320,raf:0,drag:null,orbit:null,meshByPiece:new Map()};
+    const resize=()=>{const w=Math.max(320,host.clientWidth),h=Math.max(360,host.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestRackFurniture3DRender(e);};resize();e.resizeObserver=new ResizeObserver(resize);e.resizeObserver.observe(host);
+    renderer.domElement.style.touchAction='none';
+    renderer.domElement.addEventListener('pointerdown',ev=>rackFurniture3DPointerDown(e,ev));
+    renderer.domElement.addEventListener('wheel',ev=>{ev.preventDefault();e.distance=Math.max(45,Math.min(1600,e.distance*(ev.deltaY>0?1.1:.9)));updateRackFurniture3DCamera(e);requestRackFurniture3DRender(e);},{passive:false});
+    resetRackFurniture3DCamera(model.id);return e;
+  }
+
+  function rackFurnitureMaterialSet(THREE,material,selected=false){
+    const palette=material==='metal'?{main:0x607f98,edge:0x9ec1d7}:material==='wood'?{main:0xb77d43,edge:0xe3b57e}:{main:0xdce5ed,edge:0xffffff};
+    return new THREE.MeshStandardMaterial({color:selected?0x55f3af:palette.main,roughness:material==='metal'?.38:.72,metalness:material==='metal'?.65:.05,emissive:selected?0x0c3f2c:0x000000,emissiveIntensity:selected?.55:0});
+  }
+
+  function clearRackFurniture3DRoot(e){
+    e.root.children.slice().forEach(o=>{e.root.remove(o);o.traverse?.(x=>{x.geometry?.dispose?.();if(x.material){const ms=Array.isArray(x.material)?x.material:[x.material];ms.forEach(m=>m.dispose?.());}});});e.meshByPiece.clear();
+  }
+
+  function rebuildRackFurniture3DScene(e,model){
+    const {THREE}=e;clearRackFurniture3DRoot(e);ensureRackFurnitureModel(model);furnitureRefitModel(model);const f=model.furniture,W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200),selectedIds=new Set(f.selectedPieceIds||[]);if(f.selectedPieceId)selectedIds.add(f.selectedPieceId);
+    const pieces=getFurnitureRenderPieces(model);
+    const topPiece=pieces.find(p=>p.type==='top'&&p.slopeTop&&f.roofMode==='slope');
+    pieces.forEach(p=>{
+      if(p===topPiece){const lh=Number(f.leftHeight||H),rh=Number(f.rightHeight||H),dx=Math.max(1,W-2*f.thickness),dh=rh-lh,len=Math.sqrt(dx*dx+dh*dh),angle=Math.atan2(dh,dx);const geom=new THREE.BoxGeometry(len,Math.max(.1,p.h),D);const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set(W/2,(lh+rh)/2-f.thickness/2,D/2);mesh.rotation.z=angle;mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
+      if(p.type==='brace'){const x1=Number(p.x||0),z1=Number(p.z||0),x2=Number(p.x2||p.x+p.w||0),z2=Number(p.z2||p.z+p.h||0),dx=x2-x1,dz=z2-z1,len=Math.sqrt(dx*dx+dz*dz);const geom=new THREE.BoxGeometry(len,Math.max(.5,Number(p.d||1)),Math.max(.5,Number(p.d||1)));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set((x1+x2)/2,(z1+z2)/2,D*.05);mesh.rotation.z=Math.atan2(dz,dx);mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
+      const geom=new THREE.BoxGeometry(Math.max(.1,p.w),Math.max(.1,p.h),Math.max(.1,p.d));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set(Number(p.x||0)+p.w/2,Number(p.z||0)+p.h/2,Number(p.y||0)+p.d/2);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);
+      if(selectedIds.has(p.id)){const edges=new THREE.EdgesGeometry(geom);const line=new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color:0x75ffc2}));line.position.copy(mesh.position);line.rotation.copy(mesh.rotation);e.root.add(line);}
+    });
+    // translucent WMS compartments
+    deriveFurnitureLevels(model).forEach(l=>l.slots.forEach(slot=>{const geom=new THREE.BoxGeometry(Math.max(.1,slot.width-1),Math.max(.1,l.height-1),Math.max(1,D*.86));const mat=new THREE.MeshBasicMaterial({color:0x3ba7db,transparent:true,opacity:.035,depthWrite:false});const m=new THREE.Mesh(geom,mat);m.position.set((slot.x0+slot.x1)/2,(l.z0+l.z1)/2,D*.5);m.userData={nonSelectable:true};e.root.add(m);}));
+    // axes labels via simple helper
+    const axes=new THREE.AxesHelper(Math.max(35,Math.min(W,H,D)));axes.position.set(0,0,0);e.root.add(axes);
+    e.target.set(W/2,Math.max(20,H*.42),D/2);updateRackFurniture3DCamera(e);
+  }
+
+  function rackFurniture3DHit(e,ev){
+    const rect=e.renderer.domElement.getBoundingClientRect();e.pointer.x=((ev.clientX-rect.left)/rect.width)*2-1;e.pointer.y=-((ev.clientY-rect.top)/rect.height)*2+1;e.raycaster.setFromCamera(e.pointer,e.camera);return e.raycaster.intersectObjects([...e.meshByPiece.values()],false)[0]||null;
+  }
+
+  function rackFurniture3DPointerDown(e,ev){
+    const model=rackModel(e.modelId);if(!model)return;const f=model.furniture,hit=rackFurniture3DHit(e,ev);const start={x:ev.clientX,y:ev.clientY};
+    if(hit?.object?.userData?.pieceId){
+      const id=hit.object.userData.pieceId,p=f.pieces.find(x=>x.id===id);if(!p)return;
+      if(ev.ctrlKey||ev.metaKey){const set=new Set(f.selectedPieceIds||[]);if(set.has(id))set.delete(id);else set.add(id);f.selectedPieceIds=[...set];f.selectedPieceId=id;}else{f.selectedPieceId=id;f.selectedPieceIds=[id];}
+      renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);
+      if(!p.carcass&&(p.type==='shelf'||p.type==='divider')){
+        const base={clientX:ev.clientX,clientY:ev.clientY,x:Number(p.x||0),z:Number(p.z||0)};const move=mv=>{const rect=e.renderer.domElement.getBoundingClientRect();if(p.type==='shelf'){const dz=-(mv.clientY-base.clientY)/rect.height*Math.max(80,Number(model.height||200)*1.35);p.autoFit='';p.z=Math.max(0,Math.min(furnitureShelfMaxZ(model,p),base.z+dz));p.z=furnitureSnapValue(p.z,f.pieces.filter(x=>x.id!==p.id&&['base','shelf','top'].includes(x.type)).flatMap(x=>[x.z,x.z+x.h]),Math.max(.1,f.snap||1));}else{const dx=(mv.clientX-base.clientX)/rect.width*Math.max(80,Number(model.width||120)*1.35);p.x=Math.max(0,Math.min(Number(model.width||120)-p.w,base.x+dx));p.x=furnitureSnapValue(p.x,f.pieces.filter(x=>x.id!==p.id).flatMap(x=>[x.x,x.x+x.w]),Math.max(.1,f.snap||1));}furnitureRefitModel(model);syncFurnitureModelToLegacy(model);rebuildRackFurniture3DScene(e,model);requestRackFurniture3DRender(e);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);saveRackModels();};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
+      }
+      return;
+    }
+    e.orbit={x:ev.clientX,y:ev.clientY,yaw:e.yaw,pitch:e.pitch};const move=mv=>{e.yaw=e.orbit.yaw-(mv.clientX-e.orbit.x)*.008;e.pitch=Math.max(-.05,Math.min(1.35,e.orbit.pitch+(mv.clientY-e.orbit.y)*.006));updateRackFurniture3DCamera(e);requestRackFurniture3DRender(e);};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
+  }
 
   function round1(v){return Math.round((Number(v)||0)*10)/10;}
 

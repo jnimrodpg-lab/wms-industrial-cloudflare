@@ -2,7 +2,7 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v142-unified-rack-editor';
+      const localUrl = './vendor/three.module.min.js?v=wms-v143-3d-furniture-engine';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;

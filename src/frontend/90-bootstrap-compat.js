@@ -1,4 +1,4 @@
-console.info('*** WMS v142 UNIFIED RACK EDITOR + DIRECT FURNITURE + LEVEL SLOTS ACTIVE ***');
+console.info('*** WMS v143 3D FURNITURE ENGINE + PARAMETRIC RACK EDITOR ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

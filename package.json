@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "private": true,
-  "description": "WMS Industrial v142 Unified Rack Editor: modelo, dimensiones, niveles, slots y construcción física dentro del mismo editor.",
+  "description": "WMS Industrial v143 3D Furniture Engine: editor paramétrico 3D de racks/muebles con piezas seleccionables, pendientes, materiales y repisas editables.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

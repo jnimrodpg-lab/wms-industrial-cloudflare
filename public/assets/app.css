@@ -5843,3 +5843,23 @@ body[data-wms-layout-workspace="racks"] .layout-wall-corner-closure{pointer-even
 .rack-builder-distance-list b,.rack-builder-piece-metrics b{font-size:9px;color:#a9bdc8}
 .rack-builder-distance-list span,.rack-builder-piece-metrics span{font-size:10px;font-weight:900;color:#ffd66a}
 @media(max-width:1400px){.rack-library-builder-section .rack-builder-workspace{grid-template-columns:1fr}.rack-library-builder-section .rack-builder-inspector{min-height:190px}.rack-library-builder-section .rack-builder-settings{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* WMS v143 — 3D Furniture Engine */
+.rack-3d-engine{background:linear-gradient(180deg,rgba(17,45,52,.18),rgba(5,18,28,.34))!important}
+.rack-3d-compact-bar{display:grid;grid-template-columns:1.25fr 1fr 1.1fr 1fr 1fr;gap:8px;margin:10px 0;padding:10px;border:1px solid rgba(105,222,181,.16);border-radius:12px;background:rgba(5,18,28,.55)}
+.rack-3d-compact-bar label,.rack-3d-param-section label{display:grid;gap:4px;font-size:9px;font-weight:800;text-transform:uppercase;color:#86a1b2}
+.rack-3d-compact-bar input,.rack-3d-compact-bar select,.rack-3d-param-section input{width:100%;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:#091b29;color:#eef8fb}
+.rack-3d-toolbar{margin-bottom:10px}.rack-3d-workspace{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(250px,.7fr);gap:10px;min-height:590px}
+.rack-3d-stage-wrap,.rack-3d-inspector{border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(3,13,21,.78);overflow:hidden}
+.rack-furniture-3d-stage{position:relative;width:100%;height:535px;min-height:440px;background:radial-gradient(circle at 50% 38%,rgba(39,84,107,.20),transparent 55%),#07131d}
+.rack-furniture-3d-stage canvas{display:block;width:100%;height:100%;cursor:grab}.rack-furniture-3d-stage canvas:active{cursor:grabbing}
+.rack-3d-stage-hint{padding:7px 11px;border-top:1px solid rgba(255,255,255,.06);font-size:9px;color:#7f9bab}
+.rack-3d-error{display:grid;place-items:center;height:100%;padding:30px;text-align:center;color:#ffb5b8}
+.rack-3d-param-section{display:grid;gap:9px;margin-bottom:12px;padding:10px;border:1px solid rgba(104,255,188,.16);border-radius:11px;background:rgba(68,206,143,.045)}
+.rack-3d-param-section>b{font-size:11px}.rack-3d-check{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:7px!important;text-transform:none!important}.rack-3d-check input{width:auto!important}
+.rack-3d-inspector-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}.rack-advanced-piece{margin-top:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:8px}.rack-advanced-piece summary{cursor:pointer;font-size:9px;font-weight:800;color:#88a4b5;margin-bottom:8px}
+.rack-technical-view{margin-top:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.015)}.rack-technical-view>summary{cursor:pointer;padding:9px 11px;font-size:10px;font-weight:800;color:#8da7b7}.rack-technical-view .rack-builder-front-wrap{border:0;border-top:1px solid rgba(255,255,255,.07);border-radius:0}
+.rack-builder-piece-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px}.rack-builder-piece-metrics>div{display:grid;gap:2px;padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.035)}.rack-builder-piece-metrics b{font-size:8px;color:#87a2b4;text-transform:uppercase}.rack-builder-piece-metrics span{font-size:11px;font-weight:800;color:#f0d47a}
+@media(max-width:1400px){.rack-3d-compact-bar{grid-template-columns:repeat(3,minmax(0,1fr))}.rack-3d-workspace{grid-template-columns:1fr}.rack-furniture-3d-stage{height:500px}}
+@media(max-width:760px){.rack-3d-compact-bar{grid-template-columns:1fr 1fr}.rack-furniture-3d-stage{height:420px}.rack-builder-piece-metrics{grid-template-columns:1fr}}
