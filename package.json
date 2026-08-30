@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "private": true,
-  "description": "WMS Industrial v143 3D Furniture Engine: editor paramétrico 3D de racks/muebles con piezas seleccionables, pendientes, materiales y repisas editables.",
+  "description": "WMS Industrial v144 3D Clarity + Collisions: editor 3D más claro, sin preview lateral, con inserción guiada de repisas/divisiones y colisión vertical de divisores entre repisas.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

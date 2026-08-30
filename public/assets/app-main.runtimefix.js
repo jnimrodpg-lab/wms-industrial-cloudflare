@@ -13884,13 +13884,13 @@ function getSheetBranchOpenMap(){
     const active = rackModel(appState.selectedModelId) || appState.models[0];
 
     contentWrap.innerHTML = `
-      <div class="rack-models-page">
-        <div class="rack-models-main">
+      <div class="rack-models-page rack-models-page-unified">
+        <div class="rack-models-main rack-models-main-full">
           <section class="rack-block">
             <div class="rack-block-head">
               <div>
                 <h3>Acciones del modelo</h3>
-                <div class="rack-block-sub">Selecciona un modelo desde la biblioteca y edítalo directamente ahí. Los cambios afectan el preview en tiempo real.</div>
+                <div class="rack-block-sub">Selecciona un modelo desde la biblioteca y edítalo directamente ahí. El editor 3D ahora es el foco principal.</div>
               </div>
               <div class="tag-row">
                 <span class="tag">Modelo activo</span>
@@ -13905,7 +13905,6 @@ function getSheetBranchOpenMap(){
             </div>
           </section>
 
-
           <section class="rack-block rack-library-editor-block">
             <div class="rack-block-head">
               <div>
@@ -13914,24 +13913,12 @@ function getSheetBranchOpenMap(){
               </div>
               <div class="tag-row">
                 <span class="tag">${appState.models.length} modelos</span>
-                <span class="tag">Editor integrado</span>
+                <span class="tag">Editor 3D integrado</span>
               </div>
             </div>
             <div id="modelsList" class="model-library library-list model-library-scroll library-master"></div>
           </section>
         </div>
-
-        <aside class="rack-models-side">
-          <section class="rack-block preview-box-3d">
-            <div class="rack-block-head">
-              <div>
-                <h3>Preview del modelo</h3>
-                <div class="rack-block-sub">Vista grande y centrada para revisar la estructura del modelo activo.</div>
-              </div>
-            </div>
-            <div class="detail-stage is-navigable" id="rackPreviewStage"><svg id="rackModelSvg" viewBox="0 0 520 480"></svg></div>
-          </section>
-        </aside>
       </div>`;
 
     detailWrap.innerHTML = '';
@@ -14707,6 +14694,33 @@ function getSheetBranchOpenMap(){
     return Math.max(0,Math.min(furnitureRoofHeightAtX(model,x0),furnitureRoofHeightAtX(model,x1))-Math.max(t,Number(piece?.h||t)));
   }
 
+  function furnitureDividerSpanForRange(model,z0,z1){
+    const bounds=furnitureHorizontalBoundaries(model);
+    const center=(Number(z0||0)+Number(z1||0))/2;
+    let best=null,bestDist=1e9;
+    for(let i=0;i<bounds.length-1;i++){
+      const lower=bounds[i],upper=bounds[i+1];
+      const a=Math.max(0,Number(lower.top||lower.z||0)),b=Math.max(a,Number(upper.z||upper.top||0));
+      if(b-a<4) continue;
+      const contains=center>=a-0.01 && center<=b+0.01;
+      const dist=contains?0:Math.min(Math.abs(center-a),Math.abs(center-b));
+      if(dist<bestDist){bestDist=dist;best={z0:a,z1:b,height:b-a};}
+    }
+    return best || {z0:0,z1:Number(model.height||200),height:Number(model.height||200)};
+  }
+
+  function furnitureConstrainDivider(model,p){
+    const f=model.furniture,W=Math.max(30,Number(model.width||120)),D=Math.max(20,Number(model.depth||40)),t=Math.max(.3,Number(f.thickness||1.8));
+    const span=furnitureDividerSpanForRange(model,Number(p.z||0),Number(p.z||0)+Number(p.h||0));
+    p.z=span.z0;
+    p.h=Math.max(.1,span.height);
+    p.y=0;
+    p.d=D;
+    p.w=Math.max(.1,Math.min(W,Number(p.w||t)));
+    p.x=Math.max(t,Math.min(W-t-p.w,Number(p.x||0)));
+    return p;
+  }
+
   function furnitureRefitModel(model){
     ensureRackFurnitureModel(model); const f=model.furniture; if(!f.enabled)return;
     const W=Math.max(30,Number(model.width||120)),D=Math.max(20,Number(model.depth||40)),H=Math.max(60,Number(model.height||200)),t=Math.max(.3,Number(f.thickness||1.8));
@@ -14728,6 +14742,7 @@ function getSheetBranchOpenMap(){
       p.x=Math.max(0,Math.min(W-Math.min(W,p.w),Number(p.x||0))); p.y=Math.max(0,Math.min(D-Math.min(D,p.d),Number(p.y||0))); p.z=Math.max(0,Math.min(H-Math.min(H,p.h),Number(p.z||0)));
       p.w=Math.max(.1,Math.min(W-p.x,Number(p.w||1)));p.d=Math.max(.1,Math.min(D-p.y,Number(p.d||1)));p.h=Math.max(.1,Math.min(H-p.z,Number(p.h||1)));
       if(p.type==='shelf'&&f.roofMode==='slope')p.z=Math.min(p.z,furnitureShelfMaxZ(model,p));
+      if(p.type==='divider') furnitureConstrainDivider(model,p);
     });
   }
 
@@ -14795,7 +14810,7 @@ function getSheetBranchOpenMap(){
     if(!f.enabled){return `<section class="rack-block rack-builder-pro"><div class="rack-block-head"><div><h3>Motor 3D de mueble</h3><div class="rack-block-sub">Convierte este modelo para editarlo directamente en 3D.</div></div><span class="tag">3D Furniture Engine</span></div><div class="rack-builder-empty"><b>Este modelo aún usa el generador clásico.</b><span>La conversión mantiene dimensiones, niveles y slots.</span><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Abrir en motor 3D</button></div></section>`;}
     const material=furnitureMaterialLabel(f.material),pieceCount=(f.pieces||[]).length,levels=deriveFurnitureLevels(model);
     return `<section class="rack-block rack-builder-pro rack-3d-engine" data-furniture-model="${model.id}">
-      <div class="rack-block-head"><div><h3>Editor 3D del mueble</h3><div class="rack-block-sub">Selecciona una pieza en el 3D y edítala desde el inspector. Repisas y divisiones también se pueden arrastrar directamente.</div></div><div class="tag-row"><span class="tag">${material}</span><span class="tag">${pieceCount} piezas</span><span class="tag">${levels.length} niveles</span></div></div>
+      <div class="rack-block-head"><div><h3>Editor 3D del mueble</h3><div class="rack-block-sub">Más visual y directo: la vista 3D está a la izquierda, con mejor contraste y piezas controladas por colisión.</div></div><div class="tag-row"><span class="tag">${material}</span><span class="tag">${pieceCount} piezas</span><span class="tag">${levels.length} niveles</span></div></div>
       <div class="rack-3d-compact-bar">
         <label>Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
         <label>Grosor / perfil (cm)<input type="number" min="0.3" step="0.1" data-furniture-field="thickness" data-mid="${model.id}" value="${Number(f.thickness||1.8)}"></label>
@@ -14803,20 +14818,36 @@ function getSheetBranchOpenMap(){
         <label>Altura izq. (cm)<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label>
         <label>Altura der. (cm)<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label>
       </div>
+      <div class="rack-quick-place-bar">
+        <div class="rack-quick-place-group">
+          <b>Insertar repisa</b>
+          <label>Z desde base (cm)<input type="number" step="0.1" data-rackbuilder-ui="shelfZ" value="${round1(appState.ui?.rackBuilder?.shelfZ||80)}"></label>
+          <button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">Agregar repisa</button>
+        </div>
+        <div class="rack-quick-place-group">
+          <b>Insertar división vertical</b>
+          <label>X (cm)<input type="number" step="0.1" data-rackbuilder-ui="dividerX" value="${round1(appState.ui?.rackBuilder?.dividerX||60)}"></label>
+          <label>Desde Z (cm)<input type="number" step="0.1" data-rackbuilder-ui="dividerFrom" value="${round1(appState.ui?.rackBuilder?.dividerFrom||0)}"></label>
+          <label>Hasta Z (cm)<input type="number" step="0.1" data-rackbuilder-ui="dividerTo" value="${round1(appState.ui?.rackBuilder?.dividerTo||120)}"></label>
+          <button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">Agregar división</button>
+        </div>
+        <div class="rack-quick-place-group compact">
+          <b>Snap</b>
+          <label>Precisión (cm)<input type="number" min="0.1" step="0.1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label>
+        </div>
+      </div>
       <div class="rack-builder-toolbar rack-3d-toolbar">
         <button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Rehacer estructura</button>
-        <button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">+ Repisa</button>
-        <button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ División</button>
         <button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button>
         <button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar selección</button>
         <button class="mini-btn" data-furniture-action="distribute-shelves" data-mid="${model.id}">Distribuir repisas</button>
         <button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar cámara</button>
       </div>
-      <div class="rack-3d-workspace">
-        <div class="rack-3d-stage-wrap">
-          <div class="rack-builder-view-head"><b>Construcción 3D</b><span>Clic selecciona · arrastra repisa/división · arrastra fondo para orbitar · rueda para zoom</span></div>
-          <div id="rackFurniture3D" class="rack-furniture-3d-stage" data-model-id="${model.id}"></div>
-          <div class="rack-3d-stage-hint">Ctrl/Cmd + clic selecciona varias repisas para distribuirlas uniformemente.</div>
+      <div class="rack-3d-workspace rack-3d-workspace-editor-first">
+        <div class="rack-3d-stage-wrap rack-3d-stage-wrap-bright">
+          <div class="rack-builder-view-head"><b>Construcción 3D</b><span>Clic selecciona · arrastra repisa/división · divisiones se ajustan al espacio interno entre repisas</span></div>
+          <div id="rackFurniture3D" class="rack-furniture-3d-stage rack-furniture-3d-stage-bright" data-model-id="${model.id}"></div>
+          <div class="rack-3d-stage-hint">Ctrl/Cmd + clic selecciona varias repisas para distribuirlas uniformemente. Las divisiones no pueden atravesar repisas.</div>
         </div>
         <aside id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></aside>
       </div>
@@ -14824,6 +14855,7 @@ function getSheetBranchOpenMap(){
       <div id="rackBuilderLevels" class="rack-builder-levels"></div>
     </section>`;
   }
+
 
   function bindIntegratedRackBuilder(modelId){
     const model=rackModel(modelId);
@@ -14853,6 +14885,7 @@ function getSheetBranchOpenMap(){
       else if(a==='clear'){m.furniture.pieces=[];m.furniture.selectedPieceId='';m.furniture.selectedPieceIds=[];m.furniture.logicalSlots={};}
       syncFurnitureModelToLegacy(m);saveRackModels();rerenderRackEditorPreservingState({focusId:id});};});
     $$('[data-furniture-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;ensureRackFurnitureModel(m);const field=el.getAttribute('data-furniture-field');if(field==='material'){m.furniture.material=el.value;m.style=furnitureMaterialStyle(el.value);if(el.value==='metal'&&Number(m.furniture.thickness)<2)m.furniture.thickness=4;}else if(field==='roofMode'){m.furniture.roofMode=el.value==='slope'?'slope':'flat';if(m.furniture.roofMode==='flat')m.furniture.rightHeight=m.furniture.leftHeight;}else if(field==='leftHeight'||field==='rightHeight'){m.furniture[field]=Math.max(20,Number(el.value||m.height||200));if(m.furniture.roofMode==='flat')m.furniture.leftHeight=m.furniture.rightHeight=m.furniture[field];m.height=Math.max(60,m.furniture.leftHeight,m.furniture.rightHeight);}else m.furniture[field]=Math.max(field==='snap'?.1:.2,Number(el.value||1));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackFurniture3D(m.id);renderRackModelPreview();};el.oninput=apply;el.onchange=apply;});
+    $$('[data-rackbuilder-ui]').forEach(el=>{const apply=()=>{if(!appState.ui)appState.ui={};if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={};const key=el.getAttribute('data-rackbuilder-ui');appState.ui.rackBuilder[key]=Math.max(0,Number(el.value||0));};el.oninput=apply;el.onchange=apply;});
     $$('[data-furniture-model-field]').forEach(el=>{const apply=()=>{const m=rackModel(el.getAttribute('data-mid'));if(!m)return;const f=el.getAttribute('data-furniture-model-field');m[f]=Math.max(f==='height'?60:f==='depth'?20:30,Number(el.value||m[f]||100));furnitureRefitModel(m);syncFurnitureModelToLegacy(m);renderRackFurnitureBuilder(m.id);renderRackModelPreview();};el.oninput=apply;});
     [['rackBuilderShelfZ','shelfZ'],['rackBuilderDividerX','dividerX'],['rackBuilderDividerFrom','dividerFrom'],['rackBuilderDividerTo','dividerTo']].forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.oninput=()=>{appState.ui.rackBuilder[key]=Number(el.value||0);};});
   }
@@ -14885,8 +14918,8 @@ function getSheetBranchOpenMap(){
     if(!model)return;const racks=Array.isArray(appState.layout?.racks)?appState.layout.racks:[];let changed=0;racks.forEach(r=>{if(r.modelId!==model.id)return;r.w=Number(model.width||r.w||120);r.h=Number(model.depth||r.h||40);r.rackHeight=Number(model.height||r.rackHeight||200);changed++;});if(changed){try{persistActiveLayout();}catch{} if(typeof showToast==='function')showToast(`${changed} instancia${changed===1?'':'s'} actualizada${changed===1?'':'s'} desde el modelo.`);}
   }
 
-  function furnitureAddShelf(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const t=f.thickness,W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200),z=Math.max(t,Math.min(H-t*2,Number(appState.ui?.rackBuilder?.shelfZ||H/2)));const p=furnitureMakePiece('shelf',{name:`Repisa ${(f.pieces.filter(x=>x.type==='shelf').length+1)}`,x:t,y:0,z,w:Math.max(1,W-2*t),d:D,h:t,join:'between',autoFit:'shelf'});f.pieces.push(p);f.selectedPieceId=p.id;}
-  function furnitureAddDivider(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const t=f.thickness,W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200);let x=Math.max(t,Math.min(W-t*2,Number(appState.ui?.rackBuilder?.dividerX||W/2))),z0=Math.max(0,Math.min(H-4,Number(appState.ui?.rackBuilder?.dividerFrom||0))),z1=Math.max(z0+4,Math.min(H,Number(appState.ui?.rackBuilder?.dividerTo||H)));const p=furnitureMakePiece('divider',{name:`División ${(f.pieces.filter(x=>x.type==='divider').length+1)}`,x:x-t/2,y:0,z:z0,w:t,d:D,h:z1-z0,join:'between'});f.pieces.push(p);f.selectedPieceId=p.id;}
+  function furnitureAddShelf(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const t=f.thickness,W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200),z=Math.max(t,Math.min(H-t*2,Number(appState.ui?.rackBuilder?.shelfZ||H/2)));const p=furnitureMakePiece('shelf',{name:`Repisa ${(f.pieces.filter(x=>x.type==='shelf').length+1)}`,x:t,y:0,z,w:Math.max(1,W-2*t),d:D,h:t,join:'between',autoFit:'shelf'});p.z=Math.min(p.z,furnitureShelfMaxZ(model,p));f.pieces.push(p);f.selectedPieceId=p.id;}
+  function furnitureAddDivider(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const t=f.thickness,W=Number(model.width||120),D=Number(model.depth||40),H=Number(model.height||200);let x=Math.max(t,Math.min(W-t*2,Number(appState.ui?.rackBuilder?.dividerX||W/2))),z0=Math.max(0,Math.min(H-4,Number(appState.ui?.rackBuilder?.dividerFrom||0))),z1=Math.max(z0+4,Math.min(H,Number(appState.ui?.rackBuilder?.dividerTo||H)));const p=furnitureMakePiece('divider',{name:`División ${(f.pieces.filter(x=>x.type==='divider').length+1)}`,x:x-t/2,y:0,z:z0,w:t,d:D,h:z1-z0,join:'between'});furnitureConstrainDivider(model,p);f.pieces.push(p);f.selectedPieceId=p.id;}
   function furnitureAddBack(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const old=f.pieces.find(p=>p.type==='back');if(old){f.selectedPieceId=old.id;return;}const p=furnitureMakePiece('back',{name:'Fondo',x:0,y:0,z:0,w:Number(model.width||120),d:f.backThickness,h:Number(model.height||200),join:'inset',autoFit:'full-back'});f.pieces.unshift(p);f.selectedPieceId=p.id;}
   function furnitureAddBrace(model){ensureRackFurnitureModel(model);const f=model.furniture;f.enabled=true;const p=furnitureMakePiece('brace',{name:`Refuerzo ${(f.pieces.filter(x=>x.type==='brace').length+1)}`,x:Number(model.width||120)*.15,y:0,z:Number(model.height||200)*.15,w:Number(model.width||120)*.7,d:Math.max(1,f.thickness),h:Math.max(1,f.thickness),join:'bolted',x2:Number(model.width||120)*.85,z2:Number(model.height||200)*.85});f.pieces.push(p);f.selectedPieceId=p.id;}
   function furnitureDuplicateSelectedPiece(model){ensureRackFurnitureModel(model);const f=model.furniture,p=f.pieces.find(x=>x.id===f.selectedPieceId);if(!p)return;const cp={...clone(p),id:furnitureId(p.type),name:`${p.name} copia`,x:Number(p.x||0)+Math.max(2,f.snap*2),z:Number(p.z||0)+Math.max(2,f.snap*2),carcass:false,autoFit:p.type==='shelf'?'shelf':''};f.pieces.push(cp);f.selectedPieceId=cp.id;furnitureRefitModel(model);}
@@ -15047,10 +15080,10 @@ function getSheetBranchOpenMap(){
   }
 
   function createRackFurniture3DEngine(THREE,host,model){
-    host.innerHTML='';const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setPixelRatio(Math.min(1.5,window.devicePixelRatio||1));renderer.setClearColor(0x07131d,1);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.localClippingEnabled=true;host.appendChild(renderer.domElement);
-    const scene=new THREE.Scene();scene.background=new THREE.Color(0x07131d);const camera=new THREE.PerspectiveCamera(34,1,.1,10000);const target=new THREE.Vector3();
-    scene.add(new THREE.HemisphereLight(0xd9efff,0x24313b,1.45));const key=new THREE.DirectionalLight(0xffffff,1.55);key.position.set(250,360,220);key.castShadow=true;key.shadow.mapSize.set(1024,1024);scene.add(key);const fill=new THREE.DirectionalLight(0x89b8d8,.65);fill.position.set(-220,160,-180);scene.add(fill);
-    const root=new THREE.Group();root.name='furnitureRoot';scene.add(root);const grid=new THREE.GridHelper(700,35,0x355064,0x1c3444);grid.position.y=-.03;scene.add(grid);
+    host.innerHTML='';const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});renderer.setPixelRatio(Math.min(1.5,window.devicePixelRatio||1));renderer.setClearColor(0x0f2130,1);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.localClippingEnabled=true;host.appendChild(renderer.domElement);
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x0f2130);const camera=new THREE.PerspectiveCamera(34,1,.1,10000);const target=new THREE.Vector3();
+    scene.add(new THREE.HemisphereLight(0xf2fbff,0x2f3f4b,1.75));const key=new THREE.DirectionalLight(0xffffff,1.85);key.position.set(250,360,220);key.castShadow=true;key.shadow.mapSize.set(1024,1024);scene.add(key);const fill=new THREE.DirectionalLight(0xbfe4ff,0.95);fill.position.set(-220,160,-180);scene.add(fill);
+    const root=new THREE.Group();root.name='furnitureRoot';scene.add(root);const grid=new THREE.GridHelper(700,35,0x4e8ab5,0x2a516b);grid.position.y=-.03;scene.add(grid);const floorMat=new THREE.MeshBasicMaterial({color:0x0f2a3a,transparent:true,opacity:0.95});const floor=new THREE.Mesh(new THREE.PlaneGeometry(760,760),floorMat);floor.rotation.x=-Math.PI/2;floor.position.set(160,-0.06,80);scene.add(floor);
     const e={THREE,host,renderer,scene,camera,target,root,raycaster:new THREE.Raycaster(),pointer:new THREE.Vector2(),modelId:model.id,yaw:-.75,pitch:.42,distance:320,raf:0,drag:null,orbit:null,meshByPiece:new Map()};
     const resize=()=>{const w=Math.max(320,host.clientWidth),h=Math.max(360,host.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestRackFurniture3DRender(e);};resize();e.resizeObserver=new ResizeObserver(resize);e.resizeObserver.observe(host);
     renderer.domElement.style.touchAction='none';
@@ -15059,9 +15092,10 @@ function getSheetBranchOpenMap(){
     resetRackFurniture3DCamera(model.id);return e;
   }
 
-  function rackFurnitureMaterialSet(THREE,material,selected=false){
-    const palette=material==='metal'?{main:0x607f98,edge:0x9ec1d7}:material==='wood'?{main:0xb77d43,edge:0xe3b57e}:{main:0xdce5ed,edge:0xffffff};
-    return new THREE.MeshStandardMaterial({color:selected?0x55f3af:palette.main,roughness:material==='metal'?.38:.72,metalness:material==='metal'?.65:.05,emissive:selected?0x0c3f2c:0x000000,emissiveIntensity:selected?.55:0});
+  function rackFurnitureMaterialSet(THREE,material,selected=false,type='generic'){
+    const palette=material==='metal'?{main:0x87a9c2,edge:0xe8f3fb}:material==='wood'?{main:0xca9360,edge:0xf6d2a6}:{main:0xe7edf3,edge:0xffffff};
+    const accent=type==='back'?0x4f6880:type==='divider'?0x6d8193:palette.main;
+    return new THREE.MeshStandardMaterial({color:selected?0x64ffc1:accent,roughness:material==='metal'?0.28:0.62,metalness:material==='metal'?0.72:0.06,emissive:selected?0x135840:0x08121a,emissiveIntensity:selected?0.45:0.08});
   }
 
   function clearRackFurniture3DRoot(e){
@@ -15073,13 +15107,13 @@ function getSheetBranchOpenMap(){
     const pieces=getFurnitureRenderPieces(model);
     const topPiece=pieces.find(p=>p.type==='top'&&p.slopeTop&&f.roofMode==='slope');
     pieces.forEach(p=>{
-      if(p===topPiece){const lh=Number(f.leftHeight||H),rh=Number(f.rightHeight||H),dx=Math.max(1,W-2*f.thickness),dh=rh-lh,len=Math.sqrt(dx*dx+dh*dh),angle=Math.atan2(dh,dx);const geom=new THREE.BoxGeometry(len,Math.max(.1,p.h),D);const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set(W/2,(lh+rh)/2-f.thickness/2,D/2);mesh.rotation.z=angle;mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
-      if(p.type==='brace'){const x1=Number(p.x||0),z1=Number(p.z||0),x2=Number(p.x2||p.x+p.w||0),z2=Number(p.z2||p.z+p.h||0),dx=x2-x1,dz=z2-z1,len=Math.sqrt(dx*dx+dz*dz);const geom=new THREE.BoxGeometry(len,Math.max(.5,Number(p.d||1)),Math.max(.5,Number(p.d||1)));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set((x1+x2)/2,(z1+z2)/2,D*.05);mesh.rotation.z=Math.atan2(dz,dx);mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
-      const geom=new THREE.BoxGeometry(Math.max(.1,p.w),Math.max(.1,p.h),Math.max(.1,p.d));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set(Number(p.x||0)+p.w/2,Number(p.z||0)+p.h/2,Number(p.y||0)+p.d/2);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);
+      if(p===topPiece){const lh=Number(f.leftHeight||H),rh=Number(f.rightHeight||H),dx=Math.max(1,W-2*f.thickness),dh=rh-lh,len=Math.sqrt(dx*dx+dh*dh),angle=Math.atan2(dh,dx);const geom=new THREE.BoxGeometry(len,Math.max(.1,p.h),D);const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id),p.type);const mesh=new THREE.Mesh(geom,mat);mesh.position.set(W/2,(lh+rh)/2-f.thickness/2,D/2);mesh.rotation.z=angle;mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
+      if(p.type==='brace'){const x1=Number(p.x||0),z1=Number(p.z||0),x2=Number(p.x2||p.x+p.w||0),z2=Number(p.z2||p.z+p.h||0),dx=x2-x1,dz=z2-z1,len=Math.sqrt(dx*dx+dz*dz);const geom=new THREE.BoxGeometry(len,Math.max(.5,Number(p.d||1)),Math.max(.5,Number(p.d||1)));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id),p.type);const mesh=new THREE.Mesh(geom,mat);mesh.position.set((x1+x2)/2,(z1+z2)/2,D*.05);mesh.rotation.z=Math.atan2(dz,dx);mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);return;}
+      const geom=new THREE.BoxGeometry(Math.max(.1,p.w),Math.max(.1,p.h),Math.max(.1,p.d));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id),p.type);const mesh=new THREE.Mesh(geom,mat);mesh.position.set(Number(p.x||0)+p.w/2,Number(p.z||0)+p.h/2,Number(p.y||0)+p.d/2);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);
       if(selectedIds.has(p.id)){const edges=new THREE.EdgesGeometry(geom);const line=new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color:0x75ffc2}));line.position.copy(mesh.position);line.rotation.copy(mesh.rotation);e.root.add(line);}
     });
     // translucent WMS compartments
-    deriveFurnitureLevels(model).forEach(l=>l.slots.forEach(slot=>{const geom=new THREE.BoxGeometry(Math.max(.1,slot.width-1),Math.max(.1,l.height-1),Math.max(1,D*.86));const mat=new THREE.MeshBasicMaterial({color:0x3ba7db,transparent:true,opacity:.035,depthWrite:false});const m=new THREE.Mesh(geom,mat);m.position.set((slot.x0+slot.x1)/2,(l.z0+l.z1)/2,D*.5);m.userData={nonSelectable:true};e.root.add(m);}));
+    deriveFurnitureLevels(model).forEach(l=>l.slots.forEach(slot=>{const geom=new THREE.BoxGeometry(Math.max(.1,slot.width-1),Math.max(.1,l.height-1),Math.max(1,D*.86));const mat=new THREE.MeshBasicMaterial({color:0x7ed8ff,transparent:true,opacity:.08,depthWrite:false});const m=new THREE.Mesh(geom,mat);m.position.set((slot.x0+slot.x1)/2,(l.z0+l.z1)/2,D*.5);m.userData={nonSelectable:true};e.root.add(m);}));
     // axes labels via simple helper
     const axes=new THREE.AxesHelper(Math.max(35,Math.min(W,H,D)));axes.position.set(0,0,0);e.root.add(axes);
     e.target.set(W/2,Math.max(20,H*.42),D/2);updateRackFurniture3DCamera(e);
