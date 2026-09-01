@@ -1,4 +1,4 @@
-/* WMS_V146_RACK_DISTRIBUTION_REFLOW */
+/* WMS_V147_ASSISTED_MODULAR_RACK */
 /* WMS_V134_SYNC_VISUAL_WMS */
 /* WMS_V130_UNIFIED_WALLS_VIEWS */
 /* WMS_V105_3D_NAVEGABLE_FIX */
@@ -5973,7 +5973,7 @@ function getSheetBranchOpenMap(){
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.min.js?v=wms-v146-rack-distribution-reflow';
+      const localUrl = './vendor/three.module.min.js?v=wms-v147-assisted-modular-rack';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
@@ -14891,82 +14891,109 @@ function getSheetBranchOpenMap(){
     if(!(appState.history?.racks?.undoStack?.length)) recordHistorySnapshot('racks');
     appState.screen='rack-builder';
     contentTitle.textContent='Construir rack / estante';
-    contentSubtitle.textContent='Constructor independiente: controles a la izquierda y edición 3D directa a la derecha. Los modelos guardados aparecerán en Modelos de rack.';
+    contentSubtitle.textContent='Constructor modular asistido: configura, construye visualmente, revisa niveles y guarda el modelo.';
     detailTitle.textContent='';detailSubtitle.textContent='';
-    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'constructor 3D','repisas','divisiones','materiales']);
+    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'constructor modular','3D','niveles','componentes']);
     if(!Array.isArray(appState.models))appState.models=[];
     if(!appState.models.length){createNewFurnitureModelForConstruction();return;}
-    if(!appState.ui)appState.ui={};if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={shelfZ:80,dividerX:60,dividerFrom:0,dividerTo:120,snap:1};const rb=appState.ui.rackBuilder;rb.horizontalSpaces=Math.max(1,Math.min(12,Number(rb.horizontalSpaces||2)));rb.horizontalEqual=rb.horizontalEqual!==false;rb.horizontalSizes=Array.isArray(rb.horizontalSizes)?rb.horizontalSizes:[];rb.verticalSpaces=Math.max(1,Math.min(12,Number(rb.verticalSpaces||2)));rb.verticalEqual=rb.verticalEqual!==false;rb.verticalSizes=Array.isArray(rb.verticalSizes)?rb.verticalSizes:[];rb.verticalLevel=String(rb.verticalLevel||'1');
+    if(!appState.ui)appState.ui={};
+    if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={shelfZ:80,dividerX:60,dividerFrom:0,dividerTo:120,snap:1};
+    const rb=appState.ui.rackBuilder;
+    rb.assistantStep=Math.max(1,Math.min(4,Number(rb.assistantStep||1)));
+    rb.viewMode=['3d','front'].includes(rb.viewMode)?rb.viewMode:'3d';
+    rb.horizontalSpaces=Math.max(1,Math.min(12,Number(rb.horizontalSpaces||2)));rb.horizontalEqual=rb.horizontalEqual!==false;rb.horizontalSizes=Array.isArray(rb.horizontalSizes)?rb.horizontalSizes:[];
+    rb.verticalSpaces=Math.max(1,Math.min(12,Number(rb.verticalSpaces||2)));rb.verticalEqual=rb.verticalEqual!==false;rb.verticalSizes=Array.isArray(rb.verticalSizes)?rb.verticalSizes:[];rb.verticalLevel=String(rb.verticalLevel||'1');
     if(!appState.selectedModelId||!appState.models.some(m=>m.id===appState.selectedModelId))appState.selectedModelId=appState.models[0].id;
     const model=rackModel(appState.selectedModelId);ensureRackFurnitureModel(model);const f=model.furniture;
     const modelOptions=appState.models.map(m=>`<option value="${escapeHtml(m.id)}" ${m.id===model.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
-    const enabled=!!f.enabled;const constructionLevels=enabled?deriveFurnitureLevels(model):[];if(rb.verticalLevel!=='all'&&!constructionLevels.some(l=>String(l.index)===rb.verticalLevel))rb.verticalLevel=String(constructionLevels[0]?.index||1);
-    const horizontalDefaults=constructionLevels.length===rb.horizontalSpaces?constructionLevels.map(l=>round1(l.height)):Array(rb.horizontalSpaces).fill(round1(Math.max(1,(Math.min(Number(f.leftHeight||model.height),Number(f.rightHeight||model.height))-2*f.thickness-(rb.horizontalSpaces-1)*f.thickness)/rb.horizontalSpaces)));
-    const horizontalSizes=Array.from({length:rb.horizontalSpaces},(_,i)=>round1(Number(rb.horizontalSizes[i]||horizontalDefaults[i]||1)));
-    const selectedLevel=constructionLevels.find(l=>String(l.index)===rb.verticalLevel)||constructionLevels[0];const verticalDefaults=selectedLevel&&selectedLevel.slots.length===rb.verticalSpaces?selectedLevel.slots.map(s=>round1(s.width)):Array(rb.verticalSpaces).fill(round1(Math.max(1,(Number(model.width||120)-2*f.thickness-(rb.verticalSpaces-1)*f.thickness)/rb.verticalSpaces)));
-    const verticalSizes=Array.from({length:rb.verticalSpaces},(_,i)=>round1(Number(rb.verticalSizes[i]||verticalDefaults[i]||1)));
-    contentWrap.innerHTML=`<div class="rack-construction-page">
-      <aside class="rack-construction-controls">
-        <section class="rack-construction-card">
-          <div class="rack-construction-card-head"><div><b>Proyecto de rack</b><span>Elige un modelo existente o empieza uno nuevo.</span></div></div>
-          <label class="construction-field">Modelo<select id="rackConstructionModelSelect">${modelOptions}</select></label>
-          <label class="construction-field">Nombre<input id="rackConstructionName" value="${escapeHtml(model.name||'')}"></label>
-          <div class="construction-actions"><button class="mini-btn rack-builder-primary" id="rackConstructionNew">Nuevo desde cero</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="mini-btn" id="rackConstructionSave">Guardar</button></div>
+    const enabled=!!f.enabled;const constructionLevels=enabled?deriveFurnitureLevels(model):[];
+    if(rb.verticalLevel!=='all'&&!constructionLevels.some(l=>String(l.index)===rb.verticalLevel))rb.verticalLevel=String(constructionLevels[0]?.index||1);
+    const selectedLevel=constructionLevels.find(l=>String(l.index)===rb.verticalLevel)||constructionLevels[0];
+    const totalSlots=constructionLevels.reduce((s,l)=>s+l.slots.length,0);
+    const stepLabels=[['Configurar','Dimensiones y material'],['Construir','Agregar componentes'],['Revisar','Niveles y selección'],['Guardar','Guardar modelo']];
+    const stepper=stepLabels.map((s,i)=>`<button type="button" class="rack-assistant-step ${rb.assistantStep===i+1?'active':''} ${rb.assistantStep>i+1?'done':''}" data-rack-assistant-step="${i+1}"><span>${rb.assistantStep>i+1?'✓':i+1}</span><b>${s[0]}</b><small>${s[1]}</small></button>`).join('<i>›</i>');
+    contentWrap.innerHTML=`<div class="rack-assistant-shell">
+      <div class="rack-assistant-topbar">
+        <div class="rack-assistant-stepper">${stepper}</div>
+        <div class="rack-assistant-top-actions"><button class="mini-btn" id="rackConstructionNew">Nuevo</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="btn rack-assistant-save" id="rackConstructionSave">Guardar rack</button></div>
+      </div>
+      <div class="rack-assistant-projectbar">
+        <label>Modelo<select id="rackConstructionModelSelect">${modelOptions}</select></label>
+        <label>Nombre<input id="rackConstructionName" value="${escapeHtml(model.name||'')}"></label>
+        <div class="rack-assistant-metrics"><span><b>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)}</b> cm</span><span><b>${constructionLevels.length}</b> niveles</span><span><b>${totalSlots}</b> slots</span></div>
+      </div>
+      ${enabled?`<div class="rack-assistant-main">
+        <aside class="rack-component-library">
+          <div class="rack-panel-title"><div><b>Biblioteca de piezas</b><span>Haz clic o arrastra al 3D.</span></div></div>
+          <div class="rack-component-group"><span>Estructura</span>
+            <button draggable="true" data-construction-piece="carcass"><i>▥</i><b>Estructura base</b><small>Laterales + base + tapa</small></button>
+          </div>
+          <div class="rack-component-group"><span>Componentes</span>
+            <button draggable="true" data-construction-piece="shelf"><i>▬</i><b>Repisa</b><small>Horizontal</small></button>
+            <button draggable="true" data-construction-piece="divider"><i>▯</i><b>División</b><small>Vertical</small></button>
+            <button draggable="true" data-construction-piece="back"><i>▤</i><b>Fondo</b><small>Panel trasero</small></button>
+            <button draggable="true" data-construction-piece="brace"><i>╱</i><b>Refuerzo</b><small>Diagonal / estructural</small></button>
+          </div>
+          <div class="rack-component-group"><span>Edición</span>
+            <button data-furniture-action="duplicate-piece" data-mid="${model.id}"><i>⧉</i><b>Duplicar</b><small>Pieza seleccionada</small></button>
+            <button data-furniture-action="distribute-shelves" data-mid="${model.id}"><i>↕</i><b>Distribuir</b><small>Repisas uniformes</small></button>
+          </div>
+          <div class="rack-component-drop-help"><b>Arrastrar y soltar</b><span>Al soltar una repisa se calcula su altura. Al soltar una división se calcula X y el nivel más cercano.</span></div>
+        </aside>
+        <section class="rack-assistant-canvas">
+          <div class="rack-assistant-canvas-head"><div><b>Área de construcción</b><span>El modelo se actualiza en tiempo real.</span></div><div class="rack-view-switch"><button class="${rb.viewMode==='3d'?'active':''}" data-rack-view="3d">3D</button><button class="${rb.viewMode==='front'?'active':''}" data-rack-view="front">Frontal</button><button disabled>Sección</button></div></div>
+          <div class="rack-assistant-stage-stack">
+            <div id="rackFurniture3D" class="rack-furniture-3d-stage rack-construction-3d-stage rack-assistant-3d ${rb.viewMode==='3d'?'':'is-hidden'}" data-model-id="${model.id}"></div>
+            <div class="rack-assistant-front ${rb.viewMode==='front'?'':'is-hidden'}"><svg id="rackBuilderFront" viewBox="0 0 820 590" preserveAspectRatio="xMidYMid meet"></svg></div>
+            <div class="rack-drop-overlay" id="rackConstructionDropOverlay"><b>Suelta la pieza aquí</b><span>La posición del cursor define dónde se inserta.</span></div>
+          </div>
+          <div class="rack-assistant-canvas-foot"><span>Clic: seleccionar</span><span>Arrastrar pieza: mover</span><span>Fondo: orbitar</span><span>Rueda: zoom</span><button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar cámara</button></div>
         </section>
-        ${enabled?`<section class="rack-construction-card">
-          <div class="rack-construction-card-head"><div><b>Dimensiones y material</b><span>Propiedades globales del mueble.</span></div></div>
-          <div class="construction-grid-2"><label class="construction-field">Ancho (cm)<input type="number" min="30" step="1" data-furniture-model-field="width" data-mid="${model.id}" value="${round1(model.width)}"></label><label class="construction-field">Profundidad (cm)<input type="number" min="20" step="1" data-furniture-model-field="depth" data-mid="${model.id}" value="${round1(model.depth)}"></label><label class="construction-field">Alto (cm)<input type="number" min="60" step="1" data-furniture-model-field="height" data-mid="${model.id}" value="${round1(model.height)}"></label><label class="construction-field">Grosor / perfil (cm)<input type="number" min=".3" step=".1" data-furniture-field="thickness" data-mid="${model.id}" value="${round1(f.thickness)}"></label></div>
-          <label class="construction-field">Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
-          <label class="construction-field">Forma superior<select data-furniture-field="roofMode" data-mid="${model.id}"><option value="flat" ${f.roofMode==='flat'?'selected':''}>Una sola altura</option><option value="slope" ${f.roofMode==='slope'?'selected':''}>Con pendiente</option></select></label>
-          <div class="construction-grid-2"><label class="construction-field">Altura izquierda<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label><label class="construction-field">Altura derecha<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label></div>
-        </section>
-        <section class="rack-construction-card">
-          <div class="rack-construction-card-head"><div><b>Distribución horizontal</b><span>Crea varios niveles de una vez, equitativos o con medidas individuales.</span></div></div>
-          <div class="construction-grid-2"><label class="construction-field">Cantidad de espacios / niveles<input id="rackHorizontalSpaces" type="number" min="1" max="12" step="1" value="${rb.horizontalSpaces}"></label><label class="construction-pick"><input id="rackHorizontalEqual" type="checkbox" ${rb.horizontalEqual?'checked':''}><span>División equitativa</span></label></div>
-          <div class="construction-space-inputs">${horizontalSizes.map((v,i)=>`<label class="construction-field">Espacio ${i+1} (cm)<input data-horizontal-size="${i}" type="number" min=".1" step=".1" value="${v}" ${rb.horizontalEqual?'disabled':''}></label>`).join('')}</div>
-          <div class="construction-note">${rb.horizontalEqual?`El alto útil se reparte automáticamente en ${rb.horizontalSpaces} espacios iguales; los valores se muestran como referencia.`:`Edita cada espacio. Al aplicar, el conjunto se adapta proporcionalmente al alto útil para no generar cruces.`}</div>
-          <button class="mini-btn rack-builder-primary" id="rackApplyHorizontal">Aplicar distribución horizontal</button>
-        </section>
-        <section class="rack-construction-card">
-          <div class="rack-construction-card-head"><div><b>División vertical por espacio</b><span>Define cuántos espacios tendrá cada nivel y cómo se repartirán.</span></div></div>
-          <label class="construction-field">Aplicar en<select id="rackVerticalLevel"><option value="all" ${rb.verticalLevel==='all'?'selected':''}>Todos los niveles</option>${constructionLevels.map(l=>`<option value="${l.index}" ${String(l.index)===rb.verticalLevel?'selected':''}>Nivel ${l.index} · ${round1(l.height)} cm</option>`).join('')}</select></label>
-          <div class="construction-grid-2"><label class="construction-field">Cantidad de espacios<input id="rackVerticalSpaces" type="number" min="1" max="12" step="1" value="${rb.verticalSpaces}"></label><label class="construction-pick"><input id="rackVerticalEqual" type="checkbox" ${rb.verticalEqual?'checked':''}><span>División equitativa</span></label></div>
-          <div class="construction-space-inputs">${verticalSizes.map((v,i)=>`<label class="construction-field">Espacio ${i+1} (cm)<input data-vertical-size="${i}" type="number" min=".1" step=".1" value="${v}" ${rb.verticalEqual?'disabled':''}></label>`).join('')}</div>
-          <div class="construction-note">${rb.verticalEqual?`El ancho interior se reparte automáticamente en ${rb.verticalSpaces} espacios iguales y crea ${Math.max(0,rb.verticalSpaces-1)} divisores físicos.`:`Cada input representa el ancho deseado. El conjunto se ajusta al ancho interior sin superponerse.`}</div>
-          <button class="mini-btn" id="rackApplyVertical">Aplicar división vertical</button>
-          <div class="construction-note">Cada divisor queda contenido entre las caras interiores de las repisas del nivel seleccionado; nunca las atraviesa.</div>
-        </section>
-        <section class="rack-construction-card">
-          <details class="construction-manual-piece"><summary>Agregar una pieza individual</summary><div class="construction-insert-box"><b>Repisa horizontal</b><label class="construction-field">Distancia desde base Z (cm)<input id="rackBuilderShelfZ" type="number" step=".1" value="${round1(appState.ui.rackBuilder.shelfZ||80)}"></label><button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">+ Agregar repisa</button></div><div class="construction-insert-box"><b>División vertical</b><div class="construction-grid-2"><label class="construction-field">Posición X<input id="rackBuilderDividerX" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerX||60)}"></label><label class="construction-field">Desde Z<input id="rackBuilderDividerFrom" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerFrom||0)}"></label><label class="construction-field">Hasta Z<input id="rackBuilderDividerTo" type="number" step=".1" value="${round1(appState.ui.rackBuilder.dividerTo||120)}"></label><label class="construction-field">Snap (cm)<input type="number" min=".1" step=".1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label></div><button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">+ Agregar división</button></div></details>
-          <div class="construction-actions"><button class="mini-btn" data-furniture-action="back" data-mid="${model.id}">+ Fondo</button><button class="mini-btn" data-furniture-action="duplicate-piece" data-mid="${model.id}">Duplicar pieza</button><button class="mini-btn" data-furniture-action="carcass" data-mid="${model.id}">Rehacer estructura</button></div>
-        </section>
-        <section class="rack-construction-card rack-construction-inspector"><div class="rack-construction-card-head"><div><b>Propiedades de selección</b><span>Clic en una pieza del 3D para editarla.</span></div></div><div id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></div></section>
-        <section class="rack-construction-card"><div id="rackBuilderLevels" class="rack-builder-levels"></div></section>
-        <svg id="rackBuilderFront" viewBox="0 0 820 590" style="display:none"></svg>`:`<section class="rack-construction-card rack-construction-convert"><b>Este modelo todavía usa el generador clásico.</b><span>Puedes conservarlo en Modelos de rack o prepararlo para construcción 3D.</span><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Preparar en constructor 3D</button></section>`}
-      </aside>
-      <section class="rack-construction-viewport">
-        <div class="rack-construction-viewport-head"><div><b>Edición 3D</b><span>Esta es la vista de trabajo. No hay preview duplicado.</span></div>${enabled?`<button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar cámara</button>`:''}</div>
-        ${enabled?`<div id="rackFurniture3D" class="rack-furniture-3d-stage rack-construction-3d-stage" data-model-id="${model.id}"></div><div class="rack-construction-hint">Clic: seleccionar · Arrastrar repisa: altura · Arrastrar división: X · Fondo: orbitar · Rueda: zoom</div>`:`<div class="rack-construction-empty-3d"><b>Prepara el modelo para comenzar a construirlo.</b></div>`}
-      </section>
+        <aside class="rack-assistant-right">
+          <section class="rack-assistant-card rack-quick-config">
+            <div class="rack-panel-title"><div><b>Configuración rápida</b><span>Propiedades generales.</span></div></div>
+            <div class="construction-grid-2"><label class="construction-field">Ancho (cm)<input type="number" min="30" step="1" data-furniture-model-field="width" data-mid="${model.id}" value="${round1(model.width)}"></label><label class="construction-field">Profundidad (cm)<input type="number" min="20" step="1" data-furniture-model-field="depth" data-mid="${model.id}" value="${round1(model.depth)}"></label><label class="construction-field">Alto (cm)<input type="number" min="60" step="1" data-furniture-model-field="height" data-mid="${model.id}" value="${round1(model.height)}"></label><label class="construction-field">Grosor (cm)<input type="number" min=".3" step=".1" data-furniture-field="thickness" data-mid="${model.id}" value="${round1(f.thickness)}"></label></div>
+            <label class="construction-field">Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
+            <label class="construction-field">Forma superior<select data-furniture-field="roofMode" data-mid="${model.id}"><option value="flat" ${f.roofMode==='flat'?'selected':''}>Recto</option><option value="slope" ${f.roofMode==='slope'?'selected':''}>Con pendiente</option></select></label>
+            <div class="construction-grid-2"><label class="construction-field">Altura izq.<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label><label class="construction-field">Altura der.<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label></div>
+          </section>
+          <section class="rack-assistant-card">
+            <div class="rack-panel-title"><div><b>Pieza seleccionada</b><span>Propiedades contextuales.</span></div></div>
+            <div id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></div>
+          </section>
+          <section class="rack-assistant-card rack-level-shortcuts">
+            <div class="rack-panel-title"><div><b>Inserción precisa</b><span>Opcional: agrega por medidas.</span></div></div>
+            <details><summary>Repisa</summary><label class="construction-field">Z desde base<input id="rackBuilderShelfZ" type="number" step=".1" value="${round1(rb.shelfZ||80)}"></label><button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">Agregar repisa</button></details>
+            <details><summary>División</summary><div class="construction-grid-2"><label class="construction-field">X<input id="rackBuilderDividerX" type="number" step=".1" value="${round1(rb.dividerX||60)}"></label><label class="construction-field">Desde Z<input id="rackBuilderDividerFrom" type="number" step=".1" value="${round1(rb.dividerFrom||selectedLevel?.z0||0)}"></label><label class="construction-field">Hasta Z<input id="rackBuilderDividerTo" type="number" step=".1" value="${round1(rb.dividerTo||selectedLevel?.z1||120)}"></label><label class="construction-field">Snap<input type="number" min=".1" step=".1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label></div><button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">Agregar división</button></details>
+          </section>
+        </aside>
+      </div>
+      <section class="rack-assistant-levels">
+        <div class="rack-assistant-levels-head"><div><b>Editor de niveles y distribución</b><span>Resumen compacto del WMS derivado de la geometría.</span></div><div class="rack-assistant-level-actions"><button class="mini-btn" id="rackAssistantAutoLevels">Auto distribuir</button><label class="construction-pick"><input id="rackAssistantEqualLevels" type="checkbox" ${rb.horizontalEqual?'checked':''}><span>Equitativo</span></label></div></div>
+        <div id="rackBuilderLevels" class="rack-builder-levels rack-builder-levels-assisted"></div>
+      </section>`:`<div class="rack-assistant-convert"><div><b>Este modelo usa el generador clásico.</b><span>Modelos de rack seguirá intacto. Para construirlo aquí, prepara una copia editable en el constructor modular.</span></div><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Preparar en constructor</button></div>`}
     </div>`;
     const select=document.getElementById('rackConstructionModelSelect');if(select)select.onchange=()=>{appState.selectedModelId=select.value;disposeRackFurniture3DEngine();renderRackConstructionWorkspace();};
-    const name=document.getElementById('rackConstructionName');if(name){const apply=()=>{model.name=String(name.value||'').trim()||'Rack sin nombre';saveRackModels();};name.onchange=apply;}
+    const name=document.getElementById('rackConstructionName');if(name)name.onchange=()=>{model.name=String(name.value||'').trim()||'Rack sin nombre';saveRackModels();};
     document.getElementById('rackConstructionNew')?.addEventListener('click',createNewFurnitureModelForConstruction);
     document.getElementById('rackConstructionDuplicate')?.addEventListener('click',duplicateFurnitureModelForConstruction);
     document.getElementById('rackConstructionSave')?.addEventListener('click',saveFurnitureConstructionModel);
-    const hCount=document.getElementById('rackHorizontalSpaces');if(hCount)hCount.onchange=()=>{rb.horizontalSpaces=Math.max(1,Math.min(12,Number(hCount.value||1)));rb.horizontalSizes=[];renderRackConstructionWorkspace();};
-    const hEq=document.getElementById('rackHorizontalEqual');if(hEq)hEq.onchange=()=>{rb.horizontalEqual=!!hEq.checked;renderRackConstructionWorkspace();};
-    $$('[data-horizontal-size]').forEach(el=>el.oninput=()=>{rb.horizontalSizes[Number(el.getAttribute('data-horizontal-size'))]=Math.max(.1,Number(el.value||.1));});
-    document.getElementById('rackApplyHorizontal')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const actual=applyConstructionHorizontalSpaces(model,rb.horizontalSpaces,rb.horizontalEqual,rb.horizontalSizes.length?rb.horizontalSizes:horizontalSizes);rb.horizontalSizes=actual.map(round1);saveRackModels();renderRackConstructionWorkspace();});
-    const vLevel=document.getElementById('rackVerticalLevel');if(vLevel)vLevel.onchange=()=>{rb.verticalLevel=vLevel.value;rb.verticalSizes=[];renderRackConstructionWorkspace();};
-    const vCount=document.getElementById('rackVerticalSpaces');if(vCount)vCount.onchange=()=>{rb.verticalSpaces=Math.max(1,Math.min(12,Number(vCount.value||1)));rb.verticalSizes=[];renderRackConstructionWorkspace();};
-    const vEq=document.getElementById('rackVerticalEqual');if(vEq)vEq.onchange=()=>{rb.verticalEqual=!!vEq.checked;renderRackConstructionWorkspace();};
-    $$('[data-vertical-size]').forEach(el=>el.oninput=()=>{rb.verticalSizes[Number(el.getAttribute('data-vertical-size'))]=Math.max(.1,Number(el.value||.1));});
-    document.getElementById('rackApplyVertical')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const actual=applyConstructionVerticalSpaces(model,rb.verticalLevel,rb.verticalSpaces,rb.verticalEqual,rb.verticalSizes.length?rb.verticalSizes:verticalSizes);rb.verticalSizes=actual.map(round1);saveRackModels();renderRackConstructionWorkspace();});
+    $$('[data-rack-assistant-step]').forEach(btn=>btn.onclick=()=>{rb.assistantStep=Number(btn.getAttribute('data-rack-assistant-step')||1);renderRackConstructionWorkspace();});
+    $$('[data-rack-view]').forEach(btn=>btn.onclick=()=>{rb.viewMode=btn.getAttribute('data-rack-view')||'3d';renderRackConstructionWorkspace();});
+    document.getElementById('rackAssistantAutoLevels')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const count=Math.max(1,constructionLevels.length||Number(model.levels||1));applyConstructionHorizontalSpaces(model,count,true,[]);rb.horizontalEqual=true;saveRackModels();renderRackConstructionWorkspace();});
+    const equalToggle=document.getElementById('rackAssistantEqualLevels');if(equalToggle)equalToggle.onchange=()=>{rb.horizontalEqual=!!equalToggle.checked;};
     bindRackFurnitureBuilder(model.id);
-    if(enabled){renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);}
-    updateUndoRedoUi();contentStatus.textContent='Modo activo: CONSTRUIR RACK / ESTANTE • editor 3D independiente.';contentFootRight.textContent=`${appState.models.length} modelos`;
+    if(enabled){renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);bindRackConstructionComponentLibrary(model);}
+    updateUndoRedoUi();contentStatus.textContent='Modo activo: CONSTRUCTOR MODULAR ASISTIDO • biblioteca + 3D + propiedades + niveles.';contentFootRight.textContent=`${appState.models.length} modelos`;
   }
+
+  function bindRackConstructionComponentLibrary(model){
+    if(!model?.furniture?.enabled)return;const f=model.furniture,host=document.getElementById('rackFurniture3D'),overlay=document.getElementById('rackConstructionDropOverlay');
+    const add=(type,ev=null)=>{recordHistorySnapshot('racks');if(type==='carcass')furnitureCreateCarcass(model,{keepCustom:true});else if(type==='shelf'){if(ev&&host){const r=host.getBoundingClientRect(),roof=f.roofMode==='slope'?Math.min(Number(f.leftHeight||model.height),Number(f.rightHeight||model.height)):Number(model.height||200);appState.ui.rackBuilder.shelfZ=Math.max(f.thickness,Math.min(roof-f.thickness*2,(1-(ev.clientY-r.top)/Math.max(1,r.height))*roof));}furnitureAddShelf(model);}else if(type==='divider'){if(ev&&host){const r=host.getBoundingClientRect(),W=Number(model.width||120),H=Number(model.height||200),px=Math.max(0,Math.min(1,(ev.clientX-r.left)/Math.max(1,r.width))),pz=Math.max(0,Math.min(1,1-(ev.clientY-r.top)/Math.max(1,r.height))),z=pz*H;appState.ui.rackBuilder.dividerX=px*W;const level=deriveFurnitureLevels(model).find(l=>z>=l.z0&&z<=l.z1)||deriveFurnitureLevels(model)[0];if(level){appState.ui.rackBuilder.dividerFrom=level.z0;appState.ui.rackBuilder.dividerTo=level.z1;}}furnitureAddDivider(model);}else if(type==='back')furnitureAddBack(model);else if(type==='brace')furnitureAddBrace(model);syncFurnitureModelToLegacy(model);saveRackModels();renderRackConstructionWorkspace();};
+    $$('[data-construction-piece]').forEach(btn=>{const type=btn.getAttribute('data-construction-piece');btn.onclick=()=>add(type);btn.ondragstart=ev=>{ev.dataTransfer?.setData('text/rack-piece',type);if(overlay)overlay.classList.add('armed');};btn.ondragend=()=>overlay?.classList.remove('armed');});
+    if(host){host.ondragover=ev=>{ev.preventDefault();overlay?.classList.add('show');};host.ondragleave=()=>overlay?.classList.remove('show');host.ondrop=ev=>{ev.preventDefault();overlay?.classList.remove('show','armed');const type=ev.dataTransfer?.getData('text/rack-piece');if(type)add(type,ev);};}
+  }
+
 
   function renderRackFurnitureBuilderMarkup(model){
     ensureRackFurnitureModel(model); const f=model.furniture||{};
@@ -15184,7 +15211,19 @@ function getSheetBranchOpenMap(){
     arr.forEach((p,i)=>{p.z=round1(min+step*i);});furnitureRefitModel(model);
   }
 
-  function renderFurnitureLevels(model,mount){const f=model.furniture,levels=deriveFurnitureLevels(model);if(!levels.length){mount.innerHTML='<div class="tiny muted">Agrega una base y una tapa/repisas para formar compartimentos.</div>';return;}mount.innerHTML=`<div class="rack-builder-levels-head"><div><b>Niveles y slots derivados</b><span>Los slots pueden ser físicos (divisor) o lógicos para WMS.</span></div><span class="tag">Capacidad ${levels.reduce((s,l)=>s+l.slots.length,0)}</span></div><div class="rack-builder-level-grid">${[...levels].reverse().map(l=>`<div class="rack-builder-level-card"><div><b>Nivel ${l.index}</b><span>${round1(l.height)} cm libres · ${l.physicalDividerCount} divisores físicos</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><div class="rack-builder-slot-chips">${l.slots.map(s=>`<span>${s.code} · ${round1(s.width)} cm</span>`).join('')}</div><div class="rack-builder-level-actions"><button class="mini-btn" data-furniture-materialize="${l.index}">Crear divisores físicos</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Quitar divisores</button></div></div>`).join('')}</div>`;$$('[data-furniture-level-slots]',mount).forEach(inp=>{inp.onchange=()=>{const idx=Number(inp.getAttribute('data-furniture-level-slots'));f.logicalSlots[idx]=Math.max(1,Math.min(12,Number(inp.value||1)||1));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();};});$$('[data-furniture-materialize]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureMaterializeLevelDividers(model,Number(btn.getAttribute('data-furniture-materialize')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});$$('[data-furniture-clear-dividers]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureClearLevelDividers(model,Number(btn.getAttribute('data-furniture-clear-dividers')));syncFurnitureModelToLegacy(model);renderRackFurnitureBuilder(model.id);renderRackModelPreview();});}
+  function renderFurnitureLevels(model,mount){
+    const f=model.furniture,levels=deriveFurnitureLevels(model);
+    if(!levels.length){mount.innerHTML='<div class="tiny muted">Agrega una base y una tapa/repisas para formar compartimentos.</div>';return;}
+    if(isRackConstructionScreen()){
+      mount.innerHTML=`<div class="rack-assisted-level-table"><div class="rack-assisted-level-row head"><span>Nivel</span><span>Altura libre</span><span>Slots</span><span>Divisores</span><span>Acciones</span></div>${[...levels].reverse().map(l=>`<div class="rack-assisted-level-row"><b>N${l.index}</b><span>${round1(l.height)} cm</span><label><input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><span>${l.physicalDividerCount}</span><div><button class="mini-btn" data-furniture-materialize="${l.index}">Dividir</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Limpiar</button></div></div>`).join('')}</div>`;
+    }else{
+      mount.innerHTML=`<div class="rack-builder-levels-head"><div><b>Niveles y slots derivados</b><span>Los slots pueden ser físicos (divisor) o lógicos para WMS.</span></div><span class="tag">Capacidad ${levels.reduce((s,l)=>s+l.slots.length,0)}</span></div><div class="rack-builder-level-grid">${[...levels].reverse().map(l=>`<div class="rack-builder-level-card"><div><b>Nivel ${l.index}</b><span>${round1(l.height)} cm libres · ${l.physicalDividerCount} divisores físicos</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><div class="rack-builder-slot-chips">${l.slots.map(s=>`<span>${s.code} · ${round1(s.width)} cm</span>`).join('')}</div><div class="rack-builder-level-actions"><button class="mini-btn" data-furniture-materialize="${l.index}">Crear divisores físicos</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Quitar divisores</button></div></div>`).join('')}</div>`;
+    }
+    $$('[data-furniture-level-slots]',mount).forEach(inp=>{inp.onchange=()=>{const idx=Number(inp.getAttribute('data-furniture-level-slots'));f.logicalSlots[idx]=Math.max(1,Math.min(12,Number(inp.value||1)||1));syncFurnitureModelToLegacy(model);if(isRackConstructionScreen())renderRackConstructionWorkspace();else{renderRackFurnitureBuilder(model.id);renderRackModelPreview();}};});
+    $$('[data-furniture-materialize]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureMaterializeLevelDividers(model,Number(btn.getAttribute('data-furniture-materialize')));syncFurnitureModelToLegacy(model);saveRackModels();if(isRackConstructionScreen())renderRackConstructionWorkspace();else{renderRackFurnitureBuilder(model.id);renderRackModelPreview();}});
+    $$('[data-furniture-clear-dividers]',mount).forEach(btn=>btn.onclick=()=>{recordHistorySnapshot('racks');furnitureClearLevelDividers(model,Number(btn.getAttribute('data-furniture-clear-dividers')));syncFurnitureModelToLegacy(model);saveRackModels();if(isRackConstructionScreen())renderRackConstructionWorkspace();else{renderRackFurnitureBuilder(model.id);renderRackModelPreview();}});
+  }
+
 
   function furnitureLevelByIndex(model,index){return deriveFurnitureLevels(model).find(l=>l.index===Number(index))||null;}
   function furnitureClearLevelDividers(model,index){ensureRackFurnitureModel(model);const level=furnitureLevelByIndex(model,index);if(!level)return;model.furniture.pieces=model.furniture.pieces.filter(p=>!(p.type==='divider'&&Number(p.z||0)<=level.z0+1.5&&Number(p.z||0)+Number(p.h||0)>=level.z1-1.5));}
@@ -16206,7 +16245,7 @@ function getSheetBranchOpenMap(){
   btnStopScanner.addEventListener('click', stopScanner);
   scannerModal.addEventListener('click', (e) => { if (e.target === scannerModal) stopScanner(); });
 
-console.info('*** WMS v146 RACK DISTRIBUTION + VOLUME REFLOW ACTIVE ***');
+console.info('*** WMS v147 ASSISTED MODULAR RACK CONSTRUCTOR ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

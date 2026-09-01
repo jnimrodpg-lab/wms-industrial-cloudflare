@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "private": true,
-  "description": "WMS Industrial v146: reflow volumétrico de piezas y generadores horizontal/vertical por cantidad con distribución equitativa o personalizada.",
+  "description": "WMS Industrial v147: constructor modular asistido con biblioteca de componentes, 3D central, configuración rápida, inspector y niveles integrados.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

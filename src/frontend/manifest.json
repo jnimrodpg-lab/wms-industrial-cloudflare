@@ -1,5 +1,5 @@
 {
-  "version": "146",
+  "version": "147",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v146: constructor 3D con reflow volumétrico al redimensionar y distribución horizontal/vertical por cantidad, equitativa o personalizada."
+  "notes": "v147: constructor modular asistido con flujo Configurar-Construir-Revisar-Guardar, biblioteca de piezas, 3D central y editor de niveles."
 }

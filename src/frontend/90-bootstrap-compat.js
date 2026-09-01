@@ -1,4 +1,4 @@
-console.info('*** WMS v146 RACK DISTRIBUTION + VOLUME REFLOW ACTIVE ***');
+console.info('*** WMS v147 ASSISTED MODULAR RACK CONSTRUCTOR ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();
