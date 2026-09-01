@@ -1,5 +1,5 @@
 {
-  "version": "147",
+  "version": "148",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -15,5 +15,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v147: constructor modular asistido con flujo Configurar-Construir-Revisar-Guardar, biblioteca de piezas, 3D central y editor de niveles."
+  "notes": "v148: Visual Furniture CAD con 3D dominante, selección de espacios, herramientas compactas e inspector contextual."
 }

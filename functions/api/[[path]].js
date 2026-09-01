@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v147-assisted-modular-rack';
+const BUILD_MARK = 'cloudflare-v148-visual-furniture-cad';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;

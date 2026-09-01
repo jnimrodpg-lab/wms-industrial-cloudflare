@@ -1,4 +1,4 @@
-console.info('*** WMS v147 ASSISTED MODULAR RACK CONSTRUCTOR ACTIVE ***');
+console.info('*** WMS v148 VISUAL FURNITURE CAD ACTIVE ***');
   async function bootstrapApp(){
     ensureAppRuntimeState();
     loadUiTheme();

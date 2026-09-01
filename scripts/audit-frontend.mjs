@@ -28,8 +28,8 @@ if (duplicateDeclarations.length || duplicateOverrides.length) {
   process.exit(1);
 }
 
-if (!source.startsWith('/* WMS_V147_ASSISTED_MODULAR_RACK */')) {
-  console.error('Falta la marca de bundle v147.');
+if (!source.startsWith('/* WMS_V148_VISUAL_FURNITURE_CAD */')) {
+  console.error('Falta la marca de bundle v148.');
   process.exit(1);
 }
 console.log(`Auditoría frontend OK: ${declarations.size} funciones declaradas, sin overrides protegidos duplicados.`);

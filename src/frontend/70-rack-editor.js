@@ -840,6 +840,7 @@
     f.logicalSlots = (f.logicalSlots && typeof f.logicalSlots==='object') ? f.logicalSlots : {};
     f.selectedPieceId = String(f.selectedPieceId||'');
     f.selectedPieceIds = Array.isArray(f.selectedPieceIds) ? f.selectedPieceIds.map(String) : (f.selectedPieceId ? [String(f.selectedPieceId)] : []);
+    f.selectedSpace = (f.selectedSpace && typeof f.selectedSpace==='object') ? { levelIndex:Number(f.selectedSpace.levelIndex||0), slotIndex:Number(f.selectedSpace.slotIndex||0) } : null;
     f.roofMode = f.roofMode === 'slope' ? 'slope' : 'flat';
     f.leftHeight = Math.max(20, Number(f.leftHeight || model.height || 200));
     f.rightHeight = Math.max(20, Number(f.rightHeight || model.height || 200));
@@ -1088,101 +1089,92 @@
     if(!(appState.history?.racks?.undoStack?.length)) recordHistorySnapshot('racks');
     appState.screen='rack-builder';
     contentTitle.textContent='Construir rack / estante';
-    contentSubtitle.textContent='Constructor modular asistido: configura, construye visualmente, revisa niveles y guarda el modelo.';
+    contentSubtitle.textContent='Visual Furniture CAD: selecciona espacios y piezas directamente; divide, mueve y ajusta medidas sin formularios innecesarios.';
     detailTitle.textContent='';detailSubtitle.textContent='';
-    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'constructor modular','3D','niveles','componentes']);
+    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'Visual CAD','3D','espacios','piezas']);
     if(!Array.isArray(appState.models))appState.models=[];
     if(!appState.models.length){createNewFurnitureModelForConstruction();return;}
     if(!appState.ui)appState.ui={};
     if(!appState.ui.rackBuilder||typeof appState.ui.rackBuilder!=='object')appState.ui.rackBuilder={shelfZ:80,dividerX:60,dividerFrom:0,dividerTo:120,snap:1};
     const rb=appState.ui.rackBuilder;
-    rb.assistantStep=Math.max(1,Math.min(4,Number(rb.assistantStep||1)));
     rb.viewMode=['3d','front'].includes(rb.viewMode)?rb.viewMode:'3d';
-    rb.horizontalSpaces=Math.max(1,Math.min(12,Number(rb.horizontalSpaces||2)));rb.horizontalEqual=rb.horizontalEqual!==false;rb.horizontalSizes=Array.isArray(rb.horizontalSizes)?rb.horizontalSizes:[];
-    rb.verticalSpaces=Math.max(1,Math.min(12,Number(rb.verticalSpaces||2)));rb.verticalEqual=rb.verticalEqual!==false;rb.verticalSizes=Array.isArray(rb.verticalSizes)?rb.verticalSizes:[];rb.verticalLevel=String(rb.verticalLevel||'1');
+    rb.cadTool=['select','shelf','divider','back'].includes(rb.cadTool)?rb.cadTool:'select';
     if(!appState.selectedModelId||!appState.models.some(m=>m.id===appState.selectedModelId))appState.selectedModelId=appState.models[0].id;
     const model=rackModel(appState.selectedModelId);ensureRackFurnitureModel(model);const f=model.furniture;
+    const enabled=!!f.enabled;const levels=enabled?deriveFurnitureLevels(model):[];const totalSlots=levels.reduce((s,l)=>s+l.slots.length,0);
     const modelOptions=appState.models.map(m=>`<option value="${escapeHtml(m.id)}" ${m.id===model.id?'selected':''}>${escapeHtml(m.name)}</option>`).join('');
-    const enabled=!!f.enabled;const constructionLevels=enabled?deriveFurnitureLevels(model):[];
-    if(rb.verticalLevel!=='all'&&!constructionLevels.some(l=>String(l.index)===rb.verticalLevel))rb.verticalLevel=String(constructionLevels[0]?.index||1);
-    const selectedLevel=constructionLevels.find(l=>String(l.index)===rb.verticalLevel)||constructionLevels[0];
-    const totalSlots=constructionLevels.reduce((s,l)=>s+l.slots.length,0);
-    const stepLabels=[['Configurar','Dimensiones y material'],['Construir','Agregar componentes'],['Revisar','Niveles y selección'],['Guardar','Guardar modelo']];
-    const stepper=stepLabels.map((s,i)=>`<button type="button" class="rack-assistant-step ${rb.assistantStep===i+1?'active':''} ${rb.assistantStep>i+1?'done':''}" data-rack-assistant-step="${i+1}"><span>${rb.assistantStep>i+1?'✓':i+1}</span><b>${s[0]}</b><small>${s[1]}</small></button>`).join('<i>›</i>');
-    contentWrap.innerHTML=`<div class="rack-assistant-shell">
-      <div class="rack-assistant-topbar">
-        <div class="rack-assistant-stepper">${stepper}</div>
-        <div class="rack-assistant-top-actions"><button class="mini-btn" id="rackConstructionNew">Nuevo</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="btn rack-assistant-save" id="rackConstructionSave">Guardar rack</button></div>
-      </div>
-      <div class="rack-assistant-projectbar">
-        <label>Modelo<select id="rackConstructionModelSelect">${modelOptions}</select></label>
-        <label>Nombre<input id="rackConstructionName" value="${escapeHtml(model.name||'')}"></label>
-        <div class="rack-assistant-metrics"><span><b>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)}</b> cm</span><span><b>${constructionLevels.length}</b> niveles</span><span><b>${totalSlots}</b> slots</span></div>
-      </div>
-      ${enabled?`<div class="rack-assistant-main">
-        <aside class="rack-component-library">
-          <div class="rack-panel-title"><div><b>Biblioteca de piezas</b><span>Haz clic o arrastra al 3D.</span></div></div>
-          <div class="rack-component-group"><span>Estructura</span>
-            <button draggable="true" data-construction-piece="carcass"><i>▥</i><b>Estructura base</b><small>Laterales + base + tapa</small></button>
-          </div>
-          <div class="rack-component-group"><span>Componentes</span>
-            <button draggable="true" data-construction-piece="shelf"><i>▬</i><b>Repisa</b><small>Horizontal</small></button>
-            <button draggable="true" data-construction-piece="divider"><i>▯</i><b>División</b><small>Vertical</small></button>
-            <button draggable="true" data-construction-piece="back"><i>▤</i><b>Fondo</b><small>Panel trasero</small></button>
-            <button draggable="true" data-construction-piece="brace"><i>╱</i><b>Refuerzo</b><small>Diagonal / estructural</small></button>
-          </div>
-          <div class="rack-component-group"><span>Edición</span>
-            <button data-furniture-action="duplicate-piece" data-mid="${model.id}"><i>⧉</i><b>Duplicar</b><small>Pieza seleccionada</small></button>
-            <button data-furniture-action="distribute-shelves" data-mid="${model.id}"><i>↕</i><b>Distribuir</b><small>Repisas uniformes</small></button>
-          </div>
-          <div class="rack-component-drop-help"><b>Arrastrar y soltar</b><span>Al soltar una repisa se calcula su altura. Al soltar una división se calcula X y el nivel más cercano.</span></div>
+    const tool=(id,icon,label)=>`<button type="button" class="rack-cad-tool ${rb.cadTool===id?'active':''}" data-rack-cad-tool="${id}"><i>${icon}</i><span>${label}</span></button>`;
+    contentWrap.innerHTML=`<div class="rack-cad-shell">
+      <header class="rack-cad-projectbar">
+        <div class="rack-cad-project-main"><select id="rackConstructionModelSelect">${modelOptions}</select><input id="rackConstructionName" value="${escapeHtml(model.name||'')}" aria-label="Nombre del rack"></div>
+        <div class="rack-cad-project-chips"><span>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)} cm</span><span>${furnitureMaterialLabel(f.material)} ${round1(f.thickness)} cm</span><span>${levels.length} niveles</span><span>${totalSlots} slots</span></div>
+        <div class="rack-cad-project-actions"><button class="mini-btn" id="rackConstructionNew">Nuevo</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="btn" id="rackConstructionSave">Guardar</button></div>
+      </header>
+      ${enabled?`<div class="rack-cad-main">
+        <aside class="rack-cad-toolrail">
+          ${tool('select','↖','Seleccionar')}
+          ${tool('shelf','▬','Repisa')}
+          ${tool('divider','│','División')}
+          ${tool('back','▤','Fondo')}
+          <div class="rack-cad-toolrail-sep"></div>
+          <button type="button" class="rack-cad-tool" data-furniture-action="duplicate-piece" data-mid="${model.id}"><i>⧉</i><span>Duplicar</span></button>
+          <button type="button" class="rack-cad-tool" data-furniture-action="distribute-shelves" data-mid="${model.id}"><i>↕</i><span>Distribuir</span></button>
         </aside>
-        <section class="rack-assistant-canvas">
-          <div class="rack-assistant-canvas-head"><div><b>Área de construcción</b><span>El modelo se actualiza en tiempo real.</span></div><div class="rack-view-switch"><button class="${rb.viewMode==='3d'?'active':''}" data-rack-view="3d">3D</button><button class="${rb.viewMode==='front'?'active':''}" data-rack-view="front">Frontal</button><button disabled>Sección</button></div></div>
-          <div class="rack-assistant-stage-stack">
-            <div id="rackFurniture3D" class="rack-furniture-3d-stage rack-construction-3d-stage rack-assistant-3d ${rb.viewMode==='3d'?'':'is-hidden'}" data-model-id="${model.id}"></div>
-            <div class="rack-assistant-front ${rb.viewMode==='front'?'':'is-hidden'}"><svg id="rackBuilderFront" viewBox="0 0 820 590" preserveAspectRatio="xMidYMid meet"></svg></div>
-            <div class="rack-drop-overlay" id="rackConstructionDropOverlay"><b>Suelta la pieza aquí</b><span>La posición del cursor define dónde se inserta.</span></div>
+        <section class="rack-cad-canvas">
+          <div class="rack-cad-canvas-head"><div><b>Editor visual</b><span id="rackCadModeHint">${rb.cadTool==='select'?'Selecciona una pieza o un espacio interno.':rb.cadTool==='shelf'?'Haz clic dentro de un espacio para insertar una repisa a esa altura.':rb.cadTool==='divider'?'Haz clic dentro de un espacio para dividirlo verticalmente.':'Haz clic para agregar o seleccionar el fondo.'}</span></div><div class="rack-view-switch"><button class="${rb.viewMode==='3d'?'active':''}" data-rack-view="3d">3D</button><button class="${rb.viewMode==='front'?'active':''}" data-rack-view="front">Frontal</button></div></div>
+          <div class="rack-cad-stage-stack">
+            <div id="rackFurniture3D" class="rack-furniture-3d-stage rack-cad-3d ${rb.viewMode==='3d'?'':'is-hidden'}" data-model-id="${model.id}"></div>
+            <div class="rack-cad-front ${rb.viewMode==='front'?'':'is-hidden'}"><svg id="rackBuilderFront" viewBox="0 0 820 590" preserveAspectRatio="xMidYMid meet"></svg></div>
           </div>
-          <div class="rack-assistant-canvas-foot"><span>Clic: seleccionar</span><span>Arrastrar pieza: mover</span><span>Fondo: orbitar</span><span>Rueda: zoom</span><button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar cámara</button></div>
+          <div class="rack-cad-canvas-foot"><span>Fondo: orbitar</span><span>Rueda: zoom</span><span>Ctrl/Cmd + clic: selección múltiple de repisas</span><button class="mini-btn" data-furniture-action="reset-3d-camera" data-mid="${model.id}">Centrar</button></div>
         </section>
-        <aside class="rack-assistant-right">
-          <section class="rack-assistant-card rack-quick-config">
-            <div class="rack-panel-title"><div><b>Configuración rápida</b><span>Propiedades generales.</span></div></div>
-            <div class="construction-grid-2"><label class="construction-field">Ancho (cm)<input type="number" min="30" step="1" data-furniture-model-field="width" data-mid="${model.id}" value="${round1(model.width)}"></label><label class="construction-field">Profundidad (cm)<input type="number" min="20" step="1" data-furniture-model-field="depth" data-mid="${model.id}" value="${round1(model.depth)}"></label><label class="construction-field">Alto (cm)<input type="number" min="60" step="1" data-furniture-model-field="height" data-mid="${model.id}" value="${round1(model.height)}"></label><label class="construction-field">Grosor (cm)<input type="number" min=".3" step=".1" data-furniture-field="thickness" data-mid="${model.id}" value="${round1(f.thickness)}"></label></div>
+        <aside class="rack-cad-inspector-col">
+          <section class="rack-cad-inspector-card"><div class="rack-panel-title"><div><b>Propiedades</b><span id="rackCadInspectorHint">Contexto de la selección</span></div></div><div id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></div></section>
+          <section class="rack-cad-inspector-card rack-cad-general"><div class="rack-panel-title"><div><b>Mueble</b><span>Dimensiones y material</span></div></div>
+            <div class="construction-grid-2"><label class="construction-field">Ancho<input type="number" min="30" step="1" data-furniture-model-field="width" data-mid="${model.id}" value="${round1(model.width)}"></label><label class="construction-field">Profundidad<input type="number" min="20" step="1" data-furniture-model-field="depth" data-mid="${model.id}" value="${round1(model.depth)}"></label><label class="construction-field">Alto<input type="number" min="60" step="1" data-furniture-model-field="height" data-mid="${model.id}" value="${round1(model.height)}"></label><label class="construction-field">Grosor<input type="number" min=".3" step=".1" data-furniture-field="thickness" data-mid="${model.id}" value="${round1(f.thickness)}"></label></div>
             <label class="construction-field">Material<select data-furniture-field="material" data-mid="${model.id}"><option value="melamine" ${f.material==='melamine'?'selected':''}>Melamina</option><option value="wood" ${f.material==='wood'?'selected':''}>Madera</option><option value="metal" ${f.material==='metal'?'selected':''}>Metal</option></select></label>
-            <label class="construction-field">Forma superior<select data-furniture-field="roofMode" data-mid="${model.id}"><option value="flat" ${f.roofMode==='flat'?'selected':''}>Recto</option><option value="slope" ${f.roofMode==='slope'?'selected':''}>Con pendiente</option></select></label>
-            <div class="construction-grid-2"><label class="construction-field">Altura izq.<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label><label class="construction-field">Altura der.<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}" ${f.roofMode==='flat'?'disabled':''}></label></div>
-          </section>
-          <section class="rack-assistant-card">
-            <div class="rack-panel-title"><div><b>Pieza seleccionada</b><span>Propiedades contextuales.</span></div></div>
-            <div id="rackBuilderInspector" class="rack-builder-inspector rack-3d-inspector"></div>
-          </section>
-          <section class="rack-assistant-card rack-level-shortcuts">
-            <div class="rack-panel-title"><div><b>Inserción precisa</b><span>Opcional: agrega por medidas.</span></div></div>
-            <details><summary>Repisa</summary><label class="construction-field">Z desde base<input id="rackBuilderShelfZ" type="number" step=".1" value="${round1(rb.shelfZ||80)}"></label><button class="mini-btn rack-builder-primary" data-furniture-action="shelf" data-mid="${model.id}">Agregar repisa</button></details>
-            <details><summary>División</summary><div class="construction-grid-2"><label class="construction-field">X<input id="rackBuilderDividerX" type="number" step=".1" value="${round1(rb.dividerX||60)}"></label><label class="construction-field">Desde Z<input id="rackBuilderDividerFrom" type="number" step=".1" value="${round1(rb.dividerFrom||selectedLevel?.z0||0)}"></label><label class="construction-field">Hasta Z<input id="rackBuilderDividerTo" type="number" step=".1" value="${round1(rb.dividerTo||selectedLevel?.z1||120)}"></label><label class="construction-field">Snap<input type="number" min=".1" step=".1" data-furniture-field="snap" data-mid="${model.id}" value="${round1(f.snap||1)}"></label></div><button class="mini-btn" data-furniture-action="divider" data-mid="${model.id}">Agregar división</button></details>
+            <label class="construction-field">Forma superior<select data-furniture-field="roofMode" data-mid="${model.id}"><option value="flat" ${f.roofMode==='flat'?'selected':''}>Recto</option><option value="slope" ${f.roofMode==='slope'?'selected':''}>Pendiente</option></select></label>
+            ${f.roofMode==='slope'?`<div class="construction-grid-2"><label class="construction-field">Altura izq.<input type="number" min="20" step="1" data-furniture-field="leftHeight" data-mid="${model.id}" value="${round1(f.leftHeight)}"></label><label class="construction-field">Altura der.<input type="number" min="20" step="1" data-furniture-field="rightHeight" data-mid="${model.id}" value="${round1(f.rightHeight)}"></label></div>`:''}
           </section>
         </aside>
       </div>
-      <section class="rack-assistant-levels">
-        <div class="rack-assistant-levels-head"><div><b>Editor de niveles y distribución</b><span>Resumen compacto del WMS derivado de la geometría.</span></div><div class="rack-assistant-level-actions"><button class="mini-btn" id="rackAssistantAutoLevels">Auto distribuir</button><label class="construction-pick"><input id="rackAssistantEqualLevels" type="checkbox" ${rb.horizontalEqual?'checked':''}><span>Equitativo</span></label></div></div>
-        <div id="rackBuilderLevels" class="rack-builder-levels rack-builder-levels-assisted"></div>
-      </section>`:`<div class="rack-assistant-convert"><div><b>Este modelo usa el generador clásico.</b><span>Modelos de rack seguirá intacto. Para construirlo aquí, prepara una copia editable en el constructor modular.</span></div><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Preparar en constructor</button></div>`}
+      <section class="rack-cad-levelbar"><div class="rack-cad-levelbar-head"><div><b>Niveles / espacios</b><span>Se derivan automáticamente de las repisas y divisiones.</span></div><button class="mini-btn" id="rackCadAutoLevels">Distribuir repisas uniformemente</button></div><div id="rackBuilderLevels" class="rack-builder-levels rack-cad-levels"></div></section>`:`<div class="rack-assistant-convert"><div><b>Este modelo usa el generador clásico.</b><span>Modelos de rack permanece intacto. Crea una copia editable para usar Visual Furniture CAD.</span></div><button class="btn" data-furniture-action="convert" data-mid="${model.id}">Preparar copia editable</button></div>`}
     </div>`;
-    const select=document.getElementById('rackConstructionModelSelect');if(select)select.onchange=()=>{appState.selectedModelId=select.value;disposeRackFurniture3DEngine();renderRackConstructionWorkspace();};
-    const name=document.getElementById('rackConstructionName');if(name)name.onchange=()=>{model.name=String(name.value||'').trim()||'Rack sin nombre';saveRackModels();};
+    document.getElementById('rackConstructionModelSelect')?.addEventListener('change',e=>{appState.selectedModelId=e.target.value;disposeRackFurniture3DEngine();renderRackConstructionWorkspace();});
+    document.getElementById('rackConstructionName')?.addEventListener('change',e=>{model.name=String(e.target.value||'').trim()||'Rack sin nombre';saveRackModels();});
     document.getElementById('rackConstructionNew')?.addEventListener('click',createNewFurnitureModelForConstruction);
     document.getElementById('rackConstructionDuplicate')?.addEventListener('click',duplicateFurnitureModelForConstruction);
     document.getElementById('rackConstructionSave')?.addEventListener('click',saveFurnitureConstructionModel);
-    $$('[data-rack-assistant-step]').forEach(btn=>btn.onclick=()=>{rb.assistantStep=Number(btn.getAttribute('data-rack-assistant-step')||1);renderRackConstructionWorkspace();});
-    $$('[data-rack-view]').forEach(btn=>btn.onclick=()=>{rb.viewMode=btn.getAttribute('data-rack-view')||'3d';renderRackConstructionWorkspace();});
-    document.getElementById('rackAssistantAutoLevels')?.addEventListener('click',()=>{recordHistorySnapshot('racks');const count=Math.max(1,constructionLevels.length||Number(model.levels||1));applyConstructionHorizontalSpaces(model,count,true,[]);rb.horizontalEqual=true;saveRackModels();renderRackConstructionWorkspace();});
-    const equalToggle=document.getElementById('rackAssistantEqualLevels');if(equalToggle)equalToggle.onchange=()=>{rb.horizontalEqual=!!equalToggle.checked;};
+    $$('[data-rack-cad-tool]').forEach(btn=>btn.onclick=()=>{rb.cadTool=btn.getAttribute('data-rack-cad-tool')||'select';$$('[data-rack-cad-tool]').forEach(x=>x.classList.toggle('active',x.getAttribute('data-rack-cad-tool')===rb.cadTool));const hint=document.getElementById('rackCadModeHint');if(hint)hint.textContent=rb.cadTool==='select'?'Selecciona una pieza o un espacio interno.':rb.cadTool==='shelf'?'Haz clic dentro de un espacio para insertar una repisa a esa altura.':rb.cadTool==='divider'?'Haz clic dentro de un espacio para dividirlo verticalmente.':'Haz clic para agregar o seleccionar el fondo.';});
+    $$('[data-rack-view]').forEach(btn=>btn.onclick=()=>{rb.viewMode=btn.getAttribute('data-rack-view')||'3d';$$('[data-rack-view]').forEach(x=>x.classList.toggle('active',x.getAttribute('data-rack-view')===rb.viewMode));document.getElementById('rackFurniture3D')?.classList.toggle('is-hidden',rb.viewMode!=='3d');document.querySelector('.rack-cad-front')?.classList.toggle('is-hidden',rb.viewMode!=='front');if(rb.viewMode==='3d')renderRackFurniture3D(model.id);});
+    document.getElementById('rackCadAutoLevels')?.addEventListener('click',()=>{recordHistorySnapshot('racks');furnitureDistributeShelves(model);syncFurnitureModelToLegacy(model);saveRackModels();renderRackConstructionWorkspace();});
     bindRackFurnitureBuilder(model.id);
-    if(enabled){renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);bindRackConstructionComponentLibrary(model);}
-    updateUndoRedoUi();contentStatus.textContent='Modo activo: CONSTRUCTOR MODULAR ASISTIDO • biblioteca + 3D + propiedades + niveles.';contentFootRight.textContent=`${appState.models.length} modelos`;
+    if(enabled){
+      if(document.getElementById('rackBuilderFront')) renderRackFurnitureBuilder(model.id);
+      refreshRackConstructionPanels(model);
+      renderRackFurniture3D(model.id);
+    }
+    updateUndoRedoUi();contentStatus.textContent='Modo activo: VISUAL FURNITURE CAD • modela directamente sobre el mueble.';contentFootRight.textContent=`${appState.models.length} modelos`;
   }
+
+  function refreshRackConstructionPanels(model){
+    if(!isRackConstructionScreen()||!model?.furniture?.enabled)return;
+    const inspector=document.getElementById('rackBuilderInspector');if(inspector)renderFurnitureInspector(model,inspector);
+    const levels=document.getElementById('rackBuilderLevels');if(levels)renderFurnitureLevels(model,levels);
+  }
+
+  function furnitureGetSelectedSpace(model){
+    ensureRackFurnitureModel(model);const sel=model.furniture.selectedSpace;if(!sel)return null;const level=deriveFurnitureLevels(model).find(l=>l.index===Number(sel.levelIndex));const slot=level?.slots?.find(s=>s.index===Number(sel.slotIndex));return level&&slot?{level,slot}:null;
+  }
+
+  function furnitureDivideSpaceVertical(model,levelIndex,slotIndex,count=2){
+    ensureRackFurnitureModel(model);furnitureRefitModel(model);const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8)),D=Number(model.depth||40);const level=deriveFurnitureLevels(model).find(l=>l.index===Number(levelIndex));const slot=level?.slots?.find(s=>s.index===Number(slotIndex));if(!level||!slot)return false;const n=Math.max(2,Math.min(8,Number(count||2)));recordHistorySnapshot('racks');for(let i=1;i<n;i++){const cx=slot.x0+(slot.x1-slot.x0)*i/n;const d=furnitureMakePiece('divider',{name:`División N${level.index}`,x:cx-t/2,y:0,z:level.z0,w:t,d:D,h:level.height,join:f.material==='metal'?'slot':'between'});constrainConstructionDivider(model,d);f.pieces.push(d);}f.selectedSpace=null;furnitureRefitModel(model);syncFurnitureModelToLegacy(model);saveRackModels();return true;
+  }
+
+  function furnitureSplitLevelHorizontal(model,levelIndex,z=null){
+    ensureRackFurnitureModel(model);furnitureRefitModel(model);const f=model.furniture,t=Math.max(.3,Number(f.thickness||1.8)),W=Number(model.width||120),D=Number(model.depth||40);const level=deriveFurnitureLevels(model).find(l=>l.index===Number(levelIndex));if(!level)return false;let target=Number.isFinite(Number(z))?Number(z):(level.z0+level.z1)/2;target=Math.max(level.z0+Math.max(4,t),Math.min(level.z1-Math.max(4,t),target));if(level.z1-level.z0<Math.max(12,t*3))return false;recordHistorySnapshot('racks');const shelf=furnitureMakePiece('shelf',{name:`Repisa ${f.pieces.filter(x=>x.type==='shelf').length+1}`,x:t,y:0,z:target,w:Math.max(1,W-2*t),d:D,h:t,join:f.material==='metal'?'bolted':'between',autoFit:'shelf'});f.pieces.push(shelf);resolveConstructionShelfCollisions(model,shelf.id);f.selectedSpace=null;furnitureRefitModel(model);syncFurnitureModelToLegacy(model);saveRackModels();return true;
+  }
+
 
   function bindRackConstructionComponentLibrary(model){
     if(!model?.furniture?.enabled)return;const f=model.furniture,host=document.getElementById('rackFurniture3D'),overlay=document.getElementById('rackConstructionDropOverlay');
@@ -1369,6 +1361,17 @@
 
   function renderFurnitureInspector(model,mount){
     const f=model.furniture;
+    if(isRackConstructionScreen() && f.selectedSpace){
+      const selectedSpace=furnitureGetSelectedSpace(model);
+      if(selectedSpace){
+        const {level,slot}=selectedSpace;
+        mount.innerHTML=`<div class="rack-builder-inspector-head"><div><span>Espacio seleccionado</span><b>N${level.index}-${slot.code}</b></div><span class="tag">ESPACIO</span></div><div class="rack-builder-piece-metrics"><div><b>Ancho libre</b><span>${round1(slot.width)} cm</span></div><div><b>Alto libre</b><span>${round1(level.height)} cm</span></div></div><div class="rack-space-actions"><b>Dividir verticalmente</b><div class="rack-space-split-buttons"><button class="mini-btn" data-space-vertical="2">2</button><button class="mini-btn" data-space-vertical="3">3</button><button class="mini-btn" data-space-vertical="4">4</button><label>Partes<input id="rackSpaceVerticalCount" type="number" min="2" max="8" value="2"></label><button class="btn" id="rackSpaceVerticalCustom">Dividir</button></div><b>Dividir horizontalmente</b><button class="mini-btn" id="rackSpaceHorizontalSplit">Agregar repisa al centro de este nivel</button></div><div class="tiny muted">Las divisiones verticales quedan contenidas entre las repisas que forman este nivel.</div>`;
+        $$('[data-space-vertical]',mount).forEach(btn=>btn.onclick=()=>{if(furnitureDivideSpaceVertical(model,level.index,slot.index,Number(btn.getAttribute('data-space-vertical')))){renderRackConstructionWorkspace();}});
+        mount.querySelector('#rackSpaceVerticalCustom')?.addEventListener('click',()=>{const count=Math.max(2,Math.min(8,Number(mount.querySelector('#rackSpaceVerticalCount')?.value||2)));if(furnitureDivideSpaceVertical(model,level.index,slot.index,count))renderRackConstructionWorkspace();});
+        mount.querySelector('#rackSpaceHorizontalSplit')?.addEventListener('click',()=>{if(furnitureSplitLevelHorizontal(model,level.index))renderRackConstructionWorkspace();});
+        return;
+      } else f.selectedSpace=null;
+    }
     const ids=(f.selectedPieceIds||[]).filter(id=>f.pieces.some(p=>p.id===id));
     const selected=ids.map(id=>f.pieces.find(p=>p.id===id)).filter(Boolean);
     const p=f.pieces.find(x=>x.id===f.selectedPieceId)||selected[0];
@@ -1412,7 +1415,7 @@
     const f=model.furniture,levels=deriveFurnitureLevels(model);
     if(!levels.length){mount.innerHTML='<div class="tiny muted">Agrega una base y una tapa/repisas para formar compartimentos.</div>';return;}
     if(isRackConstructionScreen()){
-      mount.innerHTML=`<div class="rack-assisted-level-table"><div class="rack-assisted-level-row head"><span>Nivel</span><span>Altura libre</span><span>Slots</span><span>Divisores</span><span>Acciones</span></div>${[...levels].reverse().map(l=>`<div class="rack-assisted-level-row"><b>N${l.index}</b><span>${round1(l.height)} cm</span><label><input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><span>${l.physicalDividerCount}</span><div><button class="mini-btn" data-furniture-materialize="${l.index}">Dividir</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Limpiar</button></div></div>`).join('')}</div>`;
+      mount.innerHTML=`<div class="rack-cad-level-list">${[...levels].reverse().map(l=>`<div class="rack-cad-level-card ${f.selectedSpace&&Number(f.selectedSpace.levelIndex)===Number(l.index)?'active':''}"><div><b>N${l.index}</b><span>${round1(l.height)} cm libres</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><small>${l.physicalDividerCount} divisor${l.physicalDividerCount===1?'':'es'} físico${l.physicalDividerCount===1?'':'s'}</small></div>`).join('')}</div>`;
     }else{
       mount.innerHTML=`<div class="rack-builder-levels-head"><div><b>Niveles y slots derivados</b><span>Los slots pueden ser físicos (divisor) o lógicos para WMS.</span></div><span class="tag">Capacidad ${levels.reduce((s,l)=>s+l.slots.length,0)}</span></div><div class="rack-builder-level-grid">${[...levels].reverse().map(l=>`<div class="rack-builder-level-card"><div><b>Nivel ${l.index}</b><span>${round1(l.height)} cm libres · ${l.physicalDividerCount} divisores físicos</span></div><label>Slots WMS<input type="number" min="1" max="12" step="1" data-furniture-level-slots="${l.index}" value="${l.slots.length}"></label><div class="rack-builder-slot-chips">${l.slots.map(s=>`<span>${s.code} · ${round1(s.width)} cm</span>`).join('')}</div><div class="rack-builder-level-actions"><button class="mini-btn" data-furniture-materialize="${l.index}">Crear divisores físicos</button><button class="mini-btn" data-furniture-clear-dividers="${l.index}">Quitar divisores</button></div></div>`).join('')}</div>`;
     }
@@ -1466,7 +1469,7 @@
     const scene=new THREE.Scene();scene.background=new THREE.Color(constructionMode?0x102536:0x07131d);const camera=new THREE.PerspectiveCamera(34,1,.1,10000);const target=new THREE.Vector3();
     scene.add(new THREE.HemisphereLight(constructionMode?0xf0fbff:0xd9efff,constructionMode?0x354653:0x24313b,constructionMode?1.8:1.45));const key=new THREE.DirectionalLight(0xffffff,constructionMode?1.9:1.55);key.position.set(250,360,220);key.castShadow=true;key.shadow.mapSize.set(1024,1024);scene.add(key);const fill=new THREE.DirectionalLight(constructionMode?0xb7dcf4:0x89b8d8,constructionMode ? .95 : .65);fill.position.set(-220,160,-180);scene.add(fill);
     const root=new THREE.Group();root.name='furnitureRoot';scene.add(root);const grid=new THREE.GridHelper(700,35,constructionMode?0x5b98bf:0x355064,constructionMode?0x2a536c:0x1c3444);grid.position.y=-.03;scene.add(grid);
-    const e={THREE,host,renderer,scene,camera,target,root,raycaster:new THREE.Raycaster(),pointer:new THREE.Vector2(),modelId:model.id,yaw:-.75,pitch:.42,distance:320,raf:0,drag:null,orbit:null,meshByPiece:new Map()};
+    const e={THREE,host,renderer,scene,camera,target,root,raycaster:new THREE.Raycaster(),pointer:new THREE.Vector2(),modelId:model.id,yaw:-.75,pitch:.42,distance:320,raf:0,drag:null,orbit:null,meshByPiece:new Map(),spaceMeshes:[]};
     const resize=()=>{const w=Math.max(320,host.clientWidth),h=Math.max(360,host.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();requestRackFurniture3DRender(e);};resize();e.resizeObserver=new ResizeObserver(resize);e.resizeObserver.observe(host);
     renderer.domElement.style.touchAction='none';
     renderer.domElement.addEventListener('pointerdown',ev=>rackFurniture3DPointerDown(e,ev));
@@ -1481,7 +1484,7 @@
   }
 
   function clearRackFurniture3DRoot(e){
-    e.root.children.slice().forEach(o=>{e.root.remove(o);o.traverse?.(x=>{x.geometry?.dispose?.();if(x.material){const ms=Array.isArray(x.material)?x.material:[x.material];ms.forEach(m=>m.dispose?.());}});});e.meshByPiece.clear();
+    e.root.children.slice().forEach(o=>{e.root.remove(o);o.traverse?.(x=>{x.geometry?.dispose?.();if(x.material){const ms=Array.isArray(x.material)?x.material:[x.material];ms.forEach(m=>m.dispose?.());}});});e.meshByPiece.clear();e.spaceMeshes=[];
   }
 
   function rebuildRackFurniture3DScene(e,model){
@@ -1494,20 +1497,34 @@
       const geom=new THREE.BoxGeometry(Math.max(.1,p.w),Math.max(.1,p.h),Math.max(.1,p.d));const mat=rackFurnitureMaterialSet(THREE,f.material,selectedIds.has(p.id));const mesh=new THREE.Mesh(geom,mat);mesh.position.set(Number(p.x||0)+p.w/2,Number(p.z||0)+p.h/2,Number(p.y||0)+p.d/2);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData={pieceId:p.id,type:p.type};e.root.add(mesh);e.meshByPiece.set(p.id,mesh);
       if(selectedIds.has(p.id)){const edges=new THREE.EdgesGeometry(geom);const line=new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color:0x75ffc2}));line.position.copy(mesh.position);line.rotation.copy(mesh.rotation);e.root.add(line);}
     });
-    // translucent WMS compartments
-    deriveFurnitureLevels(model).forEach(l=>l.slots.forEach(slot=>{const geom=new THREE.BoxGeometry(Math.max(.1,slot.width-1),Math.max(.1,l.height-1),Math.max(1,D*.86));const mat=new THREE.MeshBasicMaterial({color:0x3ba7db,transparent:true,opacity:.035,depthWrite:false});const m=new THREE.Mesh(geom,mat);m.position.set((slot.x0+slot.x1)/2,(l.z0+l.z1)/2,D*.5);m.userData={nonSelectable:true};e.root.add(m);}));
+    // espacios internos seleccionables en el constructor visual
+    deriveFurnitureLevels(model).forEach(l=>l.slots.forEach(slot=>{const selected=!!(isRackConstructionScreen()&&f.selectedSpace&&Number(f.selectedSpace.levelIndex)===Number(l.index)&&Number(f.selectedSpace.slotIndex)===Number(slot.index));const geom=new THREE.BoxGeometry(Math.max(.1,slot.width-1),Math.max(.1,l.height-1),Math.max(1,D*.82));const mat=new THREE.MeshBasicMaterial({color:selected?0x42e7a5:0x5ec7f0,transparent:true,opacity:selected?.18:(isRackConstructionScreen()?.055:.025),depthWrite:false,side:THREE.DoubleSide});const m=new THREE.Mesh(geom,mat);m.position.set((slot.x0+slot.x1)/2,(l.z0+l.z1)/2,D*.5);m.userData={space:true,levelIndex:l.index,slotIndex:slot.index};e.root.add(m);e.spaceMeshes.push(m);}));
     // axes labels via simple helper
     const axes=new THREE.AxesHelper(Math.max(35,Math.min(W,H,D)));axes.position.set(0,0,0);e.root.add(axes);
     e.target.set(W/2,Math.max(20,H*.42),D/2);updateRackFurniture3DCamera(e);
   }
 
   function rackFurniture3DHit(e,ev){
-    const rect=e.renderer.domElement.getBoundingClientRect();e.pointer.x=((ev.clientX-rect.left)/rect.width)*2-1;e.pointer.y=-((ev.clientY-rect.top)/rect.height)*2+1;e.raycaster.setFromCamera(e.pointer,e.camera);return e.raycaster.intersectObjects([...e.meshByPiece.values()],false)[0]||null;
+    const rect=e.renderer.domElement.getBoundingClientRect();e.pointer.x=((ev.clientX-rect.left)/rect.width)*2-1;e.pointer.y=-((ev.clientY-rect.top)/rect.height)*2+1;e.raycaster.setFromCamera(e.pointer,e.camera);return e.raycaster.intersectObjects([...e.meshByPiece.values(),...(e.spaceMeshes||[])],false)[0]||null;
   }
 
   function rackFurniture3DPointerDown(e,ev){
     const model=rackModel(e.modelId);if(!model)return;const f=model.furniture,hit=rackFurniture3DHit(e,ev);const start={x:ev.clientX,y:ev.clientY};
+    if(isRackConstructionScreen() && hit?.object?.userData?.space){
+      const levelIndex=Number(hit.object.userData.levelIndex),slotIndex=Number(hit.object.userData.slotIndex);const rb=appState.ui?.rackBuilder||{};
+      f.selectedPieceId='';f.selectedPieceIds=[];f.selectedSpace={levelIndex,slotIndex};
+      if(rb.cadTool==='shelf'){
+        const z=Math.max(0,Number(hit.point?.y||0));if(furnitureSplitLevelHorizontal(model,levelIndex,z)){rb.cadTool='select';renderRackConstructionWorkspace();return;}
+      }else if(rb.cadTool==='divider'){
+        const level=deriveFurnitureLevels(model).find(l=>l.index===levelIndex);const slot=level?.slots?.find(s=>s.index===slotIndex);if(level&&slot){recordHistorySnapshot('racks');const t=Math.max(.3,Number(f.thickness||1.8)),D=Number(model.depth||40),x=Math.max(slot.x0+t*.5,Math.min(slot.x1-t*.5,Number(hit.point?.x||((slot.x0+slot.x1)/2))));const d=furnitureMakePiece('divider',{name:`División N${level.index}`,x:x-t/2,y:0,z:level.z0,w:t,d:D,h:level.height,join:f.material==='metal'?'slot':'between'});constrainConstructionDivider(model,d);f.pieces.push(d);f.selectedSpace=null;f.selectedPieceId=d.id;f.selectedPieceIds=[d.id];syncFurnitureModelToLegacy(model);saveRackModels();rb.cadTool='select';renderRackConstructionWorkspace();return;}
+      }else if(rb.cadTool==='back'){
+        recordHistorySnapshot('racks');furnitureAddBack(model);syncFurnitureModelToLegacy(model);saveRackModels();rb.cadTool='select';renderRackConstructionWorkspace();return;
+      }else{
+        rebuildRackFurniture3DScene(e,model);requestRackFurniture3DRender(e);refreshRackConstructionPanels(model);return;
+      }
+    }
     if(hit?.object?.userData?.pieceId){
+      f.selectedSpace=null;
       const id=hit.object.userData.pieceId,p=f.pieces.find(x=>x.id===id);if(!p)return;
       if(ev.ctrlKey||ev.metaKey){const set=new Set(f.selectedPieceIds||[]);if(set.has(id))set.delete(id);else set.add(id);f.selectedPieceIds=[...set];f.selectedPieceId=id;}else{f.selectedPieceId=id;f.selectedPieceIds=[id];}
       renderRackFurnitureBuilder(model.id);renderRackFurniture3D(model.id);
@@ -1516,6 +1533,7 @@
       }
       return;
     }
+    if(isRackConstructionScreen()){f.selectedSpace=null;refreshRackConstructionPanels(model);}
     e.orbit={x:ev.clientX,y:ev.clientY,yaw:e.yaw,pitch:e.pitch};const move=mv=>{e.yaw=e.orbit.yaw-(mv.clientX-e.orbit.x)*.008;e.pitch=Math.max(-.05,Math.min(1.35,e.orbit.pitch+(mv.clientY-e.orbit.y)*.006));updateRackFurniture3DCamera(e);requestRackFurniture3DRender(e);};const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);};document.addEventListener('pointermove',move);document.addEventListener('pointerup',up,{once:true});
   }
 

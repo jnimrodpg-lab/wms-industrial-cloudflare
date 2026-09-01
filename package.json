@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "private": true,
-  "description": "WMS Industrial v147: constructor modular asistido con biblioteca de componentes, 3D central, configuración rápida, inspector y niveles integrados.",
+  "description": "WMS Industrial v148 Visual Furniture CAD: modelado directo por piezas y espacios con 3D dominante, inspector contextual y división visual.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
