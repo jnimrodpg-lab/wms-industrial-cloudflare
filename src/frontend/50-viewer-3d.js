@@ -74,8 +74,8 @@
         <div class="nav3d-head">
           <div>
             <div class="search-card-kicker">Ubicación visual · WebGL</div>
-            <h2>3D arquitectónico del layout</h2>
-            <p>Modelo sincronizado 2D↔3D con selección, visualización WMS y localización de producto.</p>
+            <h2>Visor 3D del layout</h2>
+            <p>Modelo sincronizado 2D↔3D para ubicar producto, revisar racks y coordinar la operación sin vista arquitectónica redundante.</p>
           </div>
           <div class="nav3d-actions">
             <div class="nav3d-head-location">${escapeHtml(ctx.primaryLoc || 'Sin ubicación')}</div>
@@ -91,8 +91,7 @@
             <button class="iso-tool" data-nav3d-action="views-panel">Vistas</button>
             <button class="iso-tool" data-nav3d-action="first-person">Primera persona</button>
             <button class="iso-tool" data-nav3d-action="save-view">Guardar vista</button>
-            <button class="iso-tool ${appState.ui?.nav3DArchitectural ? 'active' : ''}" data-nav3d-action="arch-mode">Arquitectónico</button>
-            <button class="iso-tool ${appState.ui?.nav3DPresentation ? 'active' : ''}" data-nav3d-action="presentation-mode">Presentación</button>
+                        <button class="iso-tool ${appState.ui?.nav3DPresentation ? 'active' : ''}" data-nav3d-action="presentation-mode">Presentación</button>
             <button class="iso-tool ${appState.ui?.nav3DRoof ? 'active' : ''}" data-nav3d-action="roof-toggle">Techo</button>
             <button class="iso-tool ${appState.ui?.nav3DShowRoomSlabs !== false ? 'active' : ''}" data-nav3d-action="room-slabs">Pisos</button>
             <button class="iso-tool ${appState.ui?.nav3DShowOpeningFrames !== false ? 'active' : ''}" data-nav3d-action="opening-frames">Marcos</button>
@@ -100,7 +99,7 @@
             <button class="iso-tool" data-nav3d-action="camera-top">Planta 3D</button>
             ${prod ? '<button class="iso-tool nav3d-locate-product" data-nav3d-action="locate-product">⌖ Producto</button>' : ''}
             <label class="nav3d-wms-mode-wrap" title="Modo de visualización WMS"><span>Vista</span><select id="nav3dWmsMode">
-              <option value="architecture">Arquitectura</option><option value="zones">Zonas</option><option value="occupancy">Ocupación</option><option value="stock">Stock</option><option value="category">Categoría</option><option value="brand">Marca</option>
+              <option value="occupancy">Ocupación</option><option value="zones">Zonas</option><option value="stock">Stock</option><option value="category">Categoría</option><option value="brand">Marca</option>
             </select></label>
             <div class="nav3d-visual-switch">
               <button class="iso-tool visual-mode" data-nav3d-action="visual-dark">Oscuro</button>
@@ -302,7 +301,7 @@
     let pulseTimer = 0, isClosed = false, visibilityHandler = null, nav3dKeyDownHandler = null, nav3dKeyUpHandler = null;
     const activePulseTargets = [];
     const initialUnifiedSelection = typeof getUnifiedLayoutSelection === 'function' ? getUnifiedLayoutSelection() : {type:'',id:''};
-    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:!!appState.ui?.nav3DArchitectural, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation, wmsMode:appState.ui?.nav3DWmsMode||'architecture', selection:{...initialUnifiedSelection}, move3D:!!appState.ui?.nav3DMoveMode };
+    const ui = { isolation:'solo', ghost:true, labels:true, route:true, visual: currentVisualMode, target: appState.ui?.nav3DTarget || 'primary', selectedRackId: appState.ui?.nav3DSelectedRackId || '', arch:false, roof:!!appState.ui?.nav3DRoof, presentation:!!appState.ui?.nav3DPresentation, wmsMode:appState.ui?.nav3DWmsMode||'occupancy', selection:{...initialUnifiedSelection}, move3D:!!appState.ui?.nav3DMoveMode };
     if(wmsModeSelect) wmsModeSelect.value=ui.wmsMode;
     const close = () => {
       if(isClosed) return;
@@ -327,6 +326,8 @@
     modal.querySelector('[data-rack-zoom-close]')?.addEventListener('click', () => { rackZoom.hidden=true; rackZoom.classList.remove('show'); });
     rackZoom?.addEventListener('click', e => { if(e.target === rackZoom){ rackZoom.hidden=true; rackZoom.classList.remove('show'); } });
 
+    appState.ui.nav3DArchitectural = false;
+    if(ui.wmsMode === 'architecture') ui.wmsMode = 'occupancy';
     const syncToolbar = () => {
       modal.querySelectorAll('[data-nav3d-action="all"],[data-nav3d-action="zone"],[data-nav3d-action="rack"],[data-nav3d-action="solo"]').forEach(b => b.classList.toggle('active', b.dataset.nav3dAction === ui.isolation));
       modal.querySelector('[data-nav3d-action="ghost"]')?.classList.toggle('active', ui.ghost);
@@ -437,8 +438,8 @@
       selectionCard.innerHTML='';
     };
     const renderWmsLegend = () => {
-      if(!wmsLegend)return; const labels={architecture:'Arquitectura',zones:'Zonas',occupancy:'Ocupación',stock:'Stock',category:'Categoría',brand:'Marca'}; const racks=getNav3DRacks(); const metrics=racks.map(r=>rackOperationalMetric(r)); const occupied=metrics.filter(m=>m.occupied>0).length; const stock=Math.round(metrics.reduce((a,m)=>a+m.stock,0));
-      wmsLegend.innerHTML=`<div class="nav3d-wms-legend-head"><b>${labels[ui.wmsMode]||'Arquitectura'}</b><span>${racks.length} racks</span></div>${ui.wmsMode==='occupancy'?'<div class="nav3d-wms-gradient"><i></i><span>Vacío</span><span>Completo</span></div>':''}<div class="nav3d-wms-stats"><span>${occupied} con producto</span><span>${stock} stock cargado</span></div>`;
+      if(!wmsLegend)return; const labels={zones:'Zonas',occupancy:'Ocupación',stock:'Stock',category:'Categoría',brand:'Marca'}; const racks=getNav3DRacks(); const metrics=racks.map(r=>rackOperationalMetric(r)); const occupied=metrics.filter(m=>m.occupied>0).length; const stock=Math.round(metrics.reduce((a,m)=>a+m.stock,0));
+      wmsLegend.innerHTML=`<div class="nav3d-wms-legend-head"><b>${labels[ui.wmsMode]||'Ocupación'}</b><span>${racks.length} racks</span></div>${ui.wmsMode==='occupancy'?'<div class="nav3d-wms-gradient"><i></i><span>Vacío</span><span>Completo</span></div>':''}<div class="nav3d-wms-stats"><span>${occupied} con producto</span><span>${stock} stock cargado</span></div>`;
     };
 
     const renderMiniMap = () => {
@@ -1506,7 +1507,7 @@
         if(field.startsWith('wall-')&&sel.type==='wall'&&typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()){const wall=findWallById(sel.id);if(!wall)return;if(typeof recordHistorySnapshot==='function')recordHistorySnapshot('structure');if(field==='wall-thickness')wall.thickness=Math.max(4,Number(e.target.value||14));if(field==='wall-height')wall.height=Math.max(80,Number(e.target.value||290));persistActiveLayout();close();openNavigable3DModal(prod);return;}
         if(field.startsWith('opening-')&&sel.type==='opening'&&typeof isStructureLayoutScreen==='function'&&isStructureLayoutScreen()){const opening=(appState.layout.openings||[]).find(o=>o.id===sel.id),wall=opening?findWallById(opening.wallId):null;if(!opening||!wall)return;const prev={width:opening.width,height:opening.height,sill:opening.sill,t:opening.t,offset:opening.offset};if(typeof recordHistorySnapshot==='function')recordHistorySnapshot('structure');if(field==='opening-width')opening.width=Math.max(20,Math.min(wallLength(wall)*.86,Number(e.target.value||90)));if(field==='opening-height')opening.height=Math.max(20,Number(e.target.value||210));if(field==='opening-sill')opening.sill=Math.max(0,Number(e.target.value||0));if(field==='opening-t')opening.t=Math.max(.01,Math.min(.99,Number(e.target.value||50)/100));const maxH=Math.max(20,Number(wall.height||290)-Number(opening.sill||0));opening.height=Math.min(Number(opening.height||210),maxH);opening.offset=Number(opening.t||.5)*Math.max(1,wallLength(wall));if(openingPlacementConflict(opening)){Object.assign(opening,prev);showToast('Cambio bloqueado: la abertura se superpondría con otra.','warning',2000);renderSelectionCard();return;}persistActiveLayout();close();openNavigable3DModal(prod);}
       });
-      wmsModeSelect?.addEventListener('change',()=>{const mode=String(wmsModeSelect.value||'architecture');appState.ui.nav3DWmsMode=mode;ui.wmsMode=mode;renderWmsLegend();close();openNavigable3DModal(prod);});
+      wmsModeSelect?.addEventListener('change',()=>{const mode=String(wmsModeSelect.value||'occupancy');appState.ui.nav3DWmsMode=mode;ui.wmsMode=mode;renderWmsLegend();close();openNavigable3DModal(prod);});
       const updateSectionNow = () => { applySectionClipping(); renderSectionPanel(); syncToolbar(); requestRender(true); };
       sectionPanel?.addEventListener('click', e => {
         const axis=e.target?.dataset?.sectionAxis, dirAxis=e.target?.dataset?.sectionDir;
@@ -1549,15 +1550,10 @@
         if(action === 'wall-cut'){
           appState.ui.nav3DWallCut = !appState.ui.nav3DWallCut;
         }
-        if(action === 'arch-mode'){
-          appState.ui.nav3DArchitectural = !appState.ui.nav3DArchitectural;
-          if(appState.ui.nav3DArchitectural) ui.route = false;
-          else appState.ui.nav3DPresentation = false;
-        }
         if(action === 'presentation-mode'){
           appState.ui.nav3DPresentation = !appState.ui.nav3DPresentation;
           if(appState.ui.nav3DPresentation){
-            appState.ui.nav3DArchitectural = true;
+            appState.ui.nav3DArchitectural = false;
             appState.ui.nav3DWallCut = false;
             appState.ui.nav3DRoof = false;
             appState.ui.nav3DShowRoomSlabs = true;

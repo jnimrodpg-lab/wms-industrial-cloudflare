@@ -2580,14 +2580,14 @@
       if(t1 - t0 <= .002) return;
       const isAutoZoneEdge = !!wall.autoZoneEdge;
       const isSharedWall = !!wall.isSharedWall || (Array.isArray(wall.sharedRoomIds) && wall.sharedRoomIds.length > 1);
-      const outerStroke = selected ? '#ffe08a' : (isSharedWall ? '#71f2c2' : (isAutoZoneEdge ? 'rgba(231,239,247,.98)' : '#dce8f5'));
-      const innerStroke = selected ? 'rgba(255,190,80,.95)' : (isSharedWall ? 'rgba(20,121,92,.92)' : (isAutoZoneEdge ? 'rgba(43,58,78,.76)' : 'rgba(34,48,66,.55)'));
+      const outerStroke = selected ? '#b98034' : (isSharedWall ? '#497c5c' : (isAutoZoneEdge ? '#8f7860' : '#7b6753'));
+      const innerStroke = selected ? '#6d4815' : (isSharedWall ? '#2f5f48' : (isAutoZoneEdge ? '#8a6c49' : '#6a5543'));
       const slice = getWallSlicePolygon(wall, t0, t1, 1);
       if(!slice?.poly) return;
       const d = wallPolygonPath(slice.poly);
       const hit = svgEl('path',{ d, fill:'transparent', stroke:'transparent', 'stroke-width':'14', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
       const conflict=v117ConflictWalls.has(wall.id);
-      const fill = svgEl('path',{ d, class:conflict?'v117-wall-conflict':'', fill:conflict?'rgba(255,96,96,.88)':(selected ? 'rgba(255,224,138,.90)' : (isSharedWall ? 'rgba(216,255,243,.97)' : 'rgba(231,239,247,.95)')), stroke:conflict?'#ff5d68':outerStroke, 'stroke-width':conflict?'2.5':(isSharedWall?'2':'1.4'), opacity:selected ? '.99' : '.98', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
+      const fill = svgEl('path',{ d, class:conflict?'v117-wall-conflict':'', fill:conflict?'rgba(255,96,96,.88)':(selected ? 'rgba(232,204,148,.96)' : (isSharedWall ? 'rgba(219,236,225,.98)' : 'rgba(232,223,209,.98)')), stroke:conflict?'#ff5d68':outerStroke, 'stroke-width':conflict?'2.5':(isSharedWall?'2.2':'1.6'), opacity:selected ? '.99' : '.99', style:wall.autoZoneEdge?'cursor:pointer':'cursor:move' });
       const accent = svgEl('line',{ x1:slice.a.x, y1:slice.a.y, x2:slice.b.x, y2:slice.b.y, stroke:innerStroke, 'stroke-width':'1.8', 'stroke-linecap':'round', opacity:'.92', style:'pointer-events:none' });
       const selectWall = evt => {
         if(isRackDistributionScreen() || appState.editor.mode !== 'select') return;
@@ -2651,8 +2651,8 @@
       wallLayer.appendChild(svgEl('path',{
         d: wallPolygonPath(joint.poly),
         class:'layout-wall-corner-closure',
-        fill: joint.selected ? 'rgba(255,224,138,.98)' : 'rgba(231,239,247,.99)',
-        stroke: joint.selected ? 'rgba(255,190,80,.92)' : 'rgba(231,239,247,.70)',
+        fill: joint.selected ? 'rgba(232,204,148,.99)' : 'rgba(232,223,209,.99)',
+        stroke: joint.selected ? 'rgba(185,128,52,.92)' : 'rgba(123,103,83,.72)',
         'stroke-width':'1',
         style:'pointer-events:none'
       }));

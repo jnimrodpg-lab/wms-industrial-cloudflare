@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.9-cleanup",
+  "version": "1.7.0-visual-revision",
   "private": true,
-  "description": "WMS Industrial V169: limpieza visual, reducción de elementos redundantes, paleta cálida coherente y neutralización de chips no funcionales.",
+  "description": "WMS Industrial V170: revisión visual total, eliminación de la vista arquitectónica obsoleta, mejoras de muros en layout y refuerzo de contraste.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

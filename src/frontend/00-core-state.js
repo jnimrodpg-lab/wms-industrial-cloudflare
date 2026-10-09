@@ -141,7 +141,7 @@
       { id:'under_stairs_reflected', name:'Mueble bajo escalera reflejado', levels:4, slots:1, width:180, depth:45, height:240, leftHeight:240, rightHeight:70, topLength:60, mirrored:true, clearance:0, style:'under_stairs_reflected', levelHeights:[60,60,60,60], levelSlots:[1,1,1,1] }
     ],
     admin: loadAdminState(),
-    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DWmsMode:'architecture', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false },
+    ui: { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DWmsMode:'occupancy', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false },
     auth: { loggedIn:false, user:'', role:'', company:'', companyCode:'' },
     sheetWizard: { step: 1, url:'', selectedSheet:'', availableSheets:[], headers:[], mapping:{ sku:'', nombre:'', variante:'', barras:'', ubicacion:'', almacen:'' }, imported:false, loading:false, error:'' },
     productFilters: {
@@ -243,7 +243,7 @@
   function ensureAppRuntimeState(){
     ensureProductPagingState();
     if(!appState.ui || typeof appState.ui !== 'object') appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'] };
-    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:true, nav3DShowRoomSlabs:true, nav3DShowOpeningFrames:true, nav3DWmsMode:'architecture', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false, ...appState.ui };
+    appState.ui = { sheetExpanded:false, productGroupMode:true, rackLibraryOpenIds:['std_4'], isoView:'NE', isoIsolation:'all', isoGhost:true, nav3DRoof:false, nav3DArchitectural:false, nav3DShowRoomSlabs:true, nav3DShowOpeningFrames:true, nav3DWmsMode:'occupancy', nav3DSelectionType:'', nav3DSelectionId:'', nav3DMoveMode:false, ...appState.ui };
     if(typeof appState.ui.productGroupMode !== 'boolean') appState.ui.productGroupMode = true;
     if(!Array.isArray(appState.ui.rackLibraryOpenIds)) appState.ui.rackLibraryOpenIds = ['std_4'];
     if(!['NE','NW','SE','SW'].includes(appState.ui.isoView)) appState.ui.isoView = 'NE';
@@ -251,7 +251,8 @@
     if(typeof appState.ui.isoGhost !== 'boolean') appState.ui.isoGhost = true;
     if(typeof appState.ui.nav3DShowRoomSlabs !== 'boolean') appState.ui.nav3DShowRoomSlabs = true;
     if(typeof appState.ui.nav3DShowOpeningFrames !== 'boolean') appState.ui.nav3DShowOpeningFrames = true;
-    if(!['architecture','zones','occupancy','stock','category','brand'].includes(appState.ui.nav3DWmsMode)) appState.ui.nav3DWmsMode = 'architecture';
+    if(!['zones','occupancy','stock','category','brand'].includes(appState.ui.nav3DWmsMode)) appState.ui.nav3DWmsMode = 'occupancy';
+    if(appState.ui.nav3DArchitectural !== false) appState.ui.nav3DArchitectural = false;
     if(typeof appState.ui.nav3DSelectionType !== 'string') appState.ui.nav3DSelectionType = '';
     if(typeof appState.ui.nav3DSelectionId !== 'string') appState.ui.nav3DSelectionId = '';
     if(typeof appState.ui.nav3DMoveMode !== 'boolean') appState.ui.nav3DMoveMode = false;
