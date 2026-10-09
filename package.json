@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.2-3dbuild",
+  "version": "1.6.3-layoutclean",
   "private": true,
-  "description": "WMS Industrial V162: construcción en 3D, layout sincronizado y nueva cajonera.",
+  "description": "WMS Industrial V163: layout unificado, edición simplificada y limpieza visual.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

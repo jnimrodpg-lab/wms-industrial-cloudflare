@@ -10942,23 +10942,22 @@ function getSheetBranchOpenMap(){
     const structureMode = !rackMode;
     return `
       <div class="layout-right-head">
-        <div><b>Propiedades</b><small>${escapeHtml(summary.subtitle)}</small></div>
+        <div><b>Inspector del layout</b><small>Opciones contextualizadas según tu selección.</small></div>
         <span class="layout-type-pill">${summary.type === 'rack' ? 'Rack' : summary.type === 'zone' ? 'Zona' : summary.type === 'wall' ? 'Muro' : summary.type === 'opening' ? 'Opening' : summary.type === 'measure' ? 'Medida' : summary.type === 'room' ? 'Recinto' : 'Plano'}</span>
       </div>
       <div class="layout-right-scroll ${appState.editor.beginnerMode ? 'beginner-scroll' : ''}">
-        <section class="layout-prop-card selected-summary">
-          <div class="layout-prop-title">Selección activa</div>
+        <section class="layout-prop-card selected-summary layout-editor-focus-card">
+          <div class="layout-prop-title">Selección</div>
           <div class="layout-selected-title">${escapeHtml(summary.title)}</div>
-          <div class="tiny muted">Modo actual: ${escapeHtml(appState.editor.mode || 'select')}</div>
+          <div class="tiny muted">Modo: ${escapeHtml(appState.editor.mode || 'select')}</div>
+          <div class="layout-compact-help">
+            <span class="layout-help-chip">${rackMode ? 'Edita racks sin tocar la estructura' : 'Edita muros, zonas y vanos'}</span>
+            <span class="layout-help-chip">Cambios sincronizados con la vista 3D</span>
+          </div>
         </section>
-        ${appState.editor.beginnerMode ? `<section class="layout-prop-card beginner-guide-card">
-          <div class="layout-prop-title">${rackMode ? 'Distribución protegida' : 'Edición de estructura'}</div>
-          <ol class="beginner-guide-list">
-            ${rackMode ? '<li>Muros, zonas y vanos están bloqueados.</li><li>Selecciona, mueve o agrega únicamente racks.</li><li>Usa snap para alinear sin alterar el plano.</li><li>Guarda la distribución al terminar.</li>' : '<li>Edita zonas, muros y vanos del plano.</li><li>Los racks se muestran como referencia, pero no se pueden mover.</li><li>Termina la estructura antes de distribuir estantes.</li><li>Guarda la estructura al terminar.</li>'}
-          </ol>
-        </section>` : ''}
+        ${appState.editor.beginnerMode ? `<section class="layout-prop-card beginner-guide-card"><div class="layout-prop-title">Guía rápida</div><div class="layout-compact-help">${rackMode ? '<span class="layout-help-chip">1. Selecciona o mueve racks</span><span class="layout-help-chip">2. Usa snap para alinear</span><span class="layout-help-chip">3. Guarda al terminar</span>' : '<span class="layout-help-chip">1. Dibuja zonas y muros</span><span class="layout-help-chip">2. Agrega puertas o aberturas</span><span class="layout-help-chip">3. Guarda el layout</span>'}</div></section>` : ''}
         <section class="layout-prop-card">
-          <div class="layout-prop-title">Capas</div>
+          <div class="layout-prop-title">Vista</div>
           <div class="layout-layer-grid">
             ${renderLayerToggle('lyGrid','Grilla', appState.editor.showGrid !== false)}
             ${renderLayerToggle('lyZones','Zonas', appState.editor.showZones !== false)}
@@ -10971,38 +10970,38 @@ function getSheetBranchOpenMap(){
           </div>
         </section>
         <section class="layout-prop-card">
-          <div class="layout-prop-title">Snap y precisión</div>
+          <div class="layout-prop-title">Precisión</div>
           <div class="layout-prop-grid two">
             <label>Snap<input id="rpSnapEnabled" type="checkbox" ${isSnapEnabled()?'checked':''}></label>
             <label>Tamaño snap<input id="rpSnapSize" type="number" min="1" max="80" step="1" value="${formatUnitNumber(getSnapSize())}"></label>
             <label>Tamaño letra cotas<input id="rpDimFontSize" type="number" min="14" max="72" step="1" value="${formatUnitNumber(getDimFontSize())}"></label>
             <label>Estado<input value="${isSnapEnabled() ? 'Activo' : 'Desactivado'}" disabled></label>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Menor número = más precisión. Recomendado: 2, 5 o 10 unidades.</div>
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">Usa snap bajo para mayor precisión visual. Recomendado: 2, 5 o 10.</div>
         </section>
         ${rackMode ? v117RackToolsMarkup() + v117ValidationMarkup() : v117StructureToolsMarkup()}
         ${rackMode ? `<section class="layout-prop-card">
-          <div class="layout-prop-title">Distribución rápida</div>
+          <div class="layout-prop-title">Acciones rápidas</div>
           <div class="layout-template-grid">
             <button class="seg-btn" id="tplRackRow">Fila de racks</button>
             <button class="seg-btn" id="tplDistribute">Distribuir racks</button>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Estas acciones solo modifican racks; el plano base permanece bloqueado.</div>
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">Optimiza la distribución sin cambiar el plano base.</div>
         </section>` : `<section class="layout-prop-card">
-          <div class="layout-prop-title">Plantillas de estructura</div>
+          <div class="layout-prop-title">Acciones rápidas</div>
           <div class="layout-template-grid"><button class="seg-btn" id="tplWarehouse">Agregar almacén / zona</button></div>
         </section>
         <section class="layout-prop-card">
-          <div class="layout-prop-title">Plano de fondo</div>
+          <div class="layout-prop-title">Fondo de referencia</div>
           <input type="file" id="layoutBgInput" accept="image/*" style="display:none">
           <div class="layout-template-grid">
             <button class="seg-btn" id="btnLayoutBgUpload">Subir imagen</button>
             <button class="seg-btn" id="btnLayoutBgClear" ${appState.layout?.meta?.backgroundImage ? '' : 'disabled'}>Quitar fondo</button>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Úsalo para calcar encima de un plano real. Queda bloqueado detrás de la estructura.</div>
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">Ideal para calcar un plano real sin ensuciar la vista principal.</div>
         </section>`}
         ${structureMode && findRoomById(appState.selectedRoomId) ? (()=>{ const rr=findRoomById(appState.selectedRoomId); const rp=roomPointsRaw(rr); const rz=getRoomLinkedZone(rr); const area=polygonAreaAbs(rp)*getScaleCmPerUnit()*getScaleCmPerUnit()/10000; const perimeter=rp.reduce((sum,p,i)=>{ const q=rp[(i+1)%rp.length]; return sum+Math.hypot(q.x-p.x,q.y-p.y); },0); return `<section class="layout-prop-card room-zone-card">
-          <div class="layout-prop-title">Recinto detectado</div>
+          <div class="layout-prop-title">Recinto</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(rr.id)}" disabled></label>
             <label>Nombre<input id="rpRoomName" value="${escapeHtml(rr.name||rr.id)}"></label>
@@ -11014,7 +11013,7 @@ function getSheetBranchOpenMap(){
           <div class="layout-template-grid" style="margin-top:10px">
             ${rz ? `<button class="seg-btn active" id="rpSelectLinkedZone">Seleccionar zona ${escapeHtml(rz.id)}</button>` : `<button class="btn primary" id="rpRoomToZone">Convertir recinto en zona</button>`}
           </div>
-          <div class="tiny muted" style="margin-top:8px">Al convertirlo, la zona queda enlazada al recinto. Puedes mover muros completas, esquinas o arrastrar la zona; al acercarla a otra zona, las muros coincidentes pueden unirse automáticamente.</div>
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">Puedes convertir este recinto en zona y mantenerlo sincronizado con su geometría.</div>
         </section>`; })() : ''}
         ${structureMode && zone ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Zona</div>
@@ -11031,7 +11030,7 @@ function getSheetBranchOpenMap(){
             <label>Contenido<input value="${(appState.layout.racks||[]).filter(r => r.zoneId === zone.id).length} racks vinculados" disabled></label>
             ${isRoomLinkedZone(zone)?`<label>Geometría<input value="Vinculada · arrastrable" disabled></label>`:''}
           </div>
-          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px">${isRoomLinkedZone(zone)?`<button class="seg-btn active" id="rpSelectZoneRoom">Editar muros del recinto</button><button class="seg-btn" id="rpDetachRoomZone">Desvincular geometría</button><div class="tiny muted" style="grid-column:1/-1">Arrastra la zona para mover el recinto completo. Al tocar otra zona compatible, sus muros se ajustan y se convierten en un muro compartido.</div>`:`<button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → muro</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar muros zona</button>`}</div>
+          <div class="layout-template-grid zone-rotate-grid" style="margin-top:10px">${isRoomLinkedZone(zone)?`<button class="seg-btn active" id="rpSelectZoneRoom">Editar muros del recinto</button><button class="seg-btn" id="rpDetachRoomZone">Desvincular geometría</button><div class="tiny muted layout-panel-hint" style="grid-column:1/-1">Arrastra para mover toda la geometría vinculada.</div>`:`<button class="seg-btn" id="rpZoneMinus15">Girar -15°</button><button class="seg-btn" id="rpZone15">Girar 15°</button><button class="seg-btn" id="rpZone45">Girar 45°</button><button class="seg-btn" id="rpZone90">Girar 90°</button><button class="seg-btn" id="rpDuplicateZone">Duplicar zona</button><button class="seg-btn" id="rpLockZones">${appState.editor.zonesLocked?'Desbloquear zonas':'Bloquear zonas'}</button><button class="seg-btn" id="rpAllEdgesWalls">Todas aristas → muro</button><button class="seg-btn" id="rpClearEdgesWalls">Quitar muros zona</button>`}</div>
         </section>` : ''}
         ${rackMode && rack ? `<section class="layout-prop-card">
           <div class="layout-prop-title">Rack</div>
@@ -11048,7 +11047,7 @@ function getSheetBranchOpenMap(){
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpDuplicateRack">Duplicar rack</button><button class="seg-btn" id="rpRack45">Girar 45°</button><button class="seg-btn" id="rpRack90">Girar 90°</button><button class="seg-btn" id="rpAddAbove">Agregar encima</button></div>
         </section>` : ''}
         ${structureMode && findWallById(appState.selectedWallId) ? (()=>{ const sw=findWallById(appState.selectedWallId); const na=!sw.autoZoneEdge?getWallNode(sw.startNodeId):null; const nb=!sw.autoZoneEdge?getWallNode(sw.endNodeId):null; const linkedA=na?wallsForNode(na.id).length:0; const linkedB=nb?wallsForNode(nb.id).length:0; return `<section class="layout-prop-card wall-pro-card">
-          <div class="layout-prop-title">Muro conectado</div>
+          <div class="layout-prop-title">Muro</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(sw.id)}" disabled></label>
             <label>Nombre<input id="rpWallName" value="${escapeHtml(sw.name||'Muro')}"></label>
@@ -11068,10 +11067,10 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn" id="rpWallAddWindow">Agregar ventana</button>
             <button class="seg-btn danger" id="rpWallDelete">Eliminar muro</button>
           </div>
-          <div class="tiny muted" style="margin-top:8px">Los extremos son nodos compartidos. Al mover un nodo, todos los muros conectados permanecen unidos.</div>
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">Los extremos comparten nodos para mantener uniones limpias.</div>
         </section>`; })() : ''}
         ${structureMode && findOpeningById(appState.selectedOpeningId) ? `<section class="layout-prop-card opening-editor-card">
-          <div class="layout-prop-title">Opening seleccionado</div>
+          <div class="layout-prop-title">Vano / apertura</div>
           ${(() => { const op=findOpeningById(appState.selectedOpeningId); const wall=findWallById(op?.wallId); const info=getOpeningPositionInfo(op, wall); const type=normalizeOpeningType(op.type); return `<div class="tiny muted" style="margin-bottom:10px">Arrastra el vano sobre el muro o ajusta su posición exacta. ${wall ? `Muro ${escapeHtml(wall.id)}` : ''}</div>
           <div class="layout-prop-grid two">
             <label>ID<input value="${escapeHtml(op.id)}" disabled></label>
@@ -11090,10 +11089,9 @@ function getSheetBranchOpenMap(){
             <input id="rpOpeningSlider" type="range" min="1" max="99" step="1" value="${Math.round((op.t || .5)*100)}" style="width:100%;margin-top:10px">
           </div>
           <div class="layout-template-grid" style="margin-top:10px"><button class="seg-btn" id="rpOpening25">25%</button><button class="seg-btn" id="rpOpeningCenter">50%</button><button class="seg-btn" id="rpOpening75">75%</button><button class="seg-btn" id="rpOpeningNudgeLeft">◀ 0.25 m</button><button class="seg-btn" id="rpOpeningNudgeRight">0.25 m ▶</button><button class="seg-btn" id="rpOpeningDuplicate">Duplicar</button><button class="seg-btn" id="rpOpeningFlip">Invertir apertura</button><button class="seg-btn" id="rpOpeningDelete">Eliminar</button></div>
-          <div class="tiny muted" style="margin-top:8px">${type==='free'?'Abertura libre: usa Cota inferior 0 para abrir desde el piso o una cota mayor para crear una abertura elevada. No genera hoja de puerta.':'Arrastra el opening a lo largo del muro. El hueco queda embebido y se actualiza también en 3D.'}</div>` })()}
+          <div class="tiny muted layout-panel-hint" style="margin-top:8px">${type==='free'?'Usa la cota inferior para controlar si la abertura nace del piso o queda elevada.':'Puedes arrastrar el vano sobre el muro y se actualizará también en 3D.'}</div>` })()}
         </section>` : ''}
         ${structureMode && appState.editor?.selectedMeasurementId ? (()=>{ const mm=(appState.layout.measurements||[]).find(m=>m.id===appState.editor.selectedMeasurementId); if(!mm) return ''; const dx=mm.b.x-mm.a.x,dy=mm.b.y-mm.a.y; return `<section class="layout-prop-card"><div class="layout-prop-title">Medición</div><div class="layout-prop-grid two"><label>Distancia<input value="${formatDistanceCm(Math.hypot(dx,dy))}" disabled></label><label>ΔX<input value="${formatDistanceCm(Math.abs(dx))}" disabled></label><label>ΔY<input value="${formatDistanceCm(Math.abs(dy))}" disabled></label><label>ID<input value="${escapeHtml(mm.id)}" disabled></label></div><button class="seg-btn danger" id="rpMeasureDelete" style="margin-top:10px">Eliminar medición</button></section>`; })() : ''}
-        ${appState.editor.showMiniMap !== false ? `<section class="layout-prop-card"><div class="layout-prop-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</section>` : ''}
       </div>`;
   }
 
@@ -11299,24 +11297,61 @@ function getSheetBranchOpenMap(){
     if(!(getHistoryBucket(workspaceHistory)?.undoStack?.length)) recordHistorySnapshot(workspaceHistory);
     ensureRackProps();
     const structureMode = !rackMode;
-    contentTitle.textContent = rackMode ? 'Distribución de racks' : 'Plano / Estructura';
+    contentTitle.textContent = rackMode ? 'Editor de layout · racks' : 'Editor de layout · estructura';
     appState.editor.view = 'ortho';
     const isIsoView = false;
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = rackMode ? 'Acomoda racks sin alterar muros, zonas ni vanos' : 'Dibuja muros conectados con medidas reales, snaps y vanos vinculados';
-    detailTitle.textContent = rackMode ? 'Distribución protegida' : 'Edición de estructura';
-    detailSubtitle.textContent = rackMode ? 'Solo los racks son editables.' : 'Muros conectados, esquinas limpias y racks bloqueados como referencia.';
+    contentSubtitle.textContent = rackMode ? 'Distribuye racks sobre un layout sincronizado y limpio.' : 'Edita la estructura con una vista más clara, compacta y conectada al 3D.';
+    detailTitle.textContent = rackMode ? 'Layout de racks' : 'Layout estructural';
+    detailSubtitle.textContent = rackMode ? 'Los racks son editables; la estructura permanece protegida.' : 'Muros, vanos y zonas en un solo espacio de edición.';
     setTags([
-      { label:'↶ Undo', active: true, action:`history-undo-${workspaceHistory}`, extraClass:'history-chip' },
-      { label:'↷ Redo', active: true, action:`history-redo-${workspaceHistory}`, extraClass:'history-chip' },
-      { label:'Navegar', active: appState.editor.mode === 'navigate', action:'toggle-nav' },
+      { label:'↶ Deshacer', active: true, action:`history-undo-${workspaceHistory}`, extraClass:'history-chip' },
+      { label:'↷ Rehacer', active: true, action:`history-redo-${workspaceHistory}`, extraClass:'history-chip' },
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
       { label: appState.editor.beginnerMode ? 'Modo fácil' : 'Modo pro', active: !!appState.editor.beginnerMode, action:'toggle-beginner-mode' }
     ]);
+
+    if(!document.getElementById('layoutV163Styles')){
+      const style=document.createElement('style');
+      style.id='layoutV163Styles';
+      style.textContent=`
+      .layout-cad-v80{--panel-bg:rgba(248,244,236,.92);--panel-stroke:rgba(171,152,125,.26);--panel-text:#2e241a;--panel-soft:#78624a;--accent:#0e947b}
+      .layout-cad-v80 .layout-cad-localbar-v80{background:linear-gradient(180deg,rgba(245,239,229,.92),rgba(239,233,224,.88));border:1px solid var(--panel-stroke);border-radius:18px;padding:12px 14px;gap:10px;box-shadow:0 18px 40px rgba(6,20,24,.16);backdrop-filter:blur(10px)}
+      .layout-cad-v80 .layout-right-panel,.layout-cad-v80 .v80-canvas-card,.layout-cad-v80 .v80-minimap-card{background:var(--panel-bg);border:1px solid var(--panel-stroke);box-shadow:0 18px 40px rgba(6,20,24,.12);backdrop-filter:blur(10px)}
+      .layout-cad-v80 .layout-right-panel{border-radius:22px;overflow:hidden}
+      .layout-cad-v80 .layout-right-head{background:linear-gradient(180deg,rgba(255,252,246,.84),rgba(246,240,232,.92));border-bottom:1px solid var(--panel-stroke);padding:16px 18px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+      .layout-cad-v80 .layout-right-head b{font-size:18px;color:var(--panel-text)}
+      .layout-cad-v80 .layout-right-head small{color:var(--panel-soft);display:block;margin-top:4px}
+      .layout-cad-v80 .layout-type-pill{background:rgba(14,148,123,.10);color:#0d6b59;border:1px solid rgba(14,148,123,.18);padding:7px 12px;border-radius:999px;font-weight:700}
+      .layout-cad-v80 .layout-right-scroll{padding:14px}
+      .layout-cad-v80 .layout-prop-card{background:rgba(255,253,250,.72);border:1px solid rgba(171,152,125,.18);border-radius:18px;padding:14px 15px;margin-bottom:12px}
+      .layout-cad-v80 .layout-prop-title{color:#5f4b37;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+      .layout-cad-v80 .layout-selected-title{font-size:28px;line-height:1.05;color:#241b12;margin:6px 0 4px}
+      .layout-cad-v80 .tiny.muted,.layout-cad-v80 .layout-compact-help,.layout-cad-v80 .layout-panel-hint{color:#7e6a56}
+      .layout-cad-v80 .layout-compact-help{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+      .layout-cad-v80 .layout-help-chip{padding:6px 10px;border-radius:999px;background:rgba(118,99,75,.08);border:1px solid rgba(118,99,75,.14);font-size:12px}
+      .layout-cad-v80 .layout-layer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .layout-cad-v80 .layout-layer-toggle{background:rgba(255,255,255,.64);border:1px solid rgba(171,152,125,.20);border-radius:12px;padding:8px 10px}
+      .layout-cad-v80 .layout-layer-toggle span{color:#3a2d22;font-weight:600}
+      .layout-cad-v80 .seg-btn,.layout-cad-v80 .btn,.layout-cad-v80 select,.layout-cad-v80 input{border-radius:14px}
+      .layout-cad-v80 .v80-tool-rail{background:linear-gradient(180deg,rgba(245,239,229,.92),rgba(237,230,220,.9));border:1px solid rgba(171,152,125,.22);box-shadow:0 18px 40px rgba(6,20,24,.12)}
+      .layout-cad-v80 .v80-tool-btn{min-width:86px}
+      .layout-cad-v80 .v80-canvas-footer{background:rgba(245,239,229,.88);border:1px solid rgba(171,152,125,.18);border-radius:16px}
+      .layout-cad-v80 .v90-floating-save-layout{border-radius:14px;box-shadow:0 16px 30px rgba(14,148,123,.22)}
+      .layout-cad-v80 .layout-mini-svg{background:linear-gradient(180deg,rgba(246,241,233,.95),rgba(238,232,223,.95));border-radius:16px;border:1px solid rgba(171,152,125,.18)}
+      .layout-cad-v80 .v80-minimap-title{color:#5f4b37}
+      .layout-cad-v80 .v99-save-status,.layout-cad-v80 .v99-quality-badge,.layout-cad-v80 .workspace-lock-badge,.layout-cad-v80 .v90-version-badge{border-radius:999px}
+      .layout-cad-v80 .layout-canvas-card.detail-stage{overflow:hidden}
+      .layout-cad-v80 .layout-editor-focus-card .layout-prop-grid.two{gap:10px}
+      .layout-cad-v80 .layout-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .layout-cad-v80 .layout-quick-actions .seg-btn{min-height:40px}
+      `;
+      document.head.appendChild(style);
+    }
 
     contentWrap.innerHTML = `
       <div class="stage layout-premium-render layout-cad-v80" style="position:relative;height:100%">
@@ -11325,15 +11360,14 @@ function getSheetBranchOpenMap(){
             ${structureMode ? '<button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>' : '<button class="btn primary v80-zone-btn" data-emode="rack">+ Rack</button>'}
             <select id="layoutBranchSelect" class="seg-btn v80-branch-select">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
             <select class="seg-btn v80-unit-select" aria-label="Unidades"><option>m</option><option>cm</option></select>
-            <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
+            <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
-            <button class="seg-btn v134-open-3d" id="btnOpenLayout3D" type="button" title="Abrir el mismo modelo en 3D">◈ 3D sincronizado</button>
-            <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">${rackMode ? 'Guardar distribución' : 'Guardar estructura'}</button>
-            <span id="layoutSaveStatus" class="v99-save-status local">Guardado local</span>
-            <span id="layoutQualityBadge" class="v99-quality-badge ok">Sin alertas</span>
-            <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Estructura bloqueada' : 'Racks bloqueados'}</span>
-            <span class="v90-version-badge">v134</span>
+            <button class="seg-btn v134-open-3d" id="btnOpenLayout3D" type="button" title="Abrir el mismo modelo en 3D">◈ Ver en 3D</button>
+            <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">${rackMode ? 'Guardar racks' : 'Guardar layout'}</button>
+            <span id="layoutSaveStatus" class="v99-save-status local">Local</span>
+            <span id="layoutQualityBadge" class="v99-quality-badge ok">OK</span>
+            <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Solo racks' : 'Solo estructura'}</span>
           </div>
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
@@ -11349,14 +11383,14 @@ function getSheetBranchOpenMap(){
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='zone'?'active':''}" id="btnZonePlusRail" data-tool-proxy="btnZonePlus"><span class="v80-tool-ico">□</span><b>Zona</b></button>
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='measure'?'active':''}" data-emode="measure"><span class="v80-tool-ico">↔</span><b>Medir</b></button>
                     ` : `
-                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack"><span class="v80-tool-ico">▤</span><b>Agregar<br>rack</b></button>
-                    <button class="v80-tool-btn seg-btn" id="btnDuplicateRackRail"><span class="v80-tool-ico">⧉</span><b>Duplicar<br>rack</b></button>
+                    <button class="v80-tool-btn seg-btn ${appState.editor.mode==='rack'?'active':''}" data-emode="rack"><span class="v80-tool-ico">▤</span><b>Rack</b></button>
+                    <button class="v80-tool-btn seg-btn" id="btnDuplicateRackRail"><span class="v80-tool-ico">⧉</span><b>Duplicar</b></button>
                     `}
                     <button class="v80-tool-btn seg-btn" data-layout-tag-action="toggle-dims"><span class="v80-tool-ico">↔</span><b>Cotas</b></button>
                   </div>
-                  ${appState.editor.showMiniMap !== false ? `<div class="v80-minimap-card"><div class="v80-minimap-title">Mini mapa</div>${renderLayoutMiniMapMarkup()}</div>` : ''}
+                  ${appState.editor.showMiniMap !== false ? `<div class="v80-minimap-card"><div class="v80-minimap-title">Layout mini</div>${renderLayoutMiniMapMarkup()}</div>` : ''}
                   <div class="v80-canvas-footer">
-                    <span>X: 8.60 m</span><span>Y: 10.20 m</span>
+                    <span>Vista layout</span><span>Sucursal activa</span>
                     <span>Rejilla: <b>${formatUnitNumber(getSnapSize() / Math.max(1, getSnapSize()) * 0.25)} m</b></span>
                     <button class="seg-btn" id="btnZoomOut">−</button><span class="zoom-chip" id="zoomLabel">100%</span><button class="seg-btn" id="btnZoomIn">+</button>
                   </div>

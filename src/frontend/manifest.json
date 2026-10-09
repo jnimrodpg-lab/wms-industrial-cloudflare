@@ -1,5 +1,5 @@
 {
-  "version": "162",
+  "version": "163",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -17,5 +17,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v162: construcción centrada en 3D, layout mini sincronizado, navegación mejorada y nueva cómoda/cajonera."
+  "notes": "v163: editor de layout visualmente alineado con el 3D, paneles simplificados y menos ruido visual."
 }
