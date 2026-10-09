@@ -1,5 +1,5 @@
 {
-  "version": "165",
+  "version": "166",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -17,5 +17,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v165: dashboard visual, sidebar simplificado, layout con inspector colapsable, toolbar contextual y modo solo espacio."
+  "notes": "v166: sistema visual cálido premium, mejor contraste, dashboard optimizado y viewer/layout con mayor jerarquía visual."
 }

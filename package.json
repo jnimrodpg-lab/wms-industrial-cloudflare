@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.5-clearworkflow",
+  "version": "1.6.6-premiumwarm",
   "private": true,
-  "description": "WMS Industrial V165: sidebar simplificado, dashboard visual, inspector colapsable, toolbar contextual y modo solo espacio.",
+  "description": "WMS Industrial V166: paleta cálida premium, contraste mejorado, dashboard refinado y viewer/layout homogéneos.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
