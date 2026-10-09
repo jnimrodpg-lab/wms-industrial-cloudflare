@@ -1,4 +1,4 @@
-const BUILD_MARK = 'cloudflare-v148-visual-furniture-cad';
+const BUILD_MARK = 'cloudflare-v161.1-auth-compat';
 
 const COOKIE_NAME = 'wms.sid';
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
@@ -60,6 +60,16 @@ export async function onRequest(context) {
       }
 
       const user = await getUserByUsername(env.DB, username);
+      // Los hashes antiguos de 150k no pueden verificarse en este runtime.
+      // La cuenta debe restablecerse en D1 sin eliminar usuario, empresa ni inventario.
+      if (user && passwordHashExceedsRuntimeLimit(user.password_hash)) {
+        return withJson({
+          ok: false,
+          error: 'Esta cuenta utiliza una contraseña cifrada con una versión incompatible. El administrador debe restablecerla en Cloudflare D1 (sin borrar datos).',
+          code: 'PASSWORD_HASH_RESET_REQUIRED',
+          build: BUILD_MARK
+        }, 409);
+      }
       if (!user || !(await verifyPassword(user.password_hash, password))) {
         return withJson({ ok: false, error: 'Credenciales inválidas', build: BUILD_MARK }, 401);
       }
@@ -1432,7 +1442,9 @@ function clearSessionCookie() {
 }
 
 const PASSWORD_KDF = 'pbkdf2-sha256';
-const PASSWORD_ITERATIONS = 150000;
+// Cloudflare Workers WebCrypto rejects PBKDF2 iteration counts > 100000.
+const PASSWORD_ITERATIONS = 100000;
+const PASSWORD_MAX_RUNTIME_ITERATIONS = 100000;
 
 async function hashPassword(password) {
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
@@ -1458,7 +1470,7 @@ async function verifyPassword(stored, password) {
   if (parts.length === 4 && parts[0] === PASSWORD_KDF) {
     const iterations = Number(parts[1] || 0);
     const saltBytes = hexToBytes(parts[2]);
-    if (!Number.isFinite(iterations) || iterations < 100000 || iterations > 1000000 || !saltBytes.length || !parts[3]) return false;
+    if (!Number.isFinite(iterations) || iterations < 100000 || iterations > PASSWORD_MAX_RUNTIME_ITERATIONS || !saltBytes.length || !parts[3]) return false;
     const passwordKey = await crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(String(password || '')),
@@ -1484,6 +1496,11 @@ async function verifyPassword(stored, password) {
   }
 
   return false;
+}
+
+function passwordHashExceedsRuntimeLimit(stored) {
+  const parts = String(stored || '').split('$');
+  return parts.length === 4 && parts[0] === PASSWORD_KDF && Number(parts[1]) > PASSWORD_MAX_RUNTIME_ITERATIONS;
 }
 
 function passwordHashNeedsUpgrade(stored) {

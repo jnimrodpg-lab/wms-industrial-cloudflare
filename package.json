@@ -1,16 +1,17 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.1",
+  "version": "1.6.1-authfix",
   "private": true,
-  "description": "WMS Industrial V161: ambiente 3D isométrico, muebles paramétricos y cajas por nivel.",
+  "description": "WMS Industrial V161.1: ambiente 3D y corrección de compatibilidad PBKDF2 Cloudflare.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
     "verify:frontend": "node scripts/verify-frontend.mjs",
     "audit:frontend": "node scripts/audit-frontend.mjs",
-    "check": "npm run verify:frontend && npm run audit:frontend && npm run test:virtual && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
+    "check": "npm run verify:frontend && npm run audit:frontend && npm run test:virtual && npm run test:auth && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
     "build": "npm run build:frontend",
-    "test:virtual": "node tests/virtual-space.test.mjs && node tests/furniture-v161.test.mjs"
+    "test:virtual": "node tests/virtual-space.test.mjs && node tests/furniture-v161.test.mjs",
+    "test:auth": "node tests/auth-compat.test.mjs"
   },
   "dependencies": {
     "three": "0.160.0"
