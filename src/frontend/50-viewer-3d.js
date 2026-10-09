@@ -2,21 +2,28 @@
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.js?v=wms-v160-virtual-environment';
+      const localUrl = './vendor/three.module.js?v=wms-v161-isometric';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
         return THREE;
       }catch(localError){
         console.warn('Three.js local no disponible; usando respaldo CDN.', localError);
-        try{
-          const THREE = await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js');
-          window.THREE = THREE;
-          return THREE;
-        }catch(remoteError){
-          window.__threeRuntimePromise = null;
-          throw new Error(`No se pudo cargar Three.js: ${remoteError?.message || remoteError}`);
+        const cdnSources=[
+          'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+          'https://unpkg.com/three@0.160.0/build/three.module.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js'
+        ];
+        let remoteError;
+        for(const source of cdnSources){
+          try{
+            const THREE=await import(source);
+            window.THREE=THREE;
+            return THREE;
+          }catch(error){remoteError=error;}
         }
+        window.__threeRuntimePromise=null;
+        throw new Error(`No se pudo cargar Three.js: ${remoteError?.message || remoteError}`);
       }
     })();
     return window.__threeRuntimePromise;

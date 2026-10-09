@@ -5976,21 +5976,28 @@ function getSheetBranchOpenMap(){
     if(window.THREE) return window.THREE;
     if(window.__threeRuntimePromise) return window.__threeRuntimePromise;
     window.__threeRuntimePromise = (async () => {
-      const localUrl = './vendor/three.module.js?v=wms-v160-virtual-environment';
+      const localUrl = './vendor/three.module.js?v=wms-v161-isometric';
       try{
         const THREE = await import(localUrl);
         window.THREE = THREE;
         return THREE;
       }catch(localError){
         console.warn('Three.js local no disponible; usando respaldo CDN.', localError);
-        try{
-          const THREE = await import('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js');
-          window.THREE = THREE;
-          return THREE;
-        }catch(remoteError){
-          window.__threeRuntimePromise = null;
-          throw new Error(`No se pudo cargar Three.js: ${remoteError?.message || remoteError}`);
+        const cdnSources=[
+          'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+          'https://unpkg.com/three@0.160.0/build/three.module.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js'
+        ];
+        let remoteError;
+        for(const source of cdnSources){
+          try{
+            const THREE=await import(source);
+            window.THREE=THREE;
+            return THREE;
+          }catch(error){remoteError=error;}
         }
+        window.__threeRuntimePromise=null;
+        throw new Error(`No se pudo cargar Three.js: ${remoteError?.message || remoteError}`);
       }
     })();
     return window.__threeRuntimePromise;
@@ -15355,13 +15362,195 @@ function getSheetBranchOpenMap(){
     const floorPt=toIso(0,0,baseOffset-3),floorLabel=svgEl('text',{x:floorPt.x,y:floorPt.y,class:'rack-dim','text-anchor':'middle'});floorLabel.textContent=`Piso ${round1(baseOffset)}cm`;root.appendChild(floorLabel);const base=toIso(0,0,H+baseOffset+14),label=svgEl('text',{x:base.x,y:base.y,class:'rack-title','text-anchor':'middle'});label.textContent=rack?.id||model.name||'Rack';root.appendChild(label);
     try{const box=root.getBBox();holder.setAttribute('viewBox',`${box.x-32} ${box.y-38} ${Math.max(180,box.width+64)} ${Math.max(220,box.height+78)}`);}catch{holder.setAttribute('viewBox','-240 -360 480 520');}
   }
+/* WMS V161: modelos 3D paramétricos de mobiliario y cajas colocadas sobre niveles.
+ * Geometría y materiales creados en Three.js; sin imágenes incrustadas ni modelos remotos.
+ * Todas las piezas llevan furnitureId, level, slot para picking sobre el canvas.
+ */
+function vspaceContainersForSlot(rack,level,slot){
+  const configured=(rack.virtualContainers||[]).find(c=>Number(c.level)===level && Number(c.slot)===slot);
+  if(configured)return {kind:['carton','plastic','none'].includes(configured.kind)?configured.kind:'carton',count:vspaceClamp(Math.round(Number(configured.count)||0),0,4)};
+  return vspaceProductsForSlot(rack,level,slot).length?{kind:'carton',count:1}:{kind:'none',count:0};
+}
+function vspaceSetSlotContainers(rack,level,slot,kind,count){
+  if(!rack||!vspaceIsEditable())return;
+  const spec=vspaceSpec(rack);
+  if(level<1||level>spec.levels||slot<1||slot>spec.slots)return vspaceToast('Nivel o posición incorrectos.',true);
+  const allowed=['carton','plastic','none'];
+  if(!allowed.includes(kind))return vspaceToast('Tipo de contenedor incorrecto.',true);
+  count=kind==='none'?0:vspaceClamp(Math.round(Number(count)||1),1,4);
+  rack.virtualContainers=(rack.virtualContainers||[]).filter(c=>!(Number(c.level)===level&&Number(c.slot)===slot));
+  rack.virtualContainers.push({level,slot,kind,count});
+  vspaceCommit(`${count} ${kind==='carton'?'caja(s) de cartón':kind==='plastic'?'gaveta(s) plástica(s)':'contenedores'} en N${level}/P${slot}`);
+  vspaceActive?.refreshInspector();
+}
+function vspaceBuildIsometricFurniture(THREE, group, rack, spec, options){
+  const {shared, block:box, sprite:label, selected, selectedLevel, selectedSlot, products}=options;
+  const w=spec.width/100, d=spec.depth/100, h=spec.height/100;
+  const metal=selected?shared.metalSelected:shared.metal;
+  const part=(x,y,z,bw,bh,bd,mat,l=0,s=0)=>box(group,x,y,z,bw,bh,bd,mat,l,s);
+  const sign=(text,x,y,z,width=.33)=>{const sp=label(text,width);sp.position.set(x,y,z);group.add(sp);return sp;};
+  const shelfSlot=(l,s)=>({l,s,selectedSlot: selected && l===selectedLevel && s===selectedSlot});
+  const carton=(x,y,z,bw,bh,bd,l=0,s=0,material=shared.cardboard)=>{
+    const cube=part(x,y+bh/2,z,bw,bh,bd,material,l,s);
+    // Branded, lightweight packaging details: central packing tape and a shipping label.
+    part(x,y+bh+.002,z,.075,.006,bd*.92,shared.tape,l,s);
+    part(x,y+bh/2,z-bd/2-.003,bw*.075,bh*.94,.006,shared.tape,l,s);
+    part(x-bw*.25,y+bh*.58,z+bd/2+.005,bw*.018,bh*.18,.004,shared.ink,l,s);
+    part(x+bw*.25,y+bh*.58,z+bd/2+.005,bw*.018,bh*.18,.004,shared.ink,l,s);
+    part(x,y+bh/2,z+bd/2+.003,bw*.36,bh*.34,.007,shared.paper,l,s);
+    part(x-bw*.105,y+bh*.46,z+bd/2+.009,bw*.03,bh*.17,.004,shared.ink,l,s);
+    part(x-bw*.045,y+bh*.46,z+bd/2+.009,bw*.02,bh*.17,.004,shared.ink,l,s);
+    part(x+bw*.018,y+bh*.46,z+bd/2+.009,bw*.045,bh*.17,.004,shared.ink,l,s);
+    return cube;
+  };
+  const crate=(x,y,z,bw,bh,bd,l=0,s=0)=>{
+    part(x,y+.025,z,bw,.05,bd,shared.plastic,l,s);
+    part(x,y+bh-.026,z,bw,.05,bd,shared.plasticLight,l,s);
+    const t=Math.min(.035,bw*.065,bd*.1);
+    [-1,1].forEach(i=>{
+      part(x+i*(bw-t)/2,y+bh/2,z,t,bh,bd,shared.plastic,l,s);
+      part(x,y+bh/2,z+i*(bd-t)/2,bw,bh,t,shared.plastic,l,s);
+    });
+    for(let i=1;i<5;i++){
+      const xx=x-bw/2+bw*i/5;
+      part(xx,y+bh*.44,z+bd/2+.004,.009,bh*.56,.009,shared.plasticDark,l,s);
+    }
+    part(x,y+bh*.79,z+bd/2+.01,bw*.27,bh*.07,.007,shared.paper,l,s);
+  };
+  const slotContents=(l,s,surfaceY,bayW,bayDepth,bayX)=>{
+    const cfg=vspaceContainersForSlot(rack,l,s);
+    const filled=products(rack,l,s).length>0;
+    const count=cfg.kind==='none'?0:cfg.count;
+    const capH=Math.max(.10,Math.min(.46,h/Math.max(1,spec.levels)*.52));
+    if(selected&&l===selectedLevel&&s===selectedSlot){
+      part(bayX,surfaceY+.013,d*.02,bayW*.89,.017,bayDepth*.84,shared.highlight,l,s);
+    }
+    if(!count)return;
+    const space=bayW*.89/count;
+    for(let n=0;n<count;n++){
+      const bx=bayX-bayW*.445+space*(n+.5);
+      const bw=Math.max(.06,space*.79),bd=bayDepth*.68;
+      const z=0;
+      if(cfg.kind==='plastic')crate(bx,surfaceY+.027,z,bw,capH,bd,l,s);
+      else carton(bx,surfaceY+.027,z,bw,capH,bd,l,s,filled?shared.cardboard:shared.cardboardLight);
+    }
+  };
+  const frame=Math.max(.023,Math.min(.047,w*.025));
+  if(spec.kind==='rack'){
+    // Industrial shelving: powder-coated posts, cross-bracing and oak decks.
+    for(const xx of [-w/2+frame/2,w/2-frame/2]) for(const zz of [-d/2+frame/2,d/2-frame/2]){
+      part(xx,h/2,zz,frame,h,frame,metal);
+      for(let i=1;i<Math.min(13,Math.round(h/.19));i++)part(xx,h*i/Math.min(13,Math.round(h/.19)),zz+(zz>0?.002:-.002),.014,.019,.009,shared.hole);
+    }
+    const pitch=(h-.26)/Math.max(1,spec.levels);
+    for(let l=1;l<=spec.levels;l++){
+      const sy=.13+(l-1)*pitch;
+      part(0,sy-.015,0,w-.015,.065,d-.012,shared.wood,l,0);
+      part(0,sy-.067,d/2-.015,w-.04,.046,.026,metal,l,0);
+      part(0,sy-.067,-d/2+.015,w-.04,.046,.026,metal,l,0);
+      for(let s=1;s<=spec.slots;s++){
+        const bayW=(w-.055)/spec.slots, bayX=-w/2+.027+(s-.5)*bayW;
+        slotContents(l,s,sy+.018,bayW,d,bayX);
+      }
+      sign(`N${l}`,w/2+.13,sy+.06,d/2+.04,.25);
+    }
+    // Rear diagonal bracing, slim enough to preserve visibility.
+    const braceLength=Math.hypot(h-.20,w-.18);
+    for(const side of [-1,1]){
+      const brace=part(0,h/2,-d/2+.017,.022,braceLength,.021,shared.metalDark);
+      brace.rotation.z=side*Math.atan2(w-.18,h-.20);
+    }
+    sign(spec.title,0,h+.22,0,Math.min(2.2,Math.max(.8,w*1.2)));
+  }else if(spec.kind==='vitrina'){
+    const base=Math.min(.52,h*.29),topY=base,glassH=h-base;
+    // Wooden storage plinth with drawer lines.
+    part(0,base/2,0,w,base,d,shared.woodDark);
+    part(0,base*.60,d/2+.009,w*.90,.012,.01,shared.woodLight);
+    for(let i=1;i<3;i++)part(-w/2+w*i/3,base*.53,d/2+.014,.012,base*.63,.012,shared.metalDark);
+    for(const xx of [-w/2+frame/2,w/2-frame/2]) for(const zz of [-d/2+frame/2,d/2-frame/2]) part(xx,base+glassH/2,zz,frame,glassH,frame,shared.metalDark);
+    part(0,h,0,w+.035,.045,d+.035,shared.metalDark);
+    const pitch=(glassH-.13)/Math.max(1,spec.levels);
+    for(let l=1;l<=spec.levels;l++){
+      const sy=base+.07+(l-1)*pitch;
+      part(0,sy,0,w-.06,.023,d-.05,shared.glassShelf,l,0);
+      for(let s=1;s<=spec.slots;s++){
+        const bayW=(w-.065)/spec.slots;
+        slotContents(l,s,sy+.017,bayW,d*.83,-w/2+.032+(s-.5)*bayW);
+      }
+      sign(`N${l}`,-w/2-.095,sy+.055,d/2,.20);
+    }
+    const pane=(x,y,z,bw,bh,bd)=>part(x,y,z,bw,bh,bd,shared.glass);
+    pane(0,base+glassH/2,d/2-.004,w-.045,glassH-.045,.012);
+    pane(0,base+glassH/2,-d/2+.004,w-.045,glassH-.045,.012);
+    pane(-w/2+.006,base+glassH/2,0,.012,glassH-.045,d-.045);
+    pane(w/2-.006,base+glassH/2,0,.012,glassH-.045,d-.045);
+    part(0,base+glassH/2,d/2+.015,.017,glassH,frame,shared.metalDark);
+    sign(spec.title,0,h+.20,0,Math.min(1.7,w));
+  }else if(spec.kind==='mostrador'){
+    const base=Math.max(.09,h-.08);
+    part(0,base/2,0,w-.07,base,d-.065,shared.woodDark);
+    part(0,h-.027,0,w+.07,.07,d+.08,shared.woodLight);
+    // Retail oak-wood slat front.
+    const n=vspaceClamp(Math.floor(w/.082),4,30);
+    for(let i=0;i<n;i++){
+      const xx=-w/2+w*(i+.5)/n;
+      part(xx,base/2,d/2+.005,.024,base*.87,.018,shared.wood,0,0);
+    }
+    const screenW=Math.min(.38,w*.34),screenH=Math.min(.30,h*.32);
+    part(-w*.18,h+.12,-d*.13,screenW,screenH,.035,shared.metalDark);
+    part(-w*.18,h+.025,-d*.13,.04,.06,.045,shared.metal);
+    part(w*.20,h+.016,-d*.07,.21,.035,.15,shared.paper);
+    part(w*.34,h+.032,d*.17,.055,.08,.065,shared.plasticDark);
+    for(let l=1;l<=spec.levels;l++){
+      const sy=.13+(l-1)*(h-.23)/Math.max(1,spec.levels);
+      for(let s=1;s<=spec.slots;s++){
+        const bayW=(w-.14)/spec.slots;
+        const bayX=-w/2+.07+(s-.5)*bayW;
+        // Compartments behind the counter can also hold stock.
+        part(bayX,sy,-d/2+.045,bayW*.91,.018,.055,shared.wood,l,s);
+        if(products(rack,l,s).length || vspaceContainersForSlot(rack,l,s).count){
+          const cfg=vspaceContainersForSlot(rack,l,s);
+          const cbw=bayW*.53, cbh=Math.min(.19,h/spec.levels*.35);
+          if(cfg.kind==='plastic')crate(bayX,sy+.02,-d/2+.075,cbw,cbh,.15,l,s);
+          else carton(bayX,sy+.02,-d/2+.075,cbw,cbh,.15,l,s);
+        }
+      }
+    }
+    sign(spec.title,0,h+.47,0,Math.min(2,w*1.05));
+  }else if(spec.kind==='contenedor'){
+    // Modular open bin shelving, blue molded plastic with compartments.
+    const unit=h/spec.levels;
+    part(0,.045,0,w,.09,d,shared.plasticDark);
+    for(let l=1;l<=spec.levels;l++){
+      const y=(l-1)*unit;
+      part(0,y+unit-.035,0,w,.07,d,shared.plastic);
+      for(let s=1;s<=spec.slots;s++){
+        const bayW=w/spec.slots, cx=-w/2+(s-.5)*bayW;
+        crate(cx,y+.08,0,bayW*.87,Math.min(.28,unit*.62),d*.76,l,s);
+        if(selected && selectedLevel===l && selectedSlot===s)part(cx,y+.11,d*.10,bayW*.6,.015,d*.65,shared.highlight,l,s);
+      }
+    }
+    for(const x of [-w/2+.025,w/2-.025])part(x,h/2,0,.05,h,d,shared.plasticDark);
+    sign(spec.title,0,h+.23,0,Math.min(1.9,w*1.2));
+  }else{
+    carton(0,0,0,w,h,d,1,1,shared.cardboard);
+    sign(spec.title,0,h+.17,0,Math.min(1.55,w*1.4));
+  }
+  // Thin selected outline on the floor: does not obstruct selection or shelf contents.
+  if(selected){
+    const vertices=[[-w/2,-d/2],[w/2,-d/2],[w/2,d/2],[-w/2,d/2],[-w/2,-d/2]];
+    const geo=new THREE.BufferGeometry().setFromPoints(vertices.map(([x,z])=>new THREE.Vector3(x,.021,z)));
+    const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0x0e947b,depthTest:false}));
+    group.add(line);
+  }
+}
 /* WMS V160 — Ambiente virtual de ubicaciones. Se integra con layout.racks y branchLayouts. */
   const VSPACE_TYPES = Object.freeze({
-    rack:       {name:'Rack industrial', icon:'▤', width:120,depth:55,height:230,levels:4,slots:2,color:0x6793af},
-    mostrador:  {name:'Mostrador',icon:'▰',width:160,depth:65,height:105,levels:2,slots:2,color:0xb6a186},
-    vitrina:    {name:'Vitrina',icon:'▥',width:125,depth:48,height:205,levels:4,slots:2,color:0x7ca7af},
-    contenedor: {name:'Contenedor',icon:'▣',width:115,depth:80,height:110,levels:2,slots:2,color:0x4c91b4},
-    caja:       {name:'Caja / gaveta',icon:'□',width:60,depth:45,height:55,levels:1,slots:1,color:0xbd9564}
+    rack:       {name:'Estantería industrial', icon:'▤', width:150,depth:55,height:225,levels:4,slots:3,color:0x7d8b88},
+    mostrador:  {name:'Mostrador de madera',icon:'▰',width:170,depth:65,height:106,levels:2,slots:2,color:0xb99572},
+    vitrina:    {name:'Vitrina de cristal',icon:'▥',width:130,depth:50,height:205,levels:3,slots:2,color:0xc19c74},
+    contenedor: {name:'Gavetero organizador',icon:'▣',width:100,depth:58,height:145,levels:3,slots:3,color:0x93a5a0},
+    caja:       {name:'Caja de cartón',icon:'□',width:56,depth:42,height:40,levels:1,slots:1,color:0xbd9564}
   });
   let vspaceActive = null;
   const vspaceEsc = value => escapeHtml(String(value ?? ''));
@@ -15383,15 +15572,36 @@ function getSheetBranchOpenMap(){
     };
   }
   function vspaceIsEditable(){ return String(appState.auth?.role||'') === 'admin' && !!appState.auth?.loggedIn; }
+  // Índice SKU por mueble/nivel/posición: evita filtrar 10 000 productos por cada repisa.
+  let vspaceProductIndexSource=null;
+  let vspaceProductIndex=null;
+  function vspaceProductIndexForBranch(){
+    const products=appState.products||[];
+    if(products===vspaceProductIndexSource&&vspaceProductIndex)return vspaceProductIndex;
+    const index=new Map();
+    const add=(rack,level,slot,p)=>{
+      const id=String(rack||'').trim().toUpperCase();
+      const l=Number(String(level||'').replace(/[^0-9]/g,''));
+      const s=Number(String(slot||'').replace(/[^0-9]/g,''));
+      if(!id||!l||!s)return;
+      const key=`${id}|${l}|${s}`;
+      if(!index.has(key))index.set(key,[]);
+      const arr=index.get(key);
+      if(arr.length<20 && !arr.some(row=>row.sku===p.sku))arr.push({sku:p.sku,name:p.nombre,quantity:1,manual:false});
+    };
+    products.forEach(p=>{
+      add(p.rack,p.nivel,p.slot,p);
+      if(String(p.rackStore||'').toUpperCase()!==String(p.rack||'').toUpperCase() || Number(p.nivelStore)!==Number(p.nivel) || Number(p.slotStore)!==Number(p.slot))
+        add(p.rackStore,p.nivelStore,p.slotStore,p);
+    });
+    vspaceProductIndexSource=products;vspaceProductIndex=index;
+    return index;
+  }
   function vspaceProductsForSlot(rack,level,slot){
     const overrides = Array.isArray(rack.virtualPlacements) ? rack.virtualPlacements : [];
     const manual = overrides.filter(p=> Number(p.level) === level && Number(p.slot) === slot);
     if(manual.length) return manual.map(p=>({ ...p,manual:true }));
-    return (appState.products||[]).filter(p=>{
-      const sameRack = String(p.rack||'').toUpperCase()===String(rack.id||'').toUpperCase();
-      const sameStore = String(p.rackStore||'').toUpperCase()===String(rack.id||'').toUpperCase();
-      return (sameRack && Number(String(p.nivel||'').replace(/[^0-9]/g,''))===level && Number(String(p.slot||'').replace(/[^0-9]/g,''))===slot) || (sameStore && Number(String(p.nivelStore||'').replace(/[^0-9]/g,''))===level && Number(String(p.slotStore||'').replace(/[^0-9]/g,''))===slot);
-    }).slice(0,20).map(p=>({ sku:p.sku,name:p.nombre,quantity:1,manual:false }));
+    return vspaceProductIndexForBranch().get(`${String(rack.id||'').trim().toUpperCase()}|${level}|${slot}`)||[];
   }
   function vspaceAllAssignments(){
     const rows=[];
@@ -15469,7 +15679,7 @@ function getSheetBranchOpenMap(){
       zoneId:appState.layout.zones?.[0]?.id||'Z1',x:0,y:0,
       w:p.width/scale,h:p.depth/scale,rot:0,modelId,baseHeight:0,rackHeight:p.height,
       virtualType:kind,virtualName:`${p.name} ${(appState.layout.racks||[]).filter(r=>r.virtualType===kind).length+1}`,
-      virtual:{width:p.width,depth:p.depth,height:p.height,levels:p.levels,slots:p.slots},virtualPlacements:[]};
+      virtual:{width:p.width,depth:p.depth,height:p.height,levels:p.levels,slots:p.slots},virtualPlacements:[],virtualContainers:[]};
     const available=vspaceFindPosition(rack);
     if(!available){appState.models=appState.models.filter(m=>m.id!==modelId);return vspaceToast('No hay espacio libre suficiente. Amplía la zona en Plano / Estructura.',true);}
     Object.assign(rack,available);
@@ -15500,6 +15710,10 @@ function getSheetBranchOpenMap(){
       cloneRack.w=nextW;cloneRack.h=nextH;
     }
     cloneRack.rackHeight=spec.height;
+    // No dejar ubicaciones con SKU o cajas invisibles tras reducir los niveles.
+    const invalid=(rack.virtualPlacements||[]).some(a=>Number(a.level)>spec.levels||Number(a.slot)>spec.slots)
+      ||(rack.virtualContainers||[]).some(a=>a.kind!=='none'&&Number(a.count)>0&&(Number(a.level)>spec.levels||Number(a.slot)>spec.slots));
+    if(invalid){vspaceToast('Hay productos o cajas en niveles que desaparecerían. Reubícalos antes de reducirlos.',true);vspaceActive?.refreshInspector();return;}
     const fitting=vspaceFits(cloneRack,rack.id);
     if(!fitting.ok){vspaceToast(fitting.msg,true);vspaceActive?.refreshInspector();return;}
     Object.assign(rack,cloneRack);
@@ -15525,22 +15739,22 @@ function getSheetBranchOpenMap(){
   function renderVirtualSpace(){
     if(vspaceActive?.destroy) vspaceActive.destroy();
     ensureAppRuntimeState();
-    contentTitle.textContent='Ambiente virtual 3D';
-    contentSubtitle.textContent='Recorre tu local y asigna productos en el mueble, nivel y compartimento exactos.';
+    contentTitle.textContent='Ambiente isométrico · WMS 3D';
+    contentSubtitle.textContent='Organiza estanterías, vitrinas y cajas con ubicación exacta por niveles.';
     setTags([{label:'Diseño 3D',active:true},{label:'Ubicaciones por nivel',active:true}]);
     const canEdit=vspaceIsEditable();
     const typelist=Object.entries(VSPACE_TYPES).map(([id,p])=>`<button type="button" class="vspace-catalog-btn" data-vspace-add="${id}" ${canEdit?'':'disabled'}><b>${p.icon}</b><span>${vspaceEsc(p.name)}</span><small>${p.levels} niveles</small></button>`).join('');
     contentWrap.innerHTML=`<div class="vspace-root" id="vspaceRoot">
-      <div class="vspace-toolbar"><strong>Ambiente virtual</strong><span class="vspace-chip" id="vspaceBranch">Sucursal activa</span><span class="vspace-chip" id="vspaceStats">—</span>
-      <div class="vspace-toolbar-right"><button data-vspace-cam="iso">Isométrica</button><button data-vspace-cam="top">Planta</button><button data-vspace-cam="front">Frontal</button><button data-vspace-action="toggle-wall">Muros</button><button data-vspace-action="move" ${canEdit?'':'disabled'}>Mover: OFF</button><button data-vspace-action="save" class="vspace-save" ${canEdit?'':'disabled'}>Guardar en nube</button></div></div>
-      <div class="vspace-main"><aside class="vspace-left"><div class="vspace-sidebar-section"><h4>Biblioteca de muebles</h4><p>Selecciona para agregar al ambiente.</p><div class="vspace-catalog">${typelist}</div></div>
+      <div class="vspace-toolbar"><strong>✦ Espacio virtual isométrico</strong><span class="vspace-chip" id="vspaceBranch">Sucursal activa</span><span class="vspace-chip" id="vspaceStats">—</span>
+      <div class="vspace-toolbar-right"><button data-vspace-cam="iso" class="active">Isométrica</button><button data-vspace-cam="top">Planta</button><button data-vspace-cam="front">Frontal</button><button data-vspace-action="toggle-wall" class="active">Muros</button><button data-vspace-action="move" ${canEdit?'':'disabled'}>Mover: OFF</button><button data-vspace-action="save" class="vspace-save" ${canEdit?'':'disabled'}>Guardar en nube</button></div></div>
+      <div class="vspace-main"><aside class="vspace-left"><div class="vspace-sidebar-section"><h4>Biblioteca 3D</h4><p>Modelos paramétricos con materiales realistas. Añade un mueble al espacio.</p><div class="vspace-catalog">${typelist}</div><button class="vspace-example-btn" data-vspace-action="sample" ${canEdit?'':'disabled'}>✧ Preparar ambiente de ejemplo</button></div>
       <div class="vspace-sidebar-section"><h4>Buscar producto / SKU</h4><div class="vspace-search"><input id="vspaceFindSku" placeholder="SKU, nombre o barras…" autocomplete="off"><button data-vspace-action="find">⌕</button></div><div class="vspace-hits" id="vspaceHits"></div></div>
       <div class="vspace-sidebar-section"><h4>Muebles ubicados</h4><div id="vspaceObjects" class="vspace-object-list"></div></div></aside>
       <section class="vspace-stage"><canvas id="vspaceCanvas" aria-label="Visualizador tridimensional interactivo del almacén"></canvas>
-      <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Rueda: zoom</span><span>Derecho: desplazar</span><span>Modo mover: arrastrar mueble</span></div>
-      <div class="vspace-compass">3D</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div></section>
+      <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Rueda: zoom</span><span>Derecho: desplazar</span><span>Modo mover: arrastrar mueble</span><span>Click en caja: abrir nivel</span></div>
+      <div class="vspace-compass">ISO</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div></section>
       <aside class="vspace-inspector"><h4>Inspector de ubicaciones</h4><div id="vspaceInspector" class="vspace-inspector-body">Selecciona un mueble para editar y ver sus niveles.</div></aside></div>
-      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Espacio Virtual V160</span></div>
+      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Diorama 3D V161</span></div>
     </div>`;
     contentStatus.textContent='Ambiente listo para editar';
     const root=document.getElementById('vspaceRoot'),canvas=root.querySelector('#vspaceCanvas');
@@ -15550,8 +15764,8 @@ function getSheetBranchOpenMap(){
     const canWrite=()=>vspaceIsEditable();
     const zoneBounds=[];(appState.layout.zones||[]).forEach(z=>(z.pts||[]).forEach(p=>zoneBounds.push(p)));
     if(!zoneBounds.length)(appState.layout.racks||[]).forEach(r=>zoneBounds.push({x:r.x,y:r.y},{x:r.x+r.w,y:r.y+r.h}));
-    const mx=zoneBounds.length?(Math.min(...zoneBounds.map(p=>Number(p.x)))+Math.max(...zoneBounds.map(p=>Number(p.x))))/2:200;
-    const my=zoneBounds.length?(Math.min(...zoneBounds.map(p=>Number(p.y)))+Math.max(...zoneBounds.map(p=>Number(p.y))))/2:180;
+    let mx=zoneBounds.length?(Math.min(...zoneBounds.map(p=>Number(p.x)))+Math.max(...zoneBounds.map(p=>Number(p.x))))/2:200;
+    let my=zoneBounds.length?(Math.min(...zoneBounds.map(p=>Number(p.y)))+Math.max(...zoneBounds.map(p=>Number(p.y))))/2:180;
     const coord=p=>({x:(p.x-mx)*getScaleCmPerUnit()/100,z:(p.y-my)*getScaleCmPerUnit()/100});
     const invCoord=p=>({x:p.x*100/getScaleCmPerUnit()+mx,y:p.z*100/getScaleCmPerUnit()+my});
     const formatPosition=r=>`${Math.round(Number(r.x))}, ${Math.round(Number(r.y))}`;
@@ -15585,6 +15799,10 @@ function getSheetBranchOpenMap(){
         <h4>Asignación por nivel</h4><small class="vspace-muted">Nivel: de abajo hacia arriba · P: de izquierda a derecha</small>
         <div class="vspace-numbers">${levels}</div><div class="vspace-numbers vspace-slots">${slots}</div>
         <div class="vspace-loc-code">${vspaceEsc(rack.id)}-N${state.selectedLevel}-S${state.selectedSlot}</div>
+        <div class="vspace-container-editor"><b>Cajas sobre el nivel</b><small class="vspace-muted">Elige el contenedor físico que aparecerá en el estante. No cambia el stock.</small>
+        <div class="vspace-grid-2"><label class="vspace-field">Contenedor<select id="vsContainerKind" ${lock}>${[['none','Sin caja'],['carton','Cartón'],['plastic','Gaveta plástica']].map(([value,title])=>`<option value="${value}" ${vspaceContainersForSlot(rack,state.selectedLevel,state.selectedSlot).kind===value?'selected':''}>${title}</option>`).join('')}</select></label>
+        <label class="vspace-field">Cantidad (1–4)<input type="number" min="1" max="4" id="vsContainerCount" value="${Math.max(1,vspaceContainersForSlot(rack,state.selectedLevel,state.selectedSlot).count)}" ${lock}></label></div>
+        <button type="button" id="vsPutContainers" ${lock}>Colocar cajas en este nivel</button></div>
         <label class="vspace-field">SKU / código de barras<input id="vsSku" value="${vspaceEsc(assigned?.sku||'')}" list="vsProductHints" placeholder="Escribe el SKU" ${lock}></label>
         <datalist id="vsProductHints">${(appState.products||[]).slice(0,450).map(p=>`<option value="${vspaceEsc(p.sku||'')}">${vspaceEsc(p.nombre||'')}</option>`).join('')}</datalist>
         <label class="vspace-field">Cantidad de unidades<input id="vsQty" type="number" min="1" max="100000" value="${Number(assigned?.quantity)||1}" ${lock}></label>
@@ -15599,6 +15817,7 @@ function getSheetBranchOpenMap(){
           height:host.querySelector('#vsHeight').value,levels:host.querySelector('#vsLevels').value,slots:host.querySelector('#vsSlots').value,
           rot:host.querySelector('#vsRotation').value,x:host.querySelector('#vsX').value,y:host.querySelector('#vsY').value});
       });
+      host.querySelector('#vsPutContainers')?.addEventListener('click',()=>vspaceSetSlotContainers(rack,state.selectedLevel,state.selectedSlot,host.querySelector('#vsContainerKind').value,host.querySelector('#vsContainerCount').value));
       host.querySelector('#vsAssign')?.addEventListener('click',()=>vspaceAssign(rack,state.selectedLevel,state.selectedSlot,host.querySelector('#vsSku').value,host.querySelector('#vsQty').value));
       host.querySelector('#vsRemoveAssignment')?.addEventListener('click',()=>vspaceAssign(rack,state.selectedLevel,state.selectedSlot,''));
       host.querySelector('#vsDelete')?.addEventListener('click',()=>{
@@ -15659,13 +15878,35 @@ function getSheetBranchOpenMap(){
         state.focusSelected();vspaceToast(`Ubicación encontrada: ${b.dataset.vspaceFound} · N${b.dataset.vspaceFoundLevel} / P${b.dataset.vspaceFoundSlot}`);
       }else vspaceToast('El producto tiene una ubicación, pero ese mueble aún no existe en el plano.',true);
     });
-    root.querySelectorAll('[data-vspace-cam]').forEach(b=>b.onclick=()=>state.setCamera(b.dataset.vspaceCam));
+    root.querySelectorAll('[data-vspace-cam]').forEach(b=>b.onclick=()=>{
+      root.querySelectorAll('[data-vspace-cam]').forEach(x=>x.classList.toggle('active',x===b));
+      state.setCamera(b.dataset.vspaceCam);
+    });
     root.querySelector('[data-vspace-action="move"]').onclick=e=>{
       state.move=!state.move;e.currentTarget.textContent=`Mover: ${state.move?'ON':'OFF'}`;e.currentTarget.classList.toggle('active',state.move);
       vspaceToast(state.move?'Arrastra un mueble sobre el suelo. Se impedirán las colisiones.':'Modo órbita activado.');
     };
     root.querySelector('[data-vspace-action="toggle-wall"]').onclick=e=>{
       state.wallVisible=!state.wallVisible;e.currentTarget.classList.toggle('active',state.wallVisible);state.render(true);
+    };
+    root.querySelector('[data-vspace-action="sample"]').onclick=()=>{
+      if(!canWrite())return;
+      if((appState.layout.racks||[]).length && !confirm('Se añadirán muebles al plano actual, sin eliminar los existentes. ¿Continuar?'))return;
+      if(!(appState.layout.zones||[]).length){
+        if(!Array.isArray(appState.layout.zones))appState.layout.zones=[];
+        const demoZone={id:'Z-ISOMETRICA',name:'Ambiente principal',color:'#e8d7be',pts:[{x:0,y:0},{x:900,y:0},{x:900,y:700},{x:0,y:700}]};
+        appState.layout.zones.push(demoZone);zoneBounds.push(...demoZone.pts);
+        mx=450;my=350;
+      }
+      const previous=(appState.layout.racks||[]).length;
+      ['rack','rack','vitrina','mostrador','contenedor'].forEach(kind=>vspaceCreate(kind));
+      const newly=(appState.layout.racks||[]).slice(previous);
+      newly.forEach((r,i)=>{
+        if(r.virtualType==='rack')r.virtualContainers=[{level:1,slot:1,kind:'carton',count:2},{level:2,slot:2,kind:'plastic',count:2},{level:3,slot:1,kind:'carton',count:2}];
+        if(r.virtualType==='vitrina')r.virtualContainers=[{level:1,slot:1,kind:'carton',count:1}];
+      });
+      if(newly.length){state.select(newly[0].id);vspaceCommit('ambiente de ejemplo');state.setCamera('iso');}
+      else vspaceToast('Primero dibuja una zona suficientemente grande desde el editor de Plano.',true);
     };
     root.querySelector('[data-vspace-action="save"]').onclick=async()=>{
       if(!canWrite())return;
@@ -15686,32 +15927,62 @@ function getSheetBranchOpenMap(){
       try{
         const THREE=await loadThreeRuntime();if(state.destroyed||vspaceActive!==state)return;
         const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.setClearColor(0x111d29);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.75));
         renderer.outputColorSpace=THREE.SRGBColorSpace;
-        const scene=new THREE.Scene();scene.background=new THREE.Color(0x101b29);
-        const camera=new THREE.PerspectiveCamera(44,1,.05,250);
-        scene.add(new THREE.HemisphereLight(0xd4e8ff,0x536071,2.1));
-        const sun=new THREE.DirectionalLight(0xffffff,2.1);sun.position.set(-5,12,7);scene.add(sun);
+        renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.33;
+        renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+        const scene=new THREE.Scene();scene.background=new THREE.Color(0xf6f3ed);
+        const camera=new THREE.OrthographicCamera(-5,5,5,-5,.05,260);
+        scene.add(new THREE.HemisphereLight(0xfffaf1,0xb6ada0,2.15));
+        const fill=new THREE.AmbientLight(0xffffff,.5);scene.add(fill);
+        const sun=new THREE.DirectionalLight(0xffedcf,3.2);
+        sun.position.set(-5,12,8);sun.castShadow=true;
+        sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-32;sun.shadow.camera.right=32;
+        sun.shadow.camera.top=32;sun.shadow.camera.bottom=-32;
+        sun.shadow.camera.near=.5;sun.shadow.camera.far=55;sun.shadow.bias=-.0004;
+        sun.shadow.radius=4;scene.add(sun);
         const world=new THREE.Group();scene.add(world);state.scene=scene;state.renderer=renderer;state.camera=camera;state.THREE=THREE;state.world=world;
         const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2(),ground=new THREE.Plane(new THREE.Vector3(0,1,0),0);
-        const orbit={theta:.68,phi:.92,radius:12,target:new THREE.Vector3(0,.75,0)};
+        const orbit={theta:.78,phi:.97,radius:12,target:new THREE.Vector3(0,.8,0)};
         const updateCam=()=>{
-          orbit.phi=vspaceClamp(orbit.phi,.15,1.53);orbit.radius=vspaceClamp(orbit.radius,1.5,80);
+          orbit.phi=vspaceClamp(orbit.phi,.1,1.53);orbit.radius=vspaceClamp(orbit.radius,1.8,80);
           const sin=Math.sin(orbit.phi);camera.position.set(orbit.target.x+Math.sin(orbit.theta)*sin*orbit.radius,orbit.target.y+Math.cos(orbit.phi)*orbit.radius,orbit.target.z+Math.cos(orbit.theta)*sin*orbit.radius);
           camera.lookAt(orbit.target);
+          const rect=canvas.getBoundingClientRect(),aspect=Math.max(.5,rect.width/Math.max(1,rect.height));
+          const halfH=orbit.radius*.44;
+          camera.left=-halfH*aspect;camera.right=halfH*aspect;camera.top=halfH;camera.bottom=-halfH;camera.updateProjectionMatrix();
         };
         const applyPointer=e=>{const r=canvas.getBoundingClientRect();mouse.x=((e.clientX-r.left)/r.width)*2-1;mouse.y=-((e.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(mouse,camera);};
         const meshMat=(color,extra={})=>new THREE.MeshStandardMaterial({color,metalness:.14,roughness:.6,...extra});
-        const shared={metal:meshMat(0x677f94,{metalness:.67,roughness:.32}),dark:meshMat(0x334b60,{metalness:.65}),wood:meshMat(0xc7a97e),glass:meshMat(0x97d9e2,{transparent:true,opacity:.22,depthWrite:false,metalness:.08,roughness:.12}),box:meshMat(0xbba079),accent:meshMat(0x23dcb1,{emissive:0x086b59,emissiveIntensity:.48}),product:meshMat(0xf8c65d),productFocus:meshMat(0x4de4d0,{emissive:0x218a79,emissiveIntensity:.48})};
+        const shared={
+          metal:meshMat(0x6e7674,{metalness:.63,roughness:.43}),
+          metalDark:meshMat(0x424947,{metalness:.58,roughness:.41}),
+          metalSelected:meshMat(0x3b8d7e,{metalness:.43,roughness:.35}),
+          hole:meshMat(0x353b39),
+          wood:meshMat(0xc89e73,{metalness:0,roughness:.81}),
+          woodLight:meshMat(0xe4be90,{metalness:0,roughness:.77}),
+          woodDark:meshMat(0x9c7150,{metalness:0,roughness:.78}),
+          cardboard:meshMat(0xc99560,{metalness:0,roughness:.94}),
+          cardboardLight:meshMat(0xd8af7d,{metalness:0,roughness:.91}),
+          tape:meshMat(0xe7d4a5,{metalness:0,roughness:.72}),
+          paper:meshMat(0xfaf7ee,{metalness:0,roughness:.84}),
+          ink:meshMat(0x44433e),
+          plastic:meshMat(0x9caeb0,{metalness:.08,roughness:.66}),
+          plasticLight:meshMat(0xb9c5c4,{metalness:.08,roughness:.64}),
+          plasticDark:meshMat(0x76898b,{metalness:.1,roughness:.65}),
+          glass:meshMat(0xd8eff0,{transparent:true,opacity:.19,depthWrite:false,side:THREE.DoubleSide,metalness:0,roughness:.08}),
+          glassShelf:meshMat(0xcee5e2,{transparent:true,opacity:.68,depthWrite:false,metalness:0,roughness:.09}),
+          highlight:meshMat(0x37dfaf,{transparent:true,opacity:.32,depthWrite:false,emissive:0x168f7d,emissiveIntensity:.18})
+        };
         const addBlock=(group,x,y,z,w,h,d,mat,level=0,slot=0)=>{
           const mesh=new THREE.Mesh(new THREE.BoxGeometry(Math.max(.015,w),Math.max(.015,h),Math.max(.015,d)),mat);
-          mesh.position.set(x,y,z);mesh.castShadow=false;mesh.receiveShadow=true;
+          mesh.position.set(x,y,z);mesh.castShadow=!mat.transparent;mesh.receiveShadow=true;
           const data=group.userData;mesh.userData={furnitureId:data.furnitureId,level,slot};group.add(mesh);return mesh;
         };
         const labelSprite=(text,width=1.1)=>{
           const c=document.createElement('canvas');c.width=512;c.height=120;
-          const ctx=c.getContext('2d');ctx.clearRect(0,0,512,120);ctx.fillStyle='rgba(15,30,45,.88)';ctx.fillRect(5,4,502,112);
-          ctx.fillStyle='#ebfaff';ctx.font='bold 42px Arial';ctx.textAlign='center';ctx.fillText(String(text).slice(0,25),256,76,470);
+          const ctx=c.getContext('2d');ctx.clearRect(0,0,512,120);ctx.fillStyle='rgba(255,250,239,.94)';ctx.fillRect(5,4,502,112);ctx.strokeStyle='rgba(153,123,94,.55)';ctx.lineWidth=6;ctx.strokeRect(7,6,498,108);
+          ctx.fillStyle='#54473a';ctx.font='bold 42px Arial';ctx.textAlign='center';ctx.fillText(String(text).slice(0,25),256,76,470);
           const tex=new THREE.CanvasTexture(c);const material=new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true});
           const sprite=new THREE.Sprite(material);sprite.scale.set(width,width*.25,1);return sprite;
         };
@@ -15723,72 +15994,15 @@ function getSheetBranchOpenMap(){
           });});world.clear();state.objects.clear();
         };
         const addFurniture=r=>{
-          const spec=vspaceSpec(r),x=spec.width/100,d=spec.depth/100,h=spec.height/100;
+          const spec=vspaceSpec(r);
           const group=new THREE.Group();group.userData={furnitureId:r.id};
           const c=coord({x:Number(r.x)+(Number(r.w)||0)/2,y:Number(r.y)+(Number(r.h)||0)/2});
           group.position.set(c.x,Number(r.baseHeight||0)/100,c.z);
           group.rotation.y=-(Number(r.rot||0)*Math.PI/180);
-          const p=VSPACE_TYPES[spec.kind];const painted=meshMat(p.color,{metalness:spec.kind==='rack'?.45:.1});
-          const t=spec.kind, selected=r.id===state.selectedId, metal=selected?shared.accent:shared.metal;
-          const frame=.035, shelf=.037;
-          if(t==='rack'||t==='vitrina'||t==='mostrador'){
-            const levels=t==='mostrador'?Math.max(1,spec.levels):spec.levels;
-            for(const xx of [-x/2+frame/2,x/2-frame/2])for(const zz of [-d/2+frame/2,d/2-frame/2]){
-              addBlock(group,xx,h/2,zz,frame,h,frame,t==='mostrador'?shared.wood:metal);
-            }
-            for(let l=1;l<=levels;l++){
-              const sy=.035+(h-.065)*l/levels;
-              addBlock(group,0,sy,0,x-.015,shelf,d-.015,t==='mostrador'?shared.wood:shared.metal,l,0);
-              if(t==='rack'||t==='vitrina')for(let s=1;s<spec.slots;s++){
-                const xx=-x/2+x*s/spec.slots;
-                addBlock(group,xx,sy-(h/levels)/2,0,.012,Math.max(.02,h/levels-shelf),d*.87,shared.dark,l,s);
-              }
-              for(let s=1;s<=spec.slots;s++){
-                const row=vspaceProductsForSlot(r,l,s);
-                if(row.length){
-                  const xx=-x/2+x*(s-.5)/spec.slots;
-                  const bh=Math.min(.17,(h/levels)*.5);
-                  const focus=selected&&state.selectedLevel===l&&state.selectedSlot===s;
-                  addBlock(group,xx,sy+bh/2+.03,0,Math.min(.24,x/spec.slots*.63),bh,Math.min(.25,d*.54),focus?shared.productFocus:shared.product,l,s);
-                }
-              }
-            }
-            if(t==='vitrina'){
-              addBlock(group,-x/2+frame/2,h/2,0,frame,h,d,shared.dark);
-              addBlock(group,x/2-frame/2,h/2,0,frame,h,d,shared.dark);
-              addBlock(group,0,h/2,d/2-.015,x-.07,h-.1,.025,shared.glass);
-              addBlock(group,0,h/2,-d/2+.015,x-.07,h-.1,.025,shared.glass);
-            }
-            if(t==='mostrador'){
-              addBlock(group,0,h/2,-d/2+.018,x-.04,h-.05,.035,painted);
-              addBlock(group,0,h+.012,0,x+.08,.042,d+.10,shared.wood);
-            }
-          }else if(t==='contenedor'){
-            addBlock(group,0,.055,0,x,.11,d,shared.dark);
-            for(const side of [-1,1]){
-              addBlock(group,side*(x-.04)/2,h/2,0,.05,h,d,painted);
-              addBlock(group,0,h/2,side*(d-.04)/2,x,h,.05,painted);
-            }
-            for(let l=1;l<=spec.levels;l++){
-              const sy=l*h/spec.levels;
-              addBlock(group,0,sy,0,x-.09,.03,d-.09,shared.metal,l,0);
-              for(let s=1;s<=spec.slots;s++){
-                if(vspaceProductsForSlot(r,l,s).length){
-                  const xx=-x/2+x*(s-.5)/spec.slots;
-                  addBlock(group,xx,sy-.045,0,Math.min(.22,x/spec.slots*.55),.07,d*.43,selected&&state.selectedLevel===l&&state.selectedSlot===s?shared.productFocus:shared.product,l,s);
-                }
-              }
-            }
-          }else{
-            addBlock(group,0,h/2,0,x,h,d,painted,1,1);
-            for(let side of [-1,1])addBlock(group,0,h*.82,side*d*.46,x*.8,.025,.025,shared.dark,1,1);
-            if(vspaceProductsForSlot(r,1,1).length){
-              addBlock(group,0,h+.008,0,x*.32,.018,d*.32,selected?shared.productFocus:shared.product,1,1);
-            }
-          }
-          const sprite=labelSprite(spec.title,Math.min(2.2,Math.max(.8,x*1.05)));sprite.position.set(0,h+.24,0);group.add(sprite);
-          const ringMat=meshMat(selected?0x36eac1:0x5686a3,{transparent:true,opacity:selected?.55:.13});
-          addBlock(group,0,.015,0,x+.13,.022,d+.13,ringMat);
+          vspaceBuildIsometricFurniture(THREE,group,r,spec,{
+            shared,block:addBlock,sprite:labelSprite,selected:r.id===state.selectedId,
+            selectedLevel:state.selectedLevel,selectedSlot:state.selectedSlot,products:vspaceProductsForSlot
+          });
           world.add(group);state.objects.set(r.id,group);
         };
         const rebuild=()=>{
@@ -15798,21 +16012,39 @@ function getSheetBranchOpenMap(){
             const pts=zone.pts||[];if(pts.length<3)continue;
             const shape=new THREE.Shape();
             pts.forEach((pt,i)=>{const p=coord(pt);if(i===0)shape.moveTo(p.x,-p.z);else shape.lineTo(p.x,-p.z);});shape.closePath();
-            const plane=new THREE.Mesh(new THREE.ShapeGeometry(shape),meshMat(zone.color||0x31475b,{side:THREE.DoubleSide,roughness:.9,metalness:0}));
-            plane.rotation.x=-Math.PI/2;plane.position.y=-.018;world.add(plane);
-            if(state.wallVisible)for(let i=0;i<pts.length;i++){
-              const a=coord(pts[i]),b=coord(pts[(i+1)%pts.length]);const dx=b.x-a.x,dz=b.z-a.z;
-              const len=Math.hypot(dx,dz);if(len<.04)continue;
-              const wall=new THREE.Mesh(new THREE.BoxGeometry(len,2.75,.07),meshMat(0x9eb0bd,{transparent:true,opacity:.18,depthWrite:false,side:THREE.DoubleSide}));
-              wall.position.set((a.x+b.x)/2,1.375,(a.z+b.z)/2);wall.rotation.y=-Math.atan2(dz,dx);world.add(wall);
-              const edge=new THREE.Mesh(new THREE.BoxGeometry(len,.032,.06),meshMat(0x8cb6c4));
-              edge.position.set(wall.position.x,.025,wall.position.z);edge.rotation.y=wall.rotation.y;world.add(edge);
+            const floor=new THREE.Mesh(new THREE.ExtrudeGeometry(shape,{depth:.15,bevelEnabled:false}),[
+              meshMat(0xe9d7bb,{metalness:0,roughness:.9}),meshMat(0xbba48a,{metalness:0,roughness:.95})]);
+            floor.rotation.x=-Math.PI/2;floor.position.y=-.15;floor.receiveShadow=true;world.add(floor);
+            if(state.wallVisible){
+              const center={x:pts.reduce((v,p)=>v+Number(p.x),0)/pts.length,y:pts.reduce((v,p)=>v+Number(p.y),0)/pts.length};
+              const midpoint=coord(center);
+              const eye=new THREE.Vector2(Math.sin(orbit.theta),Math.cos(orbit.theta));
+              for(let i=0;i<pts.length;i++){
+                const a=coord(pts[i]),b=coord(pts[(i+1)%pts.length]);const dx=b.x-a.x,dz=b.z-a.z;
+                const len=Math.hypot(dx,dz);if(len<.04)continue;
+                const midX=(a.x+b.x)/2,midZ=(a.z+b.z)/2;
+                // Diorama cutaway: only walls behind the furniture, never the near walls blocking the view.
+                const outward=new THREE.Vector2(midX-midpoint.x,midZ-midpoint.z);
+                if(outward.dot(eye)>=0)continue;
+                const wall=new THREE.Mesh(new THREE.BoxGeometry(len,2.75,.085),meshMat(0xf3e9dc,{metalness:0,roughness:.95}));
+                wall.position.set(midX,1.375,midZ);wall.rotation.y=-Math.atan2(dz,dx);
+                wall.receiveShadow=true;wall.castShadow=true;world.add(wall);
+                const addTrim=(y,bh,color)=>{
+                  const mesh=new THREE.Mesh(new THREE.BoxGeometry(len,bh,.115),meshMat(color,{metalness:0,roughness:.8}));
+                  mesh.position.set(midX,y,midZ);mesh.rotation.y=wall.rotation.y;world.add(mesh);
+                };
+                addTrim(.09,.16,0xc8b397);addTrim(2.74,.055,0xe7d4b7);
+              }
             }
           }
+          // Small unobtrusive measurement grid, enabled over the entire editing area.
           const boundsW=(zoneBounds.length?Math.max(...zoneBounds.map(p=>p.x))-Math.min(...zoneBounds.map(p=>p.x)):700)*getScaleCmPerUnit()/100;
           const boundsH=(zoneBounds.length?Math.max(...zoneBounds.map(p=>p.y))-Math.min(...zoneBounds.map(p=>p.y)):600)*getScaleCmPerUnit()/100;
-          const grid=new THREE.GridHelper(Math.max(12,Math.ceil(Math.max(boundsW,boundsH)+3)),Math.max(12,Math.ceil(Math.max(boundsW,boundsH)+3)*2),0x47687c,0x294053);
-          grid.position.y=-.027;world.add(grid);
+          if(zones.length){
+            const count=Math.max(10,Math.ceil(Math.max(boundsW,boundsH)*2));
+            const grid=new THREE.GridHelper(Math.max(7,Math.ceil(Math.max(boundsW,boundsH))),count,0xb9a78f,0xb9a78f);
+            grid.material.transparent=true;grid.material.opacity=.12;grid.position.y=.002;world.add(grid);
+          }
           (appState.layout.racks||[]).forEach(addFurniture);
           if(state.wallVisible && (appState.layout.zones||[]).length===0){vspaceToast('Dibuja primero el perímetro desde Plano / Estructura.');}
           state.requestRender();
@@ -15821,21 +16053,21 @@ function getSheetBranchOpenMap(){
           if(state.destroyed||state.raf)return;
           state.raf=requestAnimationFrame(()=>{state.raf=0;if(state.destroyed)return;updateCam();renderer.render(scene,camera);});
         };
-        state.render=(rebuildWorld=false)=>{if(rebuildWorld)rebuild();else{rebuild();}};
+        state.render=()=>rebuild();
         state.setCamera=mode=>{
           const points=zoneBounds.length?zoneBounds:[{x:mx-300,y:my-200},{x:mx+300,y:my+200}];
           const width=(Math.max(...points.map(p=>p.x))-Math.min(...points.map(p=>p.x)))*getScaleCmPerUnit()/100;
           const depth=(Math.max(...points.map(p=>p.y))-Math.min(...points.map(p=>p.y)))*getScaleCmPerUnit()/100;
-          orbit.radius=vspaceClamp(Math.max(width,depth)*1.7+3,4,65);
-          orbit.theta=mode==='front'?0:mode==='top'?.0001:.72;
-          orbit.phi=mode==='top'?.04:mode==='front'?1.27:.86;
+          orbit.radius=vspaceClamp(Math.max(width,depth)*1.48+2.3,4,65);
+          orbit.theta=mode==='front'?0:mode==='top'?.0001:.79;
+          orbit.phi=mode==='top'?.04:mode==='front'?1.26:.97;
           orbit.target.set(0,.8,0);state.mode=mode;state.requestRender();
         };
         state.focusSelected=()=>{
           const r=getRack();if(!r)return;
           const c=coord({x:Number(r.x)+Number(r.w)/2,y:Number(r.y)+Number(r.h)/2});
           orbit.target.set(c.x,vspaceSpec(r).height/200,c.z);
-          orbit.radius=vspaceClamp(vspaceSpec(r).width/70+3,3,12);orbit.phi=.94;state.requestRender();
+          orbit.radius=vspaceClamp(vspaceSpec(r).width/65+3,3,12);orbit.phi=.94;state.requestRender();
         };
         const intersectFurniture=e=>{
           applyPointer(e);
@@ -15882,6 +16114,7 @@ function getSheetBranchOpenMap(){
         });
         canvas.addEventListener('pointerup',()=>{
           if(gesture?.mode==='move'&&gesture.moved){vspaceCommit('mueble desplazado');state.refreshInspector();}
+          if(gesture?.mode==='orbit'&&gesture.moved&&state.wallVisible)state.render(true);
           gesture=null;
         });
         canvas.addEventListener('pointercancel',()=>{gesture=null;});
@@ -15889,13 +16122,13 @@ function getSheetBranchOpenMap(){
         const resize=()=>{
           if(state.destroyed)return;const bounds=canvas.getBoundingClientRect();
           const w=Math.max(160,Math.floor(bounds.width)),h=Math.max(120,Math.floor(bounds.height));
-          renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();state.requestRender();
+          renderer.setSize(w,h,false);state.requestRender();
         };
         state.resizeObs=new ResizeObserver(resize);state.resizeObs.observe(canvas);
         rebuild();state.setCamera('iso');
         if(state.selectedId && (appState.layout.racks||[]).some(r=>r.id===state.selectedId)) state.focusSelected();
         resize();root.querySelector('#vspaceLoading')?.remove();
-        vspaceToast('Modelo virtual sincronizado con el plano. Selecciona un mueble para asignarle productos.');
+        vspaceToast('Vista isométrica activa. Selecciona un estante, crea cajas y asigna SKU por nivel.');
       }catch(err){console.error('Vista virtual 3D:',err);const el=root.querySelector('#vspaceLoading');if(el)el.textContent=`No se pudo inicializar la vista 3D: ${err.message||err}. Verifica WebGL y la dependencia Three.js.`;}
     })();
   }

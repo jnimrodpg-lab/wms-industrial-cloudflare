@@ -1,5 +1,5 @@
 {
-  "version": "160",
+  "version": "161",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -12,9 +12,10 @@
     "65-layout-pro-v117.js",
     "66-topology-v128.js",
     "70-rack-editor.js",
+    "74-isometric-furniture.js",
     "75-virtual-space.js",
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v160: Ambiente virtual 3D editable, biblioteca de racks/mostradores/vitrinas/contenedores/cajas, niveles, posiciones y asignaciones por SKU."
+  "notes": "v161: Diorama 3D isométrico real, mobiliario paramétrico, cajas de cartón y gavetas dentro de niveles, piso con profundidad, iluminación y sombras."
 }

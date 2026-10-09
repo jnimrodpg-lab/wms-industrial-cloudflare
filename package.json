@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
-  "description": "WMS Industrial V160: diseño virtual 3D con muebles y ubicación de inventario por nivel/posición.",
+  "description": "WMS Industrial V161: ambiente 3D isométrico, muebles paramétricos y cajas por nivel.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
@@ -10,7 +10,7 @@
     "audit:frontend": "node scripts/audit-frontend.mjs",
     "check": "npm run verify:frontend && npm run audit:frontend && npm run test:virtual && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
     "build": "npm run build:frontend",
-    "test:virtual": "node tests/virtual-space.test.mjs"
+    "test:virtual": "node tests/virtual-space.test.mjs && node tests/furniture-v161.test.mjs"
   },
   "dependencies": {
     "three": "0.160.0"
