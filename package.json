@@ -1,15 +1,16 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.4.8",
+  "version": "1.6.0",
   "private": true,
-  "description": "WMS Industrial v148 Visual Furniture CAD: modelado directo por piezas y espacios con 3D dominante, inspector contextual y división visual.",
+  "description": "WMS Industrial V160: diseño virtual 3D con muebles y ubicación de inventario por nivel/posición.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
     "verify:frontend": "node scripts/verify-frontend.mjs",
     "audit:frontend": "node scripts/audit-frontend.mjs",
-    "check": "node scripts/verify-frontend.mjs && node scripts/audit-frontend.mjs && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
-    "build": "npm run build:frontend"
+    "check": "npm run verify:frontend && npm run audit:frontend && npm run test:virtual && node --check functions/api/[[path]].js && node --check public/assets/app-main.runtimefix.js",
+    "build": "npm run build:frontend",
+    "test:virtual": "node tests/virtual-space.test.mjs"
   },
   "dependencies": {
     "three": "0.160.0"

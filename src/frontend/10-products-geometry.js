@@ -536,20 +536,20 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
 
   function normalizeAppScreenName(screen){
     const value = String(screen || '').trim();
-    const allowed = ['admin','sheet','layout','distribution','racks','rack-builder','viewer'];
+    const allowed = ['admin','sheet','layout','distribution','racks','rack-builder','virtual','viewer'];
     if(value === 'card' || value === 'products') return 'sheet';
     return allowed.includes(value) ? value : 'viewer';
   }
   function getLastAppScreen(){
     try{
       const saved = normalizeAppScreenName(localStorage.getItem('wms_last_screen_v95') || '');
-      return ['admin','sheet','layout','distribution','racks','rack-builder','viewer'].includes(saved) ? saved : 'admin';
+      return ['admin','sheet','layout','distribution','racks','rack-builder','virtual','viewer'].includes(saved) ? saved : 'admin';
     }catch(_err){ return 'admin'; }
   }
   function persistLastAppScreen(screen){
     try{
       const normalized = normalizeAppScreenName(screen);
-      if(['admin','sheet','layout','distribution','racks','rack-builder','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
+      if(['admin','sheet','layout','distribution','racks','rack-builder','virtual','viewer'].includes(normalized)) localStorage.setItem('wms_last_screen_v95', normalized);
     }catch(_err){}
   }
 
@@ -557,14 +557,15 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     ensureAppRuntimeState();
     screen = normalizeAppScreenName(screen);
     if(screen === 'card') screen = 'sheet';
-    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer'){
+    if(!appState.auth?.loggedIn && !appState.auth?.viewerGuest && screen !== 'viewer' && screen !== 'virtual'){
       appState.ui = appState.ui || {};
       appState.ui.pendingScreenAfterLogin = screen;
       openAuthModal('');
       screen = 'viewer';
     }
-    if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer'){ screen = 'viewer'; }
+    if((appState.auth?.viewerGuest || String(appState.auth?.role||'') === 'viewer') && screen !== 'viewer' && screen !== 'virtual'){ screen = 'viewer'; }
     cleanupLayoutAutoFit();
+    if(screen !== 'virtual' && vspaceActive?.destroy){ vspaceActive.destroy(); vspaceActive = null; }
     appState.screen = screen;
     persistLastAppScreen(screen);
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
@@ -610,7 +611,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks' || screen === 'rack-builder';
-      const isLayoutScreen = screen === 'layout' || screen === 'distribution';
+      const isLayoutScreen = screen === 'layout' || screen === 'distribution' || screen === 'virtual';
       const isCardDesigner = false;
       detailPanel.style.display = (isRackModels || isLayoutScreen) ? 'none' : '';
       contentPanel.classList.toggle('full-span', isRackModels || isLayoutScreen);
@@ -635,6 +636,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       if(screen === 'admin') renderAdminScreen();
       else if(screen === 'sheet') (typeof renderSheetScreen==='function'?renderSheetScreen():renderMapView());
       else if(screen === 'layout' || screen === 'distribution') renderLayoutEditor();
+      else if(screen === 'virtual') renderVirtualSpace();
       else if(screen === 'racks') renderRackModels();
       else if(screen === 'rack-builder') renderRackConstructionWorkspace();
       else renderMapView();

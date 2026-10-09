@@ -9,14 +9,18 @@ const srcRoot = path.join(root, 'src', 'frontend');
 const manifest = JSON.parse(fs.readFileSync(path.join(srcRoot, 'manifest.json'), 'utf8'));
 const output = path.join(root, manifest.output);
 
-const threeSource = path.join(root, 'node_modules', 'three', 'build', 'three.module.min.js');
-const threeTarget = path.join(root, 'public', 'vendor', 'three.module.min.js');
-if (fs.existsSync(threeSource)) {
+const threeCandidates = [
+  path.join(root, 'node_modules', 'three', 'build', 'three.module.min.js'),
+  path.join(root, 'node_modules', 'three', 'build', 'three.module.js')
+];
+const threeSource = threeCandidates.find(candidate => fs.existsSync(candidate));
+const threeTarget = path.join(root, 'public', 'vendor', 'three.module.js');
+if (threeSource) {
   fs.mkdirSync(path.dirname(threeTarget), { recursive: true });
   fs.copyFileSync(threeSource, threeTarget);
-  console.log('Three.js r160 copiado a public/vendor/three.module.min.js');
+  console.log('Three.js r160 incorporado al despliegue desde npm.');
 } else if (!fs.existsSync(threeTarget)) {
-  console.warn('AVISO: Three.js local aún no está materializado. Ejecuta npm install antes del build; el runtime conservará respaldo CDN.');
+  console.warn('AVISO: falta Three.js local. Ejecuta npm install antes del build; la aplicación conserva el respaldo CDN.');
 }
 const source = manifest.files.map(file => fs.readFileSync(path.join(srcRoot, file), 'utf8')).join('');
 fs.mkdirSync(path.dirname(output), { recursive: true });

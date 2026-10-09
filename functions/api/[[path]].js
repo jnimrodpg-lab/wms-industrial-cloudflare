@@ -32,7 +32,8 @@ export async function onRequest(context) {
     }
 
     if (path === '/drive-video' && request.method === 'GET') {
-      await requireAuth(request, env.DB);
+      const session = await requireAuth(request, env.DB);
+      if (session.error) return session.error;
       return proxyGoogleDriveVideo(request, url);
     }
 

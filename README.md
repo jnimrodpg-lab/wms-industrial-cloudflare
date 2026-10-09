@@ -1,3 +1,7 @@
+# Edición actual: V160
+
+Para las funcionalidades del ambiente virtual, modelos 3D y ubicación por nivel, consulta [README_V160.md](README_V160.md). El documento siguiente describe la arquitectura base histórica.
+
 # WMS Industrial — v107 Modular Source
 
 v107 conserva la estabilización de v106 y agrega una capa de arquitectura mantenible para el frontend. El comportamiento publicado sigue usando un único bundle, pero su fuente ahora está dividida por subsistemas y se genera de forma reproducible.

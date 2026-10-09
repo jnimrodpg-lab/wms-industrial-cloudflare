@@ -1,5 +1,5 @@
 {
-  "version": "148",
+  "version": "160",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -12,8 +12,9 @@
     "65-layout-pro-v117.js",
     "66-topology-v128.js",
     "70-rack-editor.js",
+    "75-virtual-space.js",
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v148: Visual Furniture CAD con 3D dominante, selección de espacios, herramientas compactas e inspector contextual."
+  "notes": "v160: Ambiente virtual 3D editable, biblioteca de racks/mostradores/vitrinas/contenedores/cajas, niveles, posiciones y asignaciones por SKU."
 }

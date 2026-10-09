@@ -72,7 +72,12 @@ console.info('*** WMS v148 VISUAL FURNITURE CAD ACTIVE ***');
 
   if(btnAuthAction) btnAuthAction.onclick = () => { if(appState.auth?.loggedIn) doLogout(); else openAuthModal(); };
   if(btnFocusProductMap) btnFocusProductMap.onclick = (e) => { e.stopPropagation(); openProductLocationModal(appState.selectedProduct); };
-  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => { e.stopPropagation(); setScreen('viewer'); renderMapView(); };
+  if(btnOpenViewerFromProduct) btnOpenViewerFromProduct.onclick = (e) => {
+    e.stopPropagation();
+    const rackId = String(appState.selectedProduct?.rack || appState.selectedProduct?.rackStore || '').trim();
+    if(rackId && (appState.layout?.racks || []).some(r => r.id === rackId)) appState.selectedRackLayoutId = rackId;
+    setScreen('virtual');
+  };
   if(btnAuthClose) btnAuthClose.onclick = () => closeAuthModal();
   if(btnDoLogin){ btnDoLogin.onclick = doLogin; }
   if(authMode) authMode.addEventListener('change', syncAuthModeUi);
