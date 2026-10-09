@@ -1,5 +1,5 @@
 {
-  "version": "161",
+  "version": "162",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -17,5 +17,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v161: Diorama 3D isométrico real, mobiliario paramétrico, cajas de cartón y gavetas dentro de niveles, piso con profundidad, iluminación y sombras."
+  "notes": "v162: construcción centrada en 3D, layout mini sincronizado, navegación mejorada y nueva cómoda/cajonera."
 }

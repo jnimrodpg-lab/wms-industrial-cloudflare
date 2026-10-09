@@ -36,7 +36,7 @@ class LineBasicMaterial{constructor(x){this.opts=x;}}
 class Line{constructor(geo,mat){this.geo=geo;this.mat=mat;}}
 const THREE={Vector3,BufferGeometry,LineBasicMaterial,Line};
 const shared=Object.fromEntries(['metal','metalSelected','metalDark','hole','wood','woodLight','woodDark','cardboard','cardboardLight','tape','paper','ink','plastic','plasticLight','plasticDark','glass','glassShelf','highlight'].map(x=>[x,x]));
-for(const kind of ['rack','vitrina','mostrador','contenedor','caja']){
+for(const kind of ['rack','vitrina','mostrador','contenedor','cajonera','caja']){
   const group=new Group(),blocks=[];
   const rack={...sample,virtualType:kind,virtualContainers:[{level:2,slot:2,kind:'carton',count:2}]};
   const spec={kind,title:kind,width:150,depth:60,height:225,levels:kind==='caja'?1:3,slots:kind==='caja'?1:3};
@@ -54,4 +54,4 @@ for(const kind of ['rack','vitrina','mostrador','contenedor','caja']){
     assert.ok(blocks.some(b=>b.mat==='paper'),`${kind} packaging carries labels`);
   }
 }
-console.log('OK: 5 modelos geométricos 3D, cajas anidadas, niveles, SKU y cambios de contenedores.');
+console.log('OK: 6 modelos geométricos 3D, cajas anidadas, niveles, SKU y cambios de contenedores.');

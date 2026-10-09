@@ -16,7 +16,7 @@ const ctx={appState:state,escapeHtml:x=>String(x),getScaleCmPerUnit:()=>1,
 vm.createContext(ctx);
 vm.runInContext(source,ctx);
 const check=s=>vm.runInContext(s,ctx);
-assert.equal(check('Object.keys(VSPACE_TYPES).length'),5);
+assert.equal(check('Object.keys(VSPACE_TYPES).length'),6);
 assert.equal(check("vspaceSpec(appState.layout.racks[0]).levels"),4);
 assert.equal(check("vspacePointInZone({x:100,y:100}, appState.layout.zones[0])"),true);
 assert.equal(check("vspacePointInZone({x:750,y:100}, appState.layout.zones[0])"),false);

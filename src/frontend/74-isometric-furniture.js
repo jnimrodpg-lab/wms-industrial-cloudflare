@@ -168,6 +168,32 @@ function vspaceBuildIsometricFurniture(THREE, group, rack, spec, options){
     }
     for(const x of [-w/2+.025,w/2-.025])part(x,h/2,0,.05,h,d,shared.plasticDark);
     sign(spec.title,0,h+.23,0,Math.min(1.9,w*1.2));
+  }else if(spec.kind==='cajonera'){
+    // Chest of drawers / dresser with pickable drawers and warm wooden finish.
+    const shell=Math.max(.028,Math.min(.045,w*.035));
+    part(0,h/2,0,w,h,d,shared.woodDark);
+    part(0,h-.022,0,w+.02,.045,d+.02,shared.woodLight);
+    const innerW=w-shell*2, innerH=h-.09, drawerH=innerH/spec.levels, slotGap=.018;
+    for(let l=1;l<=spec.levels;l++){
+      const cy=.05+drawerH*(l-.5);
+      for(let s=1;s<=spec.slots;s++){
+        const bayW=(innerW-slotGap*(spec.slots-1))/spec.slots;
+        const cx=-innerW/2+bayW/2+(s-1)*(bayW+slotGap);
+        const faceH=Math.max(.11,drawerH*.8), faceD=Math.min(.08,d*.13);
+        part(cx,cy, d/2-faceD/2-.004,bayW*.96,faceH,faceD,shared.wood,l,s);
+        part(cx,cy, d/2-faceD+.002,bayW*.62,.012,.018,shared.metalDark,l,s);
+        part(cx,cy-faceH*.42,d/2-faceD/2-.003,bayW*.92,.008,.006,shared.woodLight,l,s);
+        if(selected && selectedLevel===l && selectedSlot===s)part(cx,cy,d/2+.004,bayW*.82,.012,.012,shared.highlight,l,s);
+        const cfg=vspaceContainersForSlot(rack,l,s);
+        if(cfg.count||products(rack,l,s).length){
+          const bayDepth=d*.62; const sy=cy-faceH*.33;
+          if(cfg.kind==='plastic')crate(cx,Math.max(.03,sy),-d*.08,bayW*.72,Math.min(.19,drawerH*.52),bayDepth*.62,l,s);
+          else carton(cx,Math.max(.03,sy),-d*.08,bayW*.72,Math.min(.19,drawerH*.52),bayDepth*.62,l,s,products(rack,l,s).length?shared.cardboard:shared.cardboardLight);
+        }
+      }
+    }
+    for(const x of [-w/2+shell/2,w/2-shell/2]) part(x,h/2,0,shell,h,d,shared.woodDark);
+    sign(spec.title,0,h+.20,0,Math.min(1.9,w*1.15));
   }else{
     carton(0,0,0,w,h,d,1,1,shared.cardboard);
     sign(spec.title,0,h+.17,0,Math.min(1.55,w*1.4));

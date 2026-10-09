@@ -4,6 +4,7 @@
     mostrador:  {name:'Mostrador de madera',icon:'▰',width:170,depth:65,height:106,levels:2,slots:2,color:0xb99572},
     vitrina:    {name:'Vitrina de cristal',icon:'▥',width:130,depth:50,height:205,levels:3,slots:2,color:0xc19c74},
     contenedor: {name:'Gavetero organizador',icon:'▣',width:100,depth:58,height:145,levels:3,slots:3,color:0x93a5a0},
+    cajonera:   {name:'Cómoda / cajonera',icon:'▦',width:120,depth:52,height:118,levels:4,slots:2,color:0xbe9d7a},
     caja:       {name:'Caja de cartón',icon:'□',width:56,depth:42,height:40,levels:1,slots:1,color:0xbd9564}
   });
   let vspaceActive = null;
@@ -193,24 +194,40 @@
   function renderVirtualSpace(){
     if(vspaceActive?.destroy) vspaceActive.destroy();
     ensureAppRuntimeState();
-    contentTitle.textContent='Ambiente isométrico · WMS 3D';
-    contentSubtitle.textContent='Organiza estanterías, vitrinas y cajas con ubicación exacta por niveles.';
-    setTags([{label:'Diseño 3D',active:true},{label:'Ubicaciones por nivel',active:true}]);
+    contentTitle.textContent='Constructor 3D · WMS 3D';
+    contentSubtitle.textContent='Construye en 3D, mejora la navegación y refleja la distribución en un layout sincronizado.';
+    setTags([{label:'Construcción 3D',active:true},{label:'Layout sincronizado',active:true},{label:'Ubicaciones por nivel',active:true}]);
     const canEdit=vspaceIsEditable();
     const typelist=Object.entries(VSPACE_TYPES).map(([id,p])=>`<button type="button" class="vspace-catalog-btn" data-vspace-add="${id}" ${canEdit?'':'disabled'}><b>${p.icon}</b><span>${vspaceEsc(p.name)}</span><small>${p.levels} niveles</small></button>`).join('');
     contentWrap.innerHTML=`<div class="vspace-root" id="vspaceRoot">
-      <div class="vspace-toolbar"><strong>✦ Espacio virtual isométrico</strong><span class="vspace-chip" id="vspaceBranch">Sucursal activa</span><span class="vspace-chip" id="vspaceStats">—</span>
-      <div class="vspace-toolbar-right"><button data-vspace-cam="iso" class="active">Isométrica</button><button data-vspace-cam="top">Planta</button><button data-vspace-cam="front">Frontal</button><button data-vspace-action="toggle-wall" class="active">Muros</button><button data-vspace-action="move" ${canEdit?'':'disabled'}>Mover: OFF</button><button data-vspace-action="save" class="vspace-save" ${canEdit?'':'disabled'}>Guardar en nube</button></div></div>
-      <div class="vspace-main"><aside class="vspace-left"><div class="vspace-sidebar-section"><h4>Biblioteca 3D</h4><p>Modelos paramétricos con materiales realistas. Añade un mueble al espacio.</p><div class="vspace-catalog">${typelist}</div><button class="vspace-example-btn" data-vspace-action="sample" ${canEdit?'':'disabled'}>✧ Preparar ambiente de ejemplo</button></div>
+      <div class="vspace-toolbar"><strong>✦ Constructor 3D isométrico</strong><span class="vspace-chip" id="vspaceBranch">Sucursal activa</span><span class="vspace-chip" id="vspaceStats">—</span>
+      <div class="vspace-toolbar-right"><button data-vspace-cam="iso" class="active">Isométrica</button><button data-vspace-cam="top">Planta</button><button data-vspace-cam="front">Frontal</button><button data-vspace-action="fit">Ajustar</button><button data-vspace-action="focus">Enfocar selección</button><button data-vspace-action="toggle-wall" class="active">Muros</button><button data-vspace-action="move" ${canEdit?'':'disabled'}>Mover: OFF</button><button data-vspace-action="save" class="vspace-save" ${canEdit?'':'disabled'}>Guardar en nube</button></div></div>
+      <div class="vspace-main"><aside class="vspace-left"><div class="vspace-sidebar-section"><h4>Biblioteca 3D</h4><p>Construye directamente sobre el entorno 3D. El layout se actualiza automáticamente.</p><div class="vspace-catalog">${typelist}</div><button class="vspace-example-btn" data-vspace-action="sample" ${canEdit?'':'disabled'}>✧ Preparar ambiente de ejemplo</button></div>
       <div class="vspace-sidebar-section"><h4>Buscar producto / SKU</h4><div class="vspace-search"><input id="vspaceFindSku" placeholder="SKU, nombre o barras…" autocomplete="off"><button data-vspace-action="find">⌕</button></div><div class="vspace-hits" id="vspaceHits"></div></div>
       <div class="vspace-sidebar-section"><h4>Muebles ubicados</h4><div id="vspaceObjects" class="vspace-object-list"></div></div></aside>
       <section class="vspace-stage"><canvas id="vspaceCanvas" aria-label="Visualizador tridimensional interactivo del almacén"></canvas>
-      <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Rueda: zoom</span><span>Derecho: desplazar</span><span>Modo mover: arrastrar mueble</span><span>Click en caja: abrir nivel</span></div>
-      <div class="vspace-compass">ISO</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div></section>
+      <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Shift + arrastrar: desplazar</span><span>Rueda: zoom</span><span>Doble click: enfocar</span><span>Modo mover: arrastrar mueble</span><span>Teclas: F enfocar · 1/2/3 vistas</span></div>
+      <div class="vspace-compass">ISO</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div>
+      <div class="vspace-layout-panel"><div class="vspace-layout-panel-head"><strong>Layout sincronizado</strong><small>Refleja lo construido en 3D</small></div><div id="vspaceLayoutMini" class="vspace-layout-mini"></div></div></section>
       <aside class="vspace-inspector"><h4>Inspector de ubicaciones</h4><div id="vspaceInspector" class="vspace-inspector-body">Selecciona un mueble para editar y ver sus niveles.</div></aside></div>
-      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Diorama 3D V161</span></div>
+      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Constructor 3D V162</span></div>
     </div>`;
-    contentStatus.textContent='Ambiente listo para editar';
+    contentStatus.textContent='Constructor 3D listo para editar';
+    if(!document.getElementById('vspaceV162Styles')){
+      const style=document.createElement('style');style.id='vspaceV162Styles';style.textContent=`
+      .vspace-stage{display:grid;grid-template-rows:minmax(420px,1fr) auto;gap:12px}
+      .vspace-layout-panel{background:rgba(255,255,255,.78);border:1px solid rgba(140,120,90,.18);border-radius:16px;padding:10px 12px;backdrop-filter:blur(8px)}
+      .vspace-layout-panel-head{display:flex;justify-content:space-between;gap:8px;align-items:end;color:#6c5332;font-size:12px;margin-bottom:8px}
+      .vspace-layout-mini{min-height:170px;border-radius:14px;background:linear-gradient(180deg,rgba(236,228,214,.92),rgba(246,241,233,.96));border:1px solid rgba(176,157,126,.32);padding:8px}
+      .vspace-layout-mini svg{width:100%;height:100%;display:block}
+      .vspace-layout-mini .zone{fill:rgba(204,193,173,.42);stroke:#b39a79;stroke-width:2}
+      .vspace-layout-mini .rack{fill:rgba(172,140,100,.68);stroke:#6f5132;stroke-width:1.2;rx:6;cursor:pointer}
+      .vspace-layout-mini .rack.active{fill:#0e947b;stroke:#075f50}
+      .vspace-layout-mini .label{font:600 10px Inter,system-ui,sans-serif;fill:#3d2c1c;pointer-events:none}
+      .vspace-layout-mini .rack.active + .label,.vspace-layout-mini .label.active{fill:#ffffff}
+      .vspace-object small{display:block;opacity:.75}
+      `;document.head.appendChild(style);
+    }
     const root=document.getElementById('vspaceRoot'),canvas=root.querySelector('#vspaceCanvas');
     const state={root,canvas,selectedId:appState.selectedRackLayoutId||'',selectedLevel:1,selectedSlot:1,modified:false,wallVisible:true,move:false,mode:'iso',destroyed:false,objects:new Map()};
     vspaceActive=state;
@@ -226,13 +243,30 @@
     const lock=canWrite()?'':'disabled';
     const branch=(appState.admin?.branches||[])[getActiveLayoutBranchIndex()];
     root.querySelector('#vspaceBranch').textContent=branch?.name||`Sucursal ${getActiveLayoutBranchIndex()+1}`;
+    state.refreshMiniLayout=()=>{
+      const host=root.querySelector('#vspaceLayoutMini');
+      if(!host)return;
+      const zones=appState.layout.zones||[]; const racks=appState.layout.racks||[];
+      const pts=[]; zones.forEach(z=>(z.pts||[]).forEach(p=>pts.push({x:Number(p.x),y:Number(p.y)})));
+      racks.forEach(r=>{pts.push({x:Number(r.x),y:Number(r.y)});pts.push({x:Number(r.x)+Number(r.w||0),y:Number(r.y)+Number(r.h||0)});});
+      if(!pts.length){host.innerHTML='<div class="vspace-muted">El layout se mostrará aquí cuando exista una zona o un mueble.</div>';return;}
+      const minX=Math.min(...pts.map(p=>p.x)),maxX=Math.max(...pts.map(p=>p.x)),minY=Math.min(...pts.map(p=>p.y)),maxY=Math.max(...pts.map(p=>p.y));
+      const pad=16,width=310,height=180,spanX=Math.max(1,maxX-minX),spanY=Math.max(1,maxY-minY),scale=Math.min((width-pad*2)/spanX,(height-pad*2)/spanY);
+      const sx=x=>pad+(x-minX)*scale, sy=y=>pad+(y-minY)*scale;
+      const zoneSvg=zones.map(z=>{const pts=(z.pts||[]).map(p=>`${sx(Number(p.x)).toFixed(1)},${sy(Number(p.y)).toFixed(1)}`).join(' ');return pts?`<polygon class="zone" points="${pts}"/>`:'';}).join('');
+      const rackSvg=racks.map(r=>{const active=r.id===state.selectedId; const rx=sx(Number(r.x)), ry=sy(Number(r.y)), rw=Math.max(8,Number(r.w||0)*scale), rh=Math.max(8,Number(r.h||0)*scale);
+        const label=(vspaceSpec(r).title||r.id).slice(0,10);
+        return `<g data-vspace-mini="${vspaceEsc(r.id)}"><rect class="rack ${active?'active':''}" x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}"></rect><text class="label ${active?'active':''}" x="${(rx+4).toFixed(1)}" y="${(ry+12).toFixed(1)}">${vspaceEsc(label)}</text></g>`;}).join('');
+      host.innerHTML=`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Layout sincronizado de la sucursal">${zoneSvg}${rackSvg}</svg>`;
+    };
     state.refreshObjects=()=>{
       root.querySelector('#vspaceObjects').innerHTML=(appState.layout.racks||[]).map(r=>{
         const sp=vspaceSpec(r),active=r.id===state.selectedId;
-        return `<button type="button" class="vspace-object ${active?'active':''}" data-vspace-select="${vspaceEsc(r.id)}"><b>${vspaceEsc(sp.title)}</b><small>${vspaceEsc(r.id)} · ${sp.levels} niveles</small></button>`;
+        return `<button type="button" class="vspace-object ${active?'active':''}" data-vspace-select="${vspaceEsc(r.id)}"><b>${vspaceEsc(sp.title)}</b><small>${vspaceEsc(r.id)} · ${sp.levels} niveles · ${formatPosition(r)}</small></button>`;
       }).join('')||'<p class="vspace-muted">No hay muebles. Añade uno desde la biblioteca.</p>';
       const assigned=vspaceAllAssignments();
       root.querySelector('#vspaceStats').textContent=`${(appState.layout.racks||[]).length} muebles · ${assigned.length} ubicaciones`;
+      state.refreshMiniLayout();
     };
     state.refreshInspector=()=>{
       const rack=getRack(),host=root.querySelector('#vspaceInspector');
@@ -295,11 +329,14 @@
       state.selectedId=id;appState.selectedRackLayoutId=id;appState.selectedRack=id;
       if(level!=null)state.selectedLevel=Number(level)||1;
       if(slot!=null)state.selectedSlot=Number(slot)||1;
-      state.refreshInspector();state.render(false);
+      state.refreshInspector();state.refreshMiniLayout();state.render(false);
     };
     root.querySelectorAll('[data-vspace-add]').forEach(b=>b.onclick=()=>vspaceCreate(b.dataset.vspaceAdd));
     root.querySelector('#vspaceObjects').addEventListener('click',e=>{
       const b=e.target.closest('[data-vspace-select]');if(b)state.select(b.dataset.vspaceSelect);
+    });
+    root.querySelector('#vspaceLayoutMini').addEventListener('click',e=>{
+      const g=e.target.closest('[data-vspace-mini]'); if(g) state.select(g.dataset.vspaceMini);
     });
     const findSku=async()=>{
       const q=String(root.querySelector('#vspaceFindSku').value||'').trim().toLowerCase();
@@ -336,6 +373,8 @@
       root.querySelectorAll('[data-vspace-cam]').forEach(x=>x.classList.toggle('active',x===b));
       state.setCamera(b.dataset.vspaceCam);
     });
+    root.querySelector('[data-vspace-action="fit"]').onclick=()=>state.setCamera(state.mode||'iso');
+    root.querySelector('[data-vspace-action="focus"]').onclick=()=>state.focusSelected();
     root.querySelector('[data-vspace-action="move"]').onclick=e=>{
       state.move=!state.move;e.currentTarget.textContent=`Mover: ${state.move?'ON':'OFF'}`;e.currentTarget.classList.toggle('active',state.move);
       vspaceToast(state.move?'Arrastra un mueble sobre el suelo. Se impedirán las colisiones.':'Modo órbita activado.');
@@ -353,7 +392,7 @@
         mx=450;my=350;
       }
       const previous=(appState.layout.racks||[]).length;
-      ['rack','rack','vitrina','mostrador','contenedor'].forEach(kind=>vspaceCreate(kind));
+      ['rack','rack','vitrina','mostrador','contenedor','cajonera'].forEach(kind=>vspaceCreate(kind));
       const newly=(appState.layout.racks||[]).slice(previous);
       newly.forEach((r,i)=>{
         if(r.virtualType==='rack')r.virtualContainers=[{level:1,slot:1,kind:'carton',count:2},{level:2,slot:2,kind:'plastic',count:2},{level:3,slot:1,kind:'carton',count:2}];
@@ -375,7 +414,7 @@
       finally{btn.disabled=false;btn.textContent='Guardar en nube';}
     };
     state.refreshObjects();state.refreshInspector();
-    const destroyBase=()=>{state.destroyed=true;state.resizeObs?.disconnect();if(state.raf)cancelAnimationFrame(state.raf);if(state.renderer&&state.scene)disposeThreeScene(state.scene,state.renderer);state.renderer=null;};
+    const destroyBase=()=>{state.destroyed=true;window.removeEventListener('keydown',state.keyHandler);state.resizeObs?.disconnect();if(state.raf)cancelAnimationFrame(state.raf);if(state.renderer&&state.scene)disposeThreeScene(state.scene,state.renderer);state.renderer=null;};
     state.destroy=destroyBase;
     (async()=>{
       try{
@@ -515,13 +554,14 @@
           orbit.radius=vspaceClamp(Math.max(width,depth)*1.48+2.3,4,65);
           orbit.theta=mode==='front'?0:mode==='top'?.0001:.79;
           orbit.phi=mode==='top'?.04:mode==='front'?1.26:.97;
-          orbit.target.set(0,.8,0);state.mode=mode;state.requestRender();
+          orbit.target.set(0,.8,0);state.mode=mode;root.querySelector('.vspace-compass').textContent=(mode==='top'?'PLN':mode==='front'?'FRT':'ISO');state.requestRender();
         };
         state.focusSelected=()=>{
           const r=getRack();if(!r)return;
           const c=coord({x:Number(r.x)+Number(r.w)/2,y:Number(r.y)+Number(r.h)/2});
           orbit.target.set(c.x,vspaceSpec(r).height/200,c.z);
-          orbit.radius=vspaceClamp(vspaceSpec(r).width/65+3,3,12);orbit.phi=.94;state.requestRender();
+          orbit.radius=vspaceClamp(Math.max(vspaceSpec(r).width,vspaceSpec(r).depth)/55+3,3,12);orbit.phi=.94;state.requestRender();
+          root.querySelector('.vspace-compass').textContent='SEL';
         };
         const intersectFurniture=e=>{
           applyPointer(e);
@@ -539,11 +579,12 @@
         let gesture=null;
         canvas.addEventListener('contextmenu',e=>e.preventDefault());
         canvas.addEventListener('pointerdown',e=>{
-          if(e.button!==0&&e.button!==2)return;
+          if(e.button!==0&&e.button!==1&&e.button!==2)return;
           const hit=intersectFurniture(e),point=state.move&&canWrite()?groundPoint(e):null;
           if(hit){state.select(hit.rackId,hit.level||state.selectedLevel,hit.slot||state.selectedSlot);}
           const rack=hit && appState.layout.racks.find(r=>r.id===hit.rackId);
-          gesture={x:e.clientX,y:e.clientY,button:e.button,mode:(e.button===0&&state.move&&canWrite()&&rack)?'move':e.button===2?'pan':'orbit',rackId:rack?.id||'',
+          const wantsPan = e.button===1 || e.button===2 || e.shiftKey;
+          gesture={x:e.clientX,y:e.clientY,button:e.button,mode:(e.button===0&&state.move&&canWrite()&&rack&&!e.shiftKey)?'move':wantsPan?'pan':'orbit',rackId:rack?.id||'',
             initialX:Number(rack?.x||0),initialY:Number(rack?.y||0),groundStart:point,moved:false};
           try{canvas.setPointerCapture(e.pointerId);}catch(_){}
         });
@@ -561,7 +602,7 @@
             const rack=appState.layout.racks.find(r=>r.id===gesture.rackId),current=groundPoint(e);
             if(rack&&current&&gesture.groundStart){
               const candidate={...rack,x:Math.round(gesture.initialX+current.x-gesture.groundStart.x),y:Math.round(gesture.initialY+current.y-gesture.groundStart.y)};
-              if(vspaceFits(candidate,rack.id).ok){rack.x=candidate.x;rack.y=candidate.y;const group=state.objects.get(rack.id);if(group){const cp=coord({x:rack.x+rack.w/2,y:rack.y+rack.h/2});group.position.x=cp.x;group.position.z=cp.z;}}
+              if(vspaceFits(candidate,rack.id).ok){rack.x=candidate.x;rack.y=candidate.y;const group=state.objects.get(rack.id);if(group){const cp=coord({x:rack.x+rack.w/2,y:rack.y+rack.h/2});group.position.x=cp.x;group.position.z=cp.z;} state.refreshMiniLayout();}
             }
           }
           gesture.x=e.clientX;gesture.y=e.clientY;state.requestRender();
@@ -572,7 +613,25 @@
           gesture=null;
         });
         canvas.addEventListener('pointercancel',()=>{gesture=null;});
-        canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.radius*=e.deltaY>0?1.1:.9;state.requestRender();},{passive:false});
+        canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.radius*=e.deltaY>0?1.1:.9;orbit.radius=vspaceClamp(orbit.radius,2.5,80);state.requestRender();},{passive:false});
+        canvas.addEventListener('dblclick',e=>{const hit=intersectFurniture(e); if(hit){state.select(hit.rackId,hit.level||state.selectedLevel,hit.slot||state.selectedSlot); state.focusSelected();} else state.setCamera(state.mode||'iso');});
+        state.keyHandler=e=>{
+          if(state.destroyed) return;
+          const tag=(document.activeElement?.tagName||'').toLowerCase(); if(tag==='input'||tag==='textarea'||tag==='select') return;
+          const step=Math.max(.18,orbit.radius*.05);
+          if(e.key==='1'){state.setCamera('iso');e.preventDefault();}
+          else if(e.key==='2'){state.setCamera('top');e.preventDefault();}
+          else if(e.key==='3'){state.setCamera('front');e.preventDefault();}
+          else if(e.key.toLowerCase()==='f'){state.focusSelected();e.preventDefault();}
+          else if(e.key.toLowerCase()==='m'&&canWrite()){state.move=!state.move;root.querySelector('[data-vspace-action="move"]').textContent=`Mover: ${state.move?'ON':'OFF'}`;root.querySelector('[data-vspace-action="move"]').classList.toggle('active',state.move);e.preventDefault();}
+          else if(e.key==='ArrowUp'||e.key.toLowerCase()==='w'){orbit.target.z-=step;state.requestRender();e.preventDefault();}
+          else if(e.key==='ArrowDown'||e.key.toLowerCase()==='s'){orbit.target.z+=step;state.requestRender();e.preventDefault();}
+          else if(e.key==='ArrowLeft'||e.key.toLowerCase()==='a'){orbit.target.x-=step;state.requestRender();e.preventDefault();}
+          else if(e.key==='ArrowRight'||e.key.toLowerCase()==='d'){orbit.target.x+=step;state.requestRender();e.preventDefault();}
+          else if(e.key==='+'||e.key==='='){orbit.radius=vspaceClamp(orbit.radius*.92,2.5,80);state.requestRender();e.preventDefault();}
+          else if(e.key==='-'){orbit.radius=vspaceClamp(orbit.radius*1.08,2.5,80);state.requestRender();e.preventDefault();}
+        };
+        window.addEventListener('keydown',state.keyHandler);
         const resize=()=>{
           if(state.destroyed)return;const bounds=canvas.getBoundingClientRect();
           const w=Math.max(160,Math.floor(bounds.width)),h=Math.max(120,Math.floor(bounds.height));

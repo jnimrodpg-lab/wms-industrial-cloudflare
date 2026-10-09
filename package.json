@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.1-authfix",
+  "version": "1.6.2-3dbuild",
   "private": true,
-  "description": "WMS Industrial V161.1: ambiente 3D y corrección de compatibilidad PBKDF2 Cloudflare.",
+  "description": "WMS Industrial V162: construcción en 3D, layout sincronizado y nueva cajonera.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
