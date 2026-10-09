@@ -1091,7 +1091,7 @@
     contentTitle.textContent='Construir rack / estante';
     contentSubtitle.textContent='Visual Furniture CAD: selecciona espacios y piezas directamente; divide, mueve y ajusta medidas sin formularios innecesarios.';
     detailTitle.textContent='';detailSubtitle.textContent='';
-    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'Visual CAD','3D','espacios','piezas']);
+    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'}]);
     if(!Array.isArray(appState.models))appState.models=[];
     if(!appState.models.length){createNewFurnitureModelForConstruction();return;}
     if(!appState.ui)appState.ui={};
@@ -1107,7 +1107,7 @@
     contentWrap.innerHTML=`<div class="rack-cad-shell">
       <header class="rack-cad-projectbar">
         <div class="rack-cad-project-main"><select id="rackConstructionModelSelect">${modelOptions}</select><input id="rackConstructionName" value="${escapeHtml(model.name||'')}" aria-label="Nombre del rack"></div>
-        <div class="rack-cad-project-chips"><span>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)} cm</span><span>${furnitureMaterialLabel(f.material)} ${round1(f.thickness)} cm</span><span>${levels.length} niveles</span><span>${totalSlots} slots</span></div>
+        <div class="rack-cad-project-meta"><span>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)} cm</span><span>${furnitureMaterialLabel(f.material)} · ${round1(f.thickness)} cm</span><span>${levels.length} niveles · ${totalSlots} slots</span></div>
         <div class="rack-cad-project-actions"><button class="mini-btn" id="rackConstructionNew">Nuevo</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="btn" id="rackConstructionSave">Guardar</button></div>
       </header>
       ${enabled?`<div class="rack-cad-main">

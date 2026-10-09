@@ -194,9 +194,11 @@
   function renderVirtualSpace(){
     if(vspaceActive?.destroy) vspaceActive.destroy();
     ensureAppRuntimeState();
-    contentTitle.textContent='Ambiente 3D · WMS Studio';
-    contentSubtitle.textContent='Diseña el espacio en 3D con una edición más limpia, clara y enfocada.';
-    setTags([{label:'Diseño 3D',active:true},{label:'Ubicaciones por nivel',active:true},{label:'Edición simple',active:true}]);
+    contentTitle.textContent='';
+    contentSubtitle.textContent='';
+    contentStatus.textContent='';
+    contentFootRight.textContent='';
+    setTags([]);
     const canEdit=vspaceIsEditable();
     const typelist=Object.entries(VSPACE_TYPES).map(([id,p])=>`<button type="button" class="vspace-catalog-btn" data-vspace-add="${id}" ${canEdit?'':'disabled'}><b>${p.icon}</b><span>${vspaceEsc(p.name)}</span><small>${p.levels} niveles</small></button>`).join('');
     contentWrap.innerHTML=`<div class="vspace-root" id="vspaceRoot" data-edit-mode="build">
@@ -209,7 +211,7 @@
       <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Shift + arrastrar: desplazar</span><span>Rueda: zoom</span><span>Doble clic: enfocar</span><span>F: enfocar · 1/2/3: vistas</span></div>
       <div class="vspace-compass">ISO</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div></section>
       <aside class="vspace-inspector"><h4>Inspector de ubicaciones</h4><div id="vspaceInspector" class="vspace-inspector-body">Selecciona un mueble para editar, ubicar productos y gestionar niveles.</div></aside></div>
-      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Visual Studio V164</span></div>
+      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span></div>
     </div>`;
     contentStatus.textContent='Ambiente 3D listo para diseñar';
     if(!document.getElementById('vspaceV164Styles')){

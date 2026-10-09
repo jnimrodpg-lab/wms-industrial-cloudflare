@@ -567,6 +567,8 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     cleanupLayoutAutoFit();
     if(screen !== 'virtual' && vspaceActive?.destroy){ vspaceActive.destroy(); vspaceActive = null; }
     appState.screen = screen;
+    if(appRoot) appRoot.dataset.screen = screen;
+    if(document?.body) document.body.dataset.screen = screen;
     persistLastAppScreen(screen);
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     renderViewerMenu();

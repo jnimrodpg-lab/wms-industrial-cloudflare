@@ -1581,6 +1581,8 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
     cleanupLayoutAutoFit();
     if(screen !== 'virtual' && vspaceActive?.destroy){ vspaceActive.destroy(); vspaceActive = null; }
     appState.screen = screen;
+    if(appRoot) appRoot.dataset.screen = screen;
+    if(document?.body) document.body.dataset.screen = screen;
     persistLastAppScreen(screen);
     menuItems.forEach(i => i.classList.toggle('active', i.dataset.screen === screen));
     renderViewerMenu();
@@ -4257,13 +4259,15 @@ const DEFAULT_GRID_SIZE = 2;
     const companyName = getAdminCompanyName();
     const brandingColors = cfg.branding.colors || [];
     const activeColorIdx = Math.max(0, Math.min(Number(cfg.branding.activeColor || 0), brandingColors.length - 1));
-    contentTitle.textContent = 'Dashboard WMS Studio';
-    contentSubtitle.textContent = 'Resumen general y accesos rápidos';
+    contentTitle.textContent = '';
+    contentSubtitle.textContent = '';
+    contentStatus.textContent = '';
+    contentFootRight.textContent = '';
     setTags([]);
-    detailTitle.textContent='Panel general';
-    detailSubtitle.textContent='Estado actual del sistema y la operación.';
-    detailStatus.textContent='Empresa';
-    detailChip.textContent='config';
+    detailTitle.textContent='';
+    detailSubtitle.textContent='';
+    detailStatus.textContent='';
+    detailChip.textContent='';
     detailWrap.innerHTML = `
       <div class="company-summary-v2">
         <div class="company-summary-head"><b>Resumen</b><span class="company-summary-star">★</span></div>
@@ -4289,7 +4293,6 @@ const DEFAULT_GRID_SIZE = 2;
           <div class="company-dashboard-copy">
             <span class="company-dashboard-kicker">WMS Studio</span>
             <h3>${escapeHtml(companyName)}</h3>
-            <p>Gestiona tu operación desde un panel más simple: entra a diseño 3D, layout, biblioteca de racks o datos en un solo lugar.</p>
             <div class="company-dashboard-mini-stats">
               <div><b>${summaryBranches}</b><span>Sucursales</span></div>
               <div><b>${summaryWarehouses}</b><span>Almacenes</span></div>
@@ -4325,7 +4328,7 @@ const DEFAULT_GRID_SIZE = 2;
           <div class="company-branch-list">${cfg.branches.map((branch, idx)=>renderAdminBranchCard(branch, idx)).join('')}</div>
           <div class="company-drag-note">ⓘ Arrastra las sucursales para reordenarlas. La primera sucursal será la principal.</div>
         </section>
-        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button><div class="muted">${document.body.classList.contains('theme-light') ? 'Tema claro' : 'Tema oscuro'}</div></div>
+        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button></div>
       </div>`;
     bindAdminScreenEvents();
   }
@@ -15037,7 +15040,7 @@ function getSheetBranchOpenMap(){
     contentTitle.textContent='Construir rack / estante';
     contentSubtitle.textContent='Visual Furniture CAD: selecciona espacios y piezas directamente; divide, mueve y ajusta medidas sin formularios innecesarios.';
     detailTitle.textContent='';detailSubtitle.textContent='';
-    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'},'Visual CAD','3D','espacios','piezas']);
+    setTags([{label:'↶ Undo',active:true,action:'history-undo-racks',extraClass:'history-chip'},{label:'↷ Redo',active:true,action:'history-redo-racks',extraClass:'history-chip'}]);
     if(!Array.isArray(appState.models))appState.models=[];
     if(!appState.models.length){createNewFurnitureModelForConstruction();return;}
     if(!appState.ui)appState.ui={};
@@ -15053,7 +15056,7 @@ function getSheetBranchOpenMap(){
     contentWrap.innerHTML=`<div class="rack-cad-shell">
       <header class="rack-cad-projectbar">
         <div class="rack-cad-project-main"><select id="rackConstructionModelSelect">${modelOptions}</select><input id="rackConstructionName" value="${escapeHtml(model.name||'')}" aria-label="Nombre del rack"></div>
-        <div class="rack-cad-project-chips"><span>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)} cm</span><span>${furnitureMaterialLabel(f.material)} ${round1(f.thickness)} cm</span><span>${levels.length} niveles</span><span>${totalSlots} slots</span></div>
+        <div class="rack-cad-project-meta"><span>${round1(model.width)} × ${round1(model.depth)} × ${round1(model.height)} cm</span><span>${furnitureMaterialLabel(f.material)} · ${round1(f.thickness)} cm</span><span>${levels.length} niveles · ${totalSlots} slots</span></div>
         <div class="rack-cad-project-actions"><button class="mini-btn" id="rackConstructionNew">Nuevo</button><button class="mini-btn" id="rackConstructionDuplicate">Duplicar</button><button class="btn" id="rackConstructionSave">Guardar</button></div>
       </header>
       ${enabled?`<div class="rack-cad-main">
@@ -15899,9 +15902,11 @@ function vspaceBuildIsometricFurniture(THREE, group, rack, spec, options){
   function renderVirtualSpace(){
     if(vspaceActive?.destroy) vspaceActive.destroy();
     ensureAppRuntimeState();
-    contentTitle.textContent='Ambiente 3D · WMS Studio';
-    contentSubtitle.textContent='Diseña el espacio en 3D con una edición más limpia, clara y enfocada.';
-    setTags([{label:'Diseño 3D',active:true},{label:'Ubicaciones por nivel',active:true},{label:'Edición simple',active:true}]);
+    contentTitle.textContent='';
+    contentSubtitle.textContent='';
+    contentStatus.textContent='';
+    contentFootRight.textContent='';
+    setTags([]);
     const canEdit=vspaceIsEditable();
     const typelist=Object.entries(VSPACE_TYPES).map(([id,p])=>`<button type="button" class="vspace-catalog-btn" data-vspace-add="${id}" ${canEdit?'':'disabled'}><b>${p.icon}</b><span>${vspaceEsc(p.name)}</span><small>${p.levels} niveles</small></button>`).join('');
     contentWrap.innerHTML=`<div class="vspace-root" id="vspaceRoot" data-edit-mode="build">
@@ -15914,7 +15919,7 @@ function vspaceBuildIsometricFurniture(THREE, group, rack, spec, options){
       <div class="vspace-floating"><span>Arrastrar: orbitar</span><span>Shift + arrastrar: desplazar</span><span>Rueda: zoom</span><span>Doble clic: enfocar</span><span>F: enfocar · 1/2/3: vistas</span></div>
       <div class="vspace-compass">ISO</div><div class="vspace-loading" id="vspaceLoading">Preparando el espacio tridimensional…</div></section>
       <aside class="vspace-inspector"><h4>Inspector de ubicaciones</h4><div id="vspaceInspector" class="vspace-inspector-body">Selecciona un mueble para editar, ubicar productos y gestionar niveles.</div></aside></div>
-      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span><span>WMS Industrial · Visual Studio V164</span></div>
+      <div class="vspace-bottom"><span id="vspaceNotice" aria-live="polite">Los cambios se guardan localmente; «Guardar en nube» sincroniza la sucursal.</span></div>
     </div>`;
     contentStatus.textContent='Ambiente 3D listo para diseñar';
     if(!document.getElementById('vspaceV164Styles')){

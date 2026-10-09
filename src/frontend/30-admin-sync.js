@@ -139,13 +139,15 @@
     const companyName = getAdminCompanyName();
     const brandingColors = cfg.branding.colors || [];
     const activeColorIdx = Math.max(0, Math.min(Number(cfg.branding.activeColor || 0), brandingColors.length - 1));
-    contentTitle.textContent = 'Dashboard WMS Studio';
-    contentSubtitle.textContent = 'Resumen general y accesos rápidos';
+    contentTitle.textContent = '';
+    contentSubtitle.textContent = '';
+    contentStatus.textContent = '';
+    contentFootRight.textContent = '';
     setTags([]);
-    detailTitle.textContent='Panel general';
-    detailSubtitle.textContent='Estado actual del sistema y la operación.';
-    detailStatus.textContent='Empresa';
-    detailChip.textContent='config';
+    detailTitle.textContent='';
+    detailSubtitle.textContent='';
+    detailStatus.textContent='';
+    detailChip.textContent='';
     detailWrap.innerHTML = `
       <div class="company-summary-v2">
         <div class="company-summary-head"><b>Resumen</b><span class="company-summary-star">★</span></div>
@@ -171,7 +173,6 @@
           <div class="company-dashboard-copy">
             <span class="company-dashboard-kicker">WMS Studio</span>
             <h3>${escapeHtml(companyName)}</h3>
-            <p>Gestiona tu operación desde un panel más simple: entra a diseño 3D, layout, biblioteca de racks o datos en un solo lugar.</p>
             <div class="company-dashboard-mini-stats">
               <div><b>${summaryBranches}</b><span>Sucursales</span></div>
               <div><b>${summaryWarehouses}</b><span>Almacenes</span></div>
@@ -207,7 +208,7 @@
           <div class="company-branch-list">${cfg.branches.map((branch, idx)=>renderAdminBranchCard(branch, idx)).join('')}</div>
           <div class="company-drag-note">ⓘ Arrastra las sucursales para reordenarlas. La primera sucursal será la principal.</div>
         </section>
-        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button><div class="muted">${document.body.classList.contains('theme-light') ? 'Tema claro' : 'Tema oscuro'}</div></div>
+        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button></div>
       </div>`;
     bindAdminScreenEvents();
   }
