@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.6-premiumwarm",
+  "version": "1.6.7-themeaudit",
   "private": true,
-  "description": "WMS Industrial V166: paleta cálida premium, contraste mejorado, dashboard refinado y viewer/layout homogéneos.",
+  "description": "WMS Industrial V167: auditoría visual completa, modo claro/oscuro coherente, corrección de overflows y ajuste de layouts para verse bien al 100%.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",
