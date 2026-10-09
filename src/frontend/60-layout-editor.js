@@ -1902,7 +1902,7 @@
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
-    contentSubtitle.textContent = rackMode ? 'Distribuye racks sobre un layout sincronizado y limpio.' : 'Edita la estructura con una vista más clara, compacta y conectada al 3D.';
+    contentSubtitle.textContent = rackMode ? 'Distribuye racks con una vista ordenada, limpia y fácil de leer.' : 'Edita la estructura con una vista más clara, compacta y conectada al 3D.';
     detailTitle.textContent = rackMode ? 'Layout de racks' : 'Layout estructural';
     detailSubtitle.textContent = rackMode ? 'Los racks son editables; la estructura permanece protegida.' : 'Muros, vanos y zonas en un solo espacio de edición.';
     setTags([

@@ -229,7 +229,7 @@
         appState.sheetConfig.lastMode = 'google';
         syncBranchLayoutWithProducts(getActiveLayoutBranchIndex(), parsed);
         sheetStatusChip.textContent = `${parsed.length.toLocaleString('es-PE')} filas`;
-        contentStatus.textContent = `Sheet vinculado. Encabezados detectados en fila ${headerRowIndex + 1}. Columnas: SKU ${iSKU+1}, Nombre ${iNombre+1}, Variante ${iVar+1}, Ubicación ${iUb+1}, Almacén ${iAlm+1}. Layout sincronizado por niveles/slots.`;
+        contentStatus.textContent = `Sheet vinculado. Encabezados detectados en fila ${headerRowIndex + 1}. Columnas: SKU ${iSKU+1}, Nombre ${iNombre+1}, Variante ${iVar+1}, Ubicación ${iUb+1}, Almacén ${iAlm+1}. Ubicaciones enlazadas por niveles/slots.`;
         selectProduct(parsed[0]);
         renderProducts(parsed);
         renderCurrentScreen();

@@ -41,7 +41,7 @@
     const companyInfo = appState.admin?.company;
     const companyName = typeof companyInfo === 'string' ? companyInfo : (companyInfo?.name || companyInfo?.company || 'WMS Industrial');
     const brandTitle = document.querySelector('.brand-text b'); if(brandTitle) brandTitle.textContent = companyName || 'WMS Industrial';
-    const brandSub = document.querySelector('.brand-text .muted'); if(brandSub) brandSub.textContent = 'Interfaz renovada • visual premium';
+    const brandSub = document.querySelector('.brand-text .muted'); if(brandSub) brandSub.textContent = 'sistema visual cálido • edición clara';
     const box = document.querySelector('.brand-box');
     if(box){ box.innerHTML = appState.admin.logo ? `<img src="${appState.admin.logo}" alt="Logo" style="width:100%;height:100%;object-fit:contain;display:block">` : 'W'; }
     const accent = getActiveBrandColor();
