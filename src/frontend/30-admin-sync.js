@@ -139,11 +139,11 @@
     const companyName = getAdminCompanyName();
     const brandingColors = cfg.branding.colors || [];
     const activeColorIdx = Math.max(0, Math.min(Number(cfg.branding.activeColor || 0), brandingColors.length - 1));
-    contentTitle.textContent = 'Configuración de Empresa';
-    contentSubtitle.textContent = 'Administrador';
+    contentTitle.textContent = 'Dashboard WMS Studio';
+    contentSubtitle.textContent = 'Resumen general y accesos rápidos';
     setTags([]);
-    detailTitle.textContent='Resumen';
-    detailSubtitle.textContent='Información general de tu empresa.';
+    detailTitle.textContent='Panel general';
+    detailSubtitle.textContent='Estado actual del sistema y la operación.';
     detailStatus.textContent='Empresa';
     detailChip.textContent='config';
     detailWrap.innerHTML = `
@@ -154,8 +154,32 @@
         <div class="company-summary-card"><div class="company-summary-icon accent">◔</div><div><span>Última actualización</span><small>${new Date().toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'numeric'})} • ${appState.auth?.user || 'admin'}</small></div></div>
         <div class="company-warehouse-illu"><div class="warehouse-floor"></div><div class="warehouse-box warehouse-a"></div><div class="warehouse-box warehouse-b"></div><div class="warehouse-box warehouse-c"></div><div class="warehouse-building"></div><div class="warehouse-door"></div><div class="warehouse-truck"></div><div class="warehouse-pin"></div></div>
       </div>`;
+    const quickActions = [
+      ['sheet','🔗','Vincular datos','Conecta o revisa tu Google Sheet'],
+      ['virtual','◈','Diseñar en 3D','Construye el espacio y ubica mobiliario'],
+      ['layout','🧭','Editar layout','Ajusta muros, zonas y estructura'],
+      ['distribution','▦','Distribuir racks','Organiza los racks dentro del layout'],
+      ['racks','🧱','Biblioteca de racks','Gestiona modelos y plantillas'],
+      ['rack-builder','🛠','Constructor de rack','Crea un rack o estante nuevo'],
+      ['viewer','🌐','Recorrido 3D','Visualiza el espacio final']
+    ];
     contentWrap.innerHTML = `
-      <div class="company-config-v2">
+      <div class="company-config-v2 company-dashboard-v165">
+        <section class="company-dashboard-hero">
+          <div class="company-dashboard-copy">
+            <span class="company-dashboard-kicker">WMS Studio</span>
+            <h3>${escapeHtml(companyName)}</h3>
+            <p>Gestiona tu operación desde un panel más simple: entra a diseño 3D, layout, biblioteca de racks o datos en un solo lugar.</p>
+            <div class="company-dashboard-mini-stats">
+              <div><b>${summaryBranches}</b><span>Sucursales</span></div>
+              <div><b>${summaryWarehouses}</b><span>Almacenes</span></div>
+              <div><b>${(appState.admin?.branches||[]).filter(b=>b.sheetConnected).length}</b><span>Sheets vinculados</span></div>
+            </div>
+          </div>
+          <div class="company-dashboard-actions-grid">
+            ${quickActions.map(([screen,icon,title,desc])=>`<button class="company-quick-card" type="button" data-dashboard-screen="${screen}"><b>${icon}</b><span>${title}</span><small>${desc}</small></button>`).join('')}
+          </div>
+        </section>
         <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" id="companyPreviewBtn" type="button">Vista previa pública ↗</button></div>
         <section class="company-top-grid">
           <article class="company-card company-info-card">
@@ -194,6 +218,10 @@
     if(addBranchBtn) addBranchBtn.onclick = ()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#6ff0a8'),warehouses:['Almacén principal'],mainWarehouse:'Almacén principal',sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
     const saveCompanyBtn = $('#saveCompanyBtn');
     if(saveCompanyBtn) saveCompanyBtn.onclick = async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); showToast('Configuración guardada.', 'success'); renderAdminScreen(); };
+    contentWrap.querySelectorAll('[data-dashboard-screen]').forEach(btn=>btn.onclick=()=>{
+      const screen = btn.getAttribute('data-dashboard-screen') || 'admin';
+      setScreen(screen);
+    });
     const previewBtn = $('#companyPreviewBtn');
     if(previewBtn) previewBtn.onclick = () => {
       saveAdminState();

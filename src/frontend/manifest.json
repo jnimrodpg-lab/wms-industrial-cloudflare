@@ -1,5 +1,5 @@
 {
-  "version": "164",
+  "version": "165",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -17,5 +17,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v164: renovación visual global, ambiente 3D con modos Construir/Ubicar/Explorar y una experiencia más clara."
+  "notes": "v165: dashboard visual, sidebar simplificado, layout con inspector colapsable, toolbar contextual y modo solo espacio."
 }

@@ -1,8 +1,8 @@
 {
   "name": "wms-industrial-cloudflare",
-  "version": "1.6.4-visualstudio",
+  "version": "1.6.5-clearworkflow",
   "private": true,
-  "description": "WMS Industrial V164: renovación visual completa, modos de edición 3D y experiencia menos cargada.",
+  "description": "WMS Industrial V165: sidebar simplificado, dashboard visual, inspector colapsable, toolbar contextual y modo solo espacio.",
   "type": "module",
   "scripts": {
     "build:frontend": "node scripts/build-frontend.mjs",

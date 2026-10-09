@@ -4255,11 +4255,11 @@ const DEFAULT_GRID_SIZE = 2;
     const companyName = getAdminCompanyName();
     const brandingColors = cfg.branding.colors || [];
     const activeColorIdx = Math.max(0, Math.min(Number(cfg.branding.activeColor || 0), brandingColors.length - 1));
-    contentTitle.textContent = 'Configuración de Empresa';
-    contentSubtitle.textContent = 'Administrador';
+    contentTitle.textContent = 'Dashboard WMS Studio';
+    contentSubtitle.textContent = 'Resumen general y accesos rápidos';
     setTags([]);
-    detailTitle.textContent='Resumen';
-    detailSubtitle.textContent='Información general de tu empresa.';
+    detailTitle.textContent='Panel general';
+    detailSubtitle.textContent='Estado actual del sistema y la operación.';
     detailStatus.textContent='Empresa';
     detailChip.textContent='config';
     detailWrap.innerHTML = `
@@ -4270,8 +4270,32 @@ const DEFAULT_GRID_SIZE = 2;
         <div class="company-summary-card"><div class="company-summary-icon accent">◔</div><div><span>Última actualización</span><small>${new Date().toLocaleDateString('es-PE', { day:'2-digit', month:'short', year:'numeric'})} • ${appState.auth?.user || 'admin'}</small></div></div>
         <div class="company-warehouse-illu"><div class="warehouse-floor"></div><div class="warehouse-box warehouse-a"></div><div class="warehouse-box warehouse-b"></div><div class="warehouse-box warehouse-c"></div><div class="warehouse-building"></div><div class="warehouse-door"></div><div class="warehouse-truck"></div><div class="warehouse-pin"></div></div>
       </div>`;
+    const quickActions = [
+      ['sheet','🔗','Vincular datos','Conecta o revisa tu Google Sheet'],
+      ['virtual','◈','Diseñar en 3D','Construye el espacio y ubica mobiliario'],
+      ['layout','🧭','Editar layout','Ajusta muros, zonas y estructura'],
+      ['distribution','▦','Distribuir racks','Organiza los racks dentro del layout'],
+      ['racks','🧱','Biblioteca de racks','Gestiona modelos y plantillas'],
+      ['rack-builder','🛠','Constructor de rack','Crea un rack o estante nuevo'],
+      ['viewer','🌐','Recorrido 3D','Visualiza el espacio final']
+    ];
     contentWrap.innerHTML = `
-      <div class="company-config-v2">
+      <div class="company-config-v2 company-dashboard-v165">
+        <section class="company-dashboard-hero">
+          <div class="company-dashboard-copy">
+            <span class="company-dashboard-kicker">WMS Studio</span>
+            <h3>${escapeHtml(companyName)}</h3>
+            <p>Gestiona tu operación desde un panel más simple: entra a diseño 3D, layout, biblioteca de racks o datos en un solo lugar.</p>
+            <div class="company-dashboard-mini-stats">
+              <div><b>${summaryBranches}</b><span>Sucursales</span></div>
+              <div><b>${summaryWarehouses}</b><span>Almacenes</span></div>
+              <div><b>${(appState.admin?.branches||[]).filter(b=>b.sheetConnected).length}</b><span>Sheets vinculados</span></div>
+            </div>
+          </div>
+          <div class="company-dashboard-actions-grid">
+            ${quickActions.map(([screen,icon,title,desc])=>`<button class="company-quick-card" type="button" data-dashboard-screen="${screen}"><b>${icon}</b><span>${title}</span><small>${desc}</small></button>`).join('')}
+          </div>
+        </section>
         <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" id="companyPreviewBtn" type="button">Vista previa pública ↗</button></div>
         <section class="company-top-grid">
           <article class="company-card company-info-card">
@@ -4310,6 +4334,10 @@ const DEFAULT_GRID_SIZE = 2;
     if(addBranchBtn) addBranchBtn.onclick = ()=>{ const n='Sucursal '+(appState.admin.branches.length+1); appState.admin.branches.push({name:n,type:'tienda',color:(ZONE_COLOR_PALETTE[(appState.admin?.branches?.length||0)%ZONE_COLOR_PALETTE.length] || '#6ff0a8'),warehouses:['Almacén principal'],mainWarehouse:'Almacén principal',sheetUrl:'', sheetName:'Productos', sheetConnected:false, lastSheetCount:0}); appState.admin.activeBranch=appState.admin.branches.length-1; renderAdminScreen(); };
     const saveCompanyBtn = $('#saveCompanyBtn');
     if(saveCompanyBtn) saveCompanyBtn.onclick = async ()=>{ const names=appState.admin.branches.map(b=>norm(b.name)); if(new Set(names).size!==names.length) return alert('Hay sucursales con nombres repetidos.'); for(const b of appState.admin.branches){ const ws=(b.warehouses||[]).map(x=>norm(x)); if(new Set(ws).size!==ws.length) return alert(`Hay almacenes repetidos en ${b.name}.`); } saveAdminState(); await saveRemoteAppState('empresa'); showToast('Configuración guardada.', 'success'); renderAdminScreen(); };
+    contentWrap.querySelectorAll('[data-dashboard-screen]').forEach(btn=>btn.onclick=()=>{
+      const screen = btn.getAttribute('data-dashboard-screen') || 'admin';
+      setScreen(screen);
+    });
     const previewBtn = $('#companyPreviewBtn');
     if(previewBtn) previewBtn.onclick = () => {
       saveAdminState();
@@ -9441,6 +9469,7 @@ function getSheetBranchOpenMap(){
     appState.editor.snapSize = getSnapSize();
     appState.editor.dimFontSize = getDimFontSize();
     if(appState.editor.rightPanelOpen === undefined) appState.editor.rightPanelOpen = true;
+    if(appState.editor.presentationMode === undefined) appState.editor.presentationMode = false;
     if(isRackDistributionScreen() && ['zone','wall','opening','door','measure'].includes(appState.editor.mode)) appState.editor.mode = 'select';
     if(isStructureLayoutScreen() && appState.editor.mode === 'rack') appState.editor.mode = 'select';
     const vb = appState.editor.viewBox || {};
@@ -11287,7 +11316,7 @@ function getSheetBranchOpenMap(){
   }
 
   function renderLayoutEditor(){
-    document.body.dataset.wmsLayoutVersion = 'v134-sync-visual-wms';
+    document.body.dataset.wmsLayoutVersion = 'v165-clear-workflow';
     document.body.dataset.wmsLayoutWorkspace = isRackDistributionScreen() ? 'racks' : 'structure';
     const __layoutRightScrollBefore = document.querySelector('#layoutRightPanel .layout-right-scroll')?.scrollTop ?? appState.editor?.rightPanelScrollTop ?? 0;
     ensureLayoutEditorState();
@@ -11303,6 +11332,31 @@ function getSheetBranchOpenMap(){
     const selectedRack = findRackById(appState.selectedRackLayoutId);
     const selectedRackModel = selectedRack ? rackModel(selectedRack.modelId) : null;
     const selectedRackFootprint = selectedRack ? getRackFootprint(selectedRack.modelId, selectedRack.rot || 0) : null;
+    const selectedZone = findZoneById(appState.selectedZoneId);
+    const selectedWall = findWallById(appState.selectedWallId);
+    const selectedOpening = findOpeningById(appState.selectedOpeningId);
+    const selectionType = rackMode ? (selectedRack ? 'rack' : '') : (selectedOpening ? 'opening' : (selectedWall ? 'wall' : (selectedZone ? 'zone' : '')));
+    let contextTitle = rackMode ? 'Selecciona un rack para editarlo.' : 'Selecciona un elemento del layout.';
+    let contextHint = rackMode ? 'Desde aquí podrás duplicar, eliminar o abrir el elemento en 3D.' : 'Usa el panel derecho solo cuando necesites detalle.';
+    let contextActions = [];
+    if(selectionType==='rack' && selectedRack){
+      contextTitle = `Rack activo: ${selectedRack.id}`;
+      contextHint = 'Acciones rápidas para distribución y revisión visual.';
+      contextActions = [['ctx-duplicate-rack','Duplicar'],['ctx-open-3d','Ver en 3D'],['ctx-delete','Eliminar']];
+    }else if(selectionType==='zone' && selectedZone){
+      contextTitle = `Zona activa: ${selectedZone.name || selectedZone.id}`;
+      contextHint = 'Ajusta geometría, duplica la zona o agrega muros.';
+      contextActions = [['ctx-duplicate-zone','Duplicar'],['ctx-mode-wall','Dibujar muro'],['ctx-delete','Eliminar']];
+    }else if(selectionType==='wall' && selectedWall){
+      contextTitle = `Muro activo: ${selectedWall.name || selectedWall.id}`;
+      contextHint = 'Añade vanos o elimina el muro seleccionado.';
+      contextActions = [['ctx-add-door','Agregar puerta'],['ctx-add-window','Agregar ventana'],['ctx-delete','Eliminar']];
+    }else if(selectionType==='opening' && selectedOpening){
+      contextTitle = `Abertura activa: ${selectedOpening.id}`;
+      contextHint = 'Duplica o elimina el vano seleccionado.';
+      contextActions = [['ctx-duplicate-opening','Duplicar'],['ctx-delete','Eliminar']];
+    }
+    const contextMarkup = `<div class="layout-contextual-bar"><div class="layout-contextual-copy"><b>${escapeHtml(contextTitle)}</b><small>${escapeHtml(contextHint)}</small></div><div class="layout-contextual-actions">${contextActions.map(([action,label])=>`<button class="seg-btn" data-layout-context-action="${action}">${label}</button>`).join('')}</div></div>`;
     contentSubtitle.textContent = rackMode ? 'Distribuye racks con una vista ordenada, limpia y fácil de leer.' : 'Edita la estructura con una vista más clara, compacta y conectada al 3D.';
     detailTitle.textContent = rackMode ? 'Layout de racks' : 'Layout estructural';
     detailSubtitle.textContent = rackMode ? 'Los racks son editables; la estructura permanece protegida.' : 'Muros, vanos y zonas en un solo espacio de edición.';
@@ -11312,6 +11366,8 @@ function getSheetBranchOpenMap(){
       { label:`Snap ${isSnapEnabled() ? getSnapSize() : 'OFF'}`, active: isSnapEnabled(), action:'toggle-snap' },
       { label:'Cotas', active: !!appState.editor.showDims, action:'toggle-dims' },
       { label:'Sección', active: !!appState.editor.sectionVisible, action:'toggle-section' },
+      { label: appState.editor.rightPanelOpen === false ? 'Mostrar inspector' : 'Ocultar inspector', active: appState.editor.rightPanelOpen !== false, action:'toggle-right-props' },
+      { label: appState.editor.presentationMode ? 'Salir presentación' : 'Solo espacio', active: !!appState.editor.presentationMode, action:'toggle-presentation' },
       { label: appState.editor.beginnerMode ? 'Modo fácil' : 'Modo pro', active: !!appState.editor.beginnerMode, action:'toggle-beginner-mode' }
     ]);
 
@@ -11349,13 +11405,32 @@ function getSheetBranchOpenMap(){
       .layout-cad-v80 .layout-editor-focus-card .layout-prop-grid.two{gap:10px}
       .layout-cad-v80 .layout-quick-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
       .layout-cad-v80 .layout-quick-actions .seg-btn{min-height:40px}
+      .layout-cad-v80 .layout-contextual-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;margin-top:10px;background:linear-gradient(180deg,rgba(248,244,236,.96),rgba(242,236,228,.92));border:1px solid var(--panel-stroke);border-radius:18px;box-shadow:0 12px 26px rgba(6,20,24,.08)}
+      .layout-cad-v80 .layout-contextual-copy{display:grid;gap:3px}
+      .layout-cad-v80 .layout-contextual-copy b{font-size:14px;color:#2b2015}
+      .layout-cad-v80 .layout-contextual-copy small{color:#7e6a56}
+      .layout-cad-v80 .layout-contextual-actions{display:flex;flex-wrap:wrap;gap:8px}
+      .layout-cad-v80 .v165-inspector-toggle,.layout-cad-v80 .v165-presentation-toggle{white-space:nowrap}
+      .layout-cad-v80 .layout-cad-shell-v80.right-collapsed .layout-cad-workspace-v80{grid-template-columns:1fr}
+      .layout-cad-v80 .layout-cad-shell-v80.right-collapsed #layoutRightPanel{display:none!important}
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .layout-cad-localbar-v80,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .layout-contextual-bar,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode #layoutRightPanel,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .v80-tool-rail,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .v80-minimap-card,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .v80-canvas-footer,
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .v90-floating-save-layout{display:none!important}
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .layout-cad-workspace-v80{display:block}
+      .layout-cad-v80 .layout-cad-shell-v80.presentation-mode .layout-main-stage{height:calc(100vh - 230px)}
+      .layout-cad-v80 .layout-presentation-exit{position:absolute;top:18px;right:18px;z-index:9;border-radius:999px;padding:10px 14px!important;box-shadow:0 12px 26px rgba(6,20,24,.16)}
+      .layout-cad-v80 .layout-presentation-badge{position:absolute;left:18px;top:18px;z-index:9;background:rgba(255,252,246,.92);border:1px solid rgba(171,152,125,.24);padding:10px 14px;border-radius:999px;color:#4e3d2b;font-weight:700;box-shadow:0 12px 26px rgba(6,20,24,.12)}
       `;
       document.head.appendChild(style);
     }
 
     contentWrap.innerHTML = `
       <div class="stage layout-premium-render layout-cad-v80" style="position:relative;height:100%">
-        <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''} ${appState.editor.beginnerMode ? 'beginner-ui' : 'advanced-ui'}">
+        <div class="layout-cad-shell-v80 ${appState.editor.rightPanelOpen === false ? 'right-collapsed' : ''} ${appState.editor.beginnerMode ? 'beginner-ui' : 'advanced-ui'} ${appState.editor.presentationMode ? 'presentation-mode' : ''}">
           <div class="layout-cad-localbar-v80">
             ${structureMode ? '<button class="btn primary v80-zone-btn" id="btnZonePlus">+ Zona</button>' : '<button class="btn primary v80-zone-btn" data-emode="rack">+ Rack</button>'}
             <select id="layoutBranchSelect" class="seg-btn v80-branch-select">${(appState.admin.branches||[]).map((b,i)=>`<option value="${i}" ${i===getActiveLayoutBranchIndex()?'selected':''}>${escapeHtml(b.name||('Sucursal '+(i+1)))}</option>`).join('')}</select>
@@ -11363,17 +11438,20 @@ function getSheetBranchOpenMap(){
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-snap" title="Snap">⌁</button>
             <button class="seg-btn v80-icon-btn" data-layout-tag-action="toggle-dims" title="Cotas">▦</button>
             <button class="seg-btn v80-icon-btn" id="btnZoomFit" title="Ajustar vista">□</button>
+            <button class="seg-btn v165-inspector-toggle" data-layout-tag-action="toggle-right-props" type="button">${appState.editor.rightPanelOpen === false ? 'Mostrar inspector' : 'Ocultar inspector'}</button>
+            <button class="seg-btn v165-presentation-toggle" id="btnPresentationMode" type="button">${appState.editor.presentationMode ? 'Salir de solo espacio' : 'Solo espacio'}</button>
             <button class="seg-btn v134-open-3d" id="btnOpenLayout3D" type="button" title="Abrir el mismo modelo en 3D">◈ Ver en 3D</button>
             <button class="btn primary v90-save-layout-btn" id="btnSaveLayoutVisible" type="button">${rackMode ? 'Guardar racks' : 'Guardar layout'}</button>
             <span id="layoutSaveStatus" class="v99-save-status local">Local</span>
             <span id="layoutQualityBadge" class="v99-quality-badge ok">OK</span>
             <span class="layout-user-badge workspace-lock-badge ${rackMode ? 'rack-workspace' : 'structure-workspace'}">${rackMode ? 'Solo racks' : 'Solo estructura'}</span>
           </div>
+          ${contextMarkup}
           <div class="layout-cad-workspace-v80">
             <main class="layout-main-stage v80-main-stage ${appState.editor.sectionVisible ? 'with-section' : ''}">
               <div class="layout-canvas-wrap v80-canvas-wrap">
                 <div class="layout-canvas-card detail-stage v80-canvas-card">
-                  <svg id="layoutSvg"></svg>
+                  <svg id="layoutSvg"></svg>${appState.editor.presentationMode ? `<button class="seg-btn layout-presentation-exit" id="btnExitPresentation">Salir de solo espacio</button><div class="layout-presentation-badge">Modo presentación</div>` : ``}
                   <div class="v80-tool-rail" aria-label="${rackMode ? 'Herramientas de distribución' : 'Herramientas de estructura'}">
                     ${structureMode ? `
                     <button class="v80-tool-btn seg-btn ${appState.editor.mode==='select'?'active':''}" data-emode="select"><span class="v80-tool-ico">↖</span><b>Seleccionar</b></button>
@@ -12586,6 +12664,7 @@ function getSheetBranchOpenMap(){
       else if(action === 'toggle-rack-props') appState.editor.rackPropsOpen = !appState.editor.rackPropsOpen;
       else if(action === 'toggle-right-props') appState.editor.rightPanelOpen = appState.editor.rightPanelOpen === false ? true : false;
       else if(action === 'noop-layers'){ appState.editor.rightPanelOpen = true; }
+      else if(action === 'toggle-presentation') appState.editor.presentationMode = appState.editor.presentationMode ? false : true;
       else if(action.startsWith('history-undo-')){ undoHistory(action.slice('history-undo-'.length)); return; }
       else if(action.startsWith('history-redo-')){ redoHistory(action.slice('history-redo-'.length)); return; }
       renderLayoutEditor();
@@ -12603,6 +12682,19 @@ function getSheetBranchOpenMap(){
     if($('#btnSaveLayoutTop')) $('#btnSaveLayoutTop').onclick = runSaveLayout;
     if($('#btnSaveLayoutVisible')) $('#btnSaveLayoutVisible').onclick = runSaveLayout;
     if($('#btnSaveLayoutFloat')) $('#btnSaveLayoutFloat').onclick = runSaveLayout;
+    if($('#btnPresentationMode')) $('#btnPresentationMode').onclick = () => { appState.editor.presentationMode = !appState.editor.presentationMode; renderLayoutEditor(); };
+    if($('#btnExitPresentation')) $('#btnExitPresentation').onclick = () => { appState.editor.presentationMode = false; renderLayoutEditor(); };
+    $$('[data-layout-context-action]').forEach(btn=>btn.onclick = () => {
+      const action = btn.getAttribute('data-layout-context-action');
+      if(action === 'ctx-duplicate-rack') return duplicateSelectedRack();
+      if(action === 'ctx-open-3d') return (persistActiveLayout(), openNavigable3DModal(appState.selectedProduct || null));
+      if(action === 'ctx-delete') return deleteLayoutSelection();
+      if(action === 'ctx-duplicate-zone') return duplicateSelectedZone();
+      if(action === 'ctx-mode-wall'){ appState.editor.mode = 'wall'; appState.editor.pendingWallPoint = null; return renderLayoutEditor(); }
+      if(action === 'ctx-add-door'){ const sw=findWallById(appState.selectedWallId); if(!sw) return; createOpeningOnWall(sw.id, 'door'); persistActiveLayout(); return renderLayoutEditor(); }
+      if(action === 'ctx-add-window'){ const sw=findWallById(appState.selectedWallId); if(!sw) return; createOpeningOnWall(sw.id, 'window'); persistActiveLayout(); return renderLayoutEditor(); }
+      if(action === 'ctx-duplicate-opening'){ const op=findOpeningById(appState.selectedOpeningId); if(!op) return; duplicateOpening(op); persistActiveLayout(); return renderLayoutEditor(); }
+    });
     if($('#btnOpenLayout3D')) $('#btnOpenLayout3D').onclick = () => { persistActiveLayout(); openNavigable3DModal(appState.selectedProduct || null); };
     if($('#btnZoomIn')) $('#btnZoomIn').onclick = () => { markLayoutManualInteraction(); zoomLayout(0.86); };
     if($('#btnZoomOut')) $('#btnZoomOut').onclick = () => { markLayoutManualInteraction(); zoomLayout(1.16); };
