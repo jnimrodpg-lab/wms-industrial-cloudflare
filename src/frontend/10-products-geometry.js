@@ -581,6 +581,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       document.querySelector('.search-panel').style.display='';
       const isViewer = screen === 'viewer';
       appRoot.classList.toggle('viewer-product-layout', isViewer);
+      appRoot.classList.remove('editor-workspace');
       if(isViewer){
         if(contentPanel) contentPanel.style.display = 'none';
         if(detailPanel) detailPanel.style.display = '';
@@ -591,7 +592,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
           detailPanel.style.gridColumn = '';
           detailPanel.style.gridRow = '';
         }
-        appRoot.style.gridTemplateColumns = compactViewport ? '' : (appRoot.classList.contains('sidebar-collapsed') ? 'var(--sidebar-w-collapsed) minmax(520px,1fr) minmax(430px,520px)' : 'var(--sidebar-w) minmax(520px,1fr) minmax(430px,520px)');
+        appRoot.style.gridTemplateColumns = ''; // V168: CSS responsive manages the viewer's columns at 100% zoom
       }else{
         if(contentPanel) contentPanel.style.display = '';
         detailPanel.style.display = isSheetLayout ? 'none' : '';
@@ -608,6 +609,7 @@ function guessAutoRackWidth(slots, baseWidth=150, baseSlots=2){
       appRoot.classList.remove('sheet-swap-layout');
       appRoot.classList.remove('sheet-expanded');
       appRoot.classList.remove('viewer-product-layout');
+      appRoot.classList.toggle('editor-workspace', ['layout','distribution'].includes(screen));
       if(contentPanel) contentPanel.style.display = '';
       document.querySelector('.search-panel').style.display='none';
       const isRackModels = screen === 'racks' || screen === 'rack-builder';

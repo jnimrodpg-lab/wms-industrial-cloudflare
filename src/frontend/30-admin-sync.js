@@ -155,13 +155,15 @@
         <div class="company-warehouse-illu"><div class="warehouse-floor"></div><div class="warehouse-box warehouse-a"></div><div class="warehouse-box warehouse-b"></div><div class="warehouse-box warehouse-c"></div><div class="warehouse-building"></div><div class="warehouse-door"></div><div class="warehouse-truck"></div><div class="warehouse-pin"></div></div>
       </div>`;
     const quickActions = [
-      ['sheet','🔗','Vincular datos','Conecta o revisa tu Google Sheet'],
-      ['virtual','◈','Diseñar en 3D','Construye el espacio y ubica mobiliario'],
-      ['layout','🧭','Editar layout','Ajusta muros, zonas y estructura'],
-      ['distribution','▦','Distribuir racks','Organiza los racks dentro del layout'],
-      ['racks','🧱','Biblioteca de racks','Gestiona modelos y plantillas'],
-      ['rack-builder','🛠','Constructor de rack','Crea un rack o estante nuevo'],
-      ['viewer','🌐','Recorrido 3D','Visualiza el espacio final']
+      ['virtual','◈','Diseñar en 3D','Ambiente y mobiliario virtual'],
+      ['viewer','⌕','Buscar productos','Inventario y ubicaciones'],
+      ['layout','▣','Editar layout','Muros, zonas y medidas']
+    ];
+    const advancedActions = [
+      ['sheet','🔗','Vincular datos','Google Sheets y sincronización'],
+      ['distribution','▦','Distribuir racks','Ajustar posiciones'],
+      ['racks','▤','Biblioteca','Modelos reutilizables'],
+      ['rack-builder','⚒','Crear rack','Construcción paramétrica']
     ];
     contentWrap.innerHTML = `
       <div class="company-config-v2 company-dashboard-v165">
@@ -179,6 +181,9 @@
           <div class="company-dashboard-actions-grid">
             ${quickActions.map(([screen,icon,title,desc])=>`<button class="company-quick-card" type="button" data-dashboard-screen="${screen}"><b>${icon}</b><span>${title}</span><small>${desc}</small></button>`).join('')}
           </div>
+          <details class="company-dashboard-extra"><summary>Más herramientas <span>Biblioteca, racks y conexión de datos</span></summary>
+            <div class="company-dashboard-extra-grid">${advancedActions.map(([screen,icon,title,desc])=>`<button class="company-quick-card" type="button" data-dashboard-screen="${screen}"><b>${icon}</b><span>${title}</span><small>${desc}</small></button>`).join('')}</div>
+          </details>
         </section>
         <div class="company-topbar-v2"><div class="company-title-stack"><h3>Configuración de Empresa</h3><div class="muted">Administrador</div></div><button class="btn secondary company-preview-btn" id="companyPreviewBtn" type="button">Vista previa pública ↗</button></div>
         <section class="company-top-grid">
@@ -202,7 +207,7 @@
           <div class="company-branch-list">${cfg.branches.map((branch, idx)=>renderAdminBranchCard(branch, idx)).join('')}</div>
           <div class="company-drag-note">ⓘ Arrastra las sucursales para reordenarlas. La primera sucursal será la principal.</div>
         </section>
-        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button><div class="muted">Entorno: ${document.body.classList.contains('theme-light') ? 'Modo día' : 'Producción'}</div></div>
+        <div class="company-save-row"><button class="btn company-save-btn" id="saveCompanyBtn">💾 Guardar configuración</button><div class="muted">${document.body.classList.contains('theme-light') ? 'Tema claro' : 'Tema oscuro'}</div></div>
       </div>`;
     bindAdminScreenEvents();
   }

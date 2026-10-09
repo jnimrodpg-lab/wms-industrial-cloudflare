@@ -1,5 +1,5 @@
 {
-  "version": "167",
+  "version": "168",
   "output": "public/assets/app-main.runtimefix.js",
   "files": [
     "00-core-state.js",
@@ -17,5 +17,5 @@
     "80-auth-operations.js",
     "90-bootstrap-compat.js"
   ],
-  "notes": "v167: auditoría visual, light/dark coherentes, overflow corregido y layouts ajustados para zoom 100%."
+  "notes": "v168: CSS modular con temas semánticos, limpieza legacy, responsive 100% y auditoría visual."
 }
